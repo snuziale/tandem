@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#23232e"/>
+      <stop offset="1" stop-color="#101018"/>
+    </linearGradient>
+  </defs>
+  <rect width="48" height="48" rx="11" fill="url(#g)"/>
+  <!-- two riders, one review: paired marks with the violet agent accent -->
+  <path d="M14 12 L26 24 L14 36" fill="none" stroke="#e4e4ef" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M26 12 L38 24 L26 36" fill="none" stroke="#a78bfa" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

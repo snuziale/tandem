@@ -1,0 +1,38 @@
+@import '@uipath/apollo-wind/tailwind.css';
+
+@source "../node_modules/@uipath/apollo-wind/dist";
+
+body {
+  margin: 0;
+}
+
+/*
+ * Provenance color (spec §1 principle 3): violet marks MACHINE-AUTHORED
+ * content and nothing else — the queue's agent cell, the file tree dot, the
+ * diff finding rail, finding cards, and agent rows in the review tray. Do not
+ * use these tokens (or ad-hoc violets) for any other purpose.
+ */
+body.future-light {
+  --tandem-agent: #7c3aed;
+  --tandem-agent-dim: color-mix(in srgb, #7c3aed 55%, transparent);
+  --tandem-agent-bg: color-mix(in srgb, #7c3aed 8%, transparent);
+}
+
+body.future-dark {
+  --tandem-agent: #a78bfa;
+  --tandem-agent-dim: color-mix(in srgb, #a78bfa 55%, transparent);
+  --tandem-agent-bg: color-mix(in srgb, #a78bfa 12%, transparent);
+}
+
+/*
+ * Viewport clamping for dialogs: Apollo caps width but not height, so a tall
+ * dialog runs off the screen. In `@layer base` on purpose — Tailwind utilities
+ * live in a later layer, so a dialog that manages its own height still wins.
+ */
+@layer base {
+  [data-slot='dialog-content'],
+  [data-slot='alert-dialog-content'] {
+    max-height: calc(100vh - 2rem);
+    overflow-y: auto;
+  }
+}

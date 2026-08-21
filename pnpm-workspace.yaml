@@ -1,0 +1,2 @@
+minimumReleaseAgeExclude:
+  - '@uipath/apollo-ui-icons@1.0.0'

@@ -1,0 +1,82 @@
+import { handleConfig } from './config/routes';
+import { serveAsset } from './assets';
+import { log } from './log';
+import { API_PATHS } from '../shared/api-paths';
+
+const HOST = '127.0.0.1';
+const FIRST_PORT = Number(Bun.env.TANDEM_SERVER_PORT ?? Bun.env.PORT ?? 5274);
+const PORT_RANGE = 8;
+
+function listen(port: number): ReturnType<typeof Bun.serve> {
+  return Bun.serve({
+    port,
+    hostname: HOST,
+    // Bun's default is 10s of socket idle, which races our SSE heartbeat
+    // (also on the order of seconds) and the multi-minute agent runs.
+    // Disable it — every connection is local, no public exposure.
+    idleTimeout: 0,
+    async fetch(req) {
+      const start = Date.now();
+      const url = new URL(req.url);
+      try {
+        let res: Response;
+        if (url.pathname.startsWith(API_PATHS.CONFIG)) {
+          res = await handleConfig(req);
+        } else if (url.pathname.startsWith(`${API_PATHS.API}/`)) {
+          // Remaining /api/* families (queue, prs, reviews, runs, settings,
+          // views) are wired in as their milestones land.
+          res = Response.json({ error: 'not found' }, { status: 404 });
+        } else {
+          res = await serveAsset(url.pathname);
+        }
+        log(req, res.status, Date.now() - start);
+        return res;
+      } catch (e) {
+        // Client cancelled (e.g. a superseded poll). The connection is already
+        // gone — log it as 499 without an error stack.
+        if (req.signal.aborted) {
+          log(req, 499, Date.now() - start);
+          return new Response(null, { status: 499 });
+        }
+        log(req, 500, Date.now() - start, e);
+        return new Response('Internal error', { status: 500 });
+      }
+    },
+  });
+}
+
+function isAddressInUse(e: unknown): boolean {
+  if (!e || typeof e !== 'object') return false;
+  const err = e as { code?: string; message?: string };
+  if (err.code === 'EADDRINUSE') return true;
+  const msg = (err.message ?? '').toLowerCase();
+  return msg.includes('eaddrinuse') || msg.includes('in use');
+}
+
+function tryListen(): ReturnType<typeof Bun.serve> {
+  for (let i = 0; i < PORT_RANGE; i++) {
+    const port = FIRST_PORT + i;
+    try {
+      return listen(port);
+    } catch (e) {
+      if (isAddressInUse(e)) {
+        console.error(`[server] port ${port} in use, trying ${port + 1}`);
+        continue;
+      }
+      throw e;
+    }
+  }
+  throw new Error(`could not bind any port in ${FIRST_PORT}..${FIRST_PORT + PORT_RANGE - 1}`);
+}
+
+const server = tryListen();
+console.log(`tandem server → http://${HOST}:${server.port}`);
+
+// When loaded as a Worker by src/server/app.ts, postMessage is defined and the
+// main thread is waiting for the bound port before opening the webview. When
+// loaded directly (`bun src/server/worker.ts` — server-only, no native window),
+// postMessage is undefined and we just print the URL.
+declare const postMessage: ((msg: unknown) => void) | undefined;
+if (typeof postMessage === 'function') {
+  postMessage({ type: 'ready', host: HOST, port: server.port });
+}
