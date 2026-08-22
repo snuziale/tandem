@@ -13,16 +13,24 @@ import { DescriptionCollapse } from './DescriptionCollapse';
 import { DiffPane, type DiffPaneHandle } from './DiffPane';
 import { FileTree } from './FileTree';
 import { PrHeader } from './PrHeader';
+import { ReviewTray } from './ReviewTray';
 
 export function PrDetailView({ prId }: { prId: PrId }) {
   const detail = usePrDetail(prId);
   const headSha = detail.data?.pr.headSha;
   const filesQuery = usePrFiles(prId, headSha);
-  const { review, toggleViewed } = usePendingReview(prId, headSha);
+  const { review, toggleViewed, addComment, updateComment, removeComment, setVerdict, setSummary } = usePendingReview(prId, headSha);
 
   const codeViewRef = useRef<DiffPaneHandle>(null);
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const files = filesQuery.data;
+
+  // A composer left open on another PR must not follow us here.
+  const setComposerTarget = useUiStore((s) => s.setComposerTarget);
+  useEffect(() => {
+    setComposerTarget(null);
+    return () => setComposerTarget(null);
+  }, [setComposerTarget]);
 
   const selectFile = (path: string) => {
     setSelectedPath(path);
@@ -54,10 +62,16 @@ export function PrDetailView({ prId }: { prId: PrId }) {
         selectFile(paths[next]);
       };
       switch (e.key) {
-        case 'Escape':
+        case 'Escape': {
           e.preventDefault();
+          // First Esc closes an open composer; the next one leaves the PR.
+          if (useUiStore.getState().composerTarget) {
+            useUiStore.getState().setComposerTarget(null);
+            return;
+          }
           navigate({ name: 'queue' });
           return;
+        }
         case '[':
           e.preventDefault();
           step(-1);
@@ -159,11 +173,21 @@ export function PrDetailView({ prId }: { prId: PrId }) {
                   <ExternalLink className="w-3 h-3" />
                 </Button>
               </div>
-              <DiffPane headSha={pr.headSha} files={files} threads={threads} codeViewRef={codeViewRef} />
+              <DiffPane
+                headSha={pr.headSha}
+                files={files}
+                threads={threads}
+                pendingComments={review?.comments ?? []}
+                onAddComment={addComment}
+                onUpdateComment={updateComment}
+                onRemoveComment={removeComment}
+                codeViewRef={codeViewRef}
+              />
             </div>
           </>
         )}
       </div>
+      <ReviewTray prId={prId} review={review} onVerdict={setVerdict} onSummary={setSummary} />
     </Shell>
   );
 }

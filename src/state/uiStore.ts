@@ -8,6 +8,7 @@ import type { PrId } from '../shared/review-types';
 
 export type QueueRowRef = { prId: PrId; url: string };
 export type DiffStyle = 'unified' | 'split';
+export type ComposerTarget = { path: string; line: number; side: 'LEFT' | 'RIGHT' };
 
 type UiState = {
   route: Route;
@@ -23,6 +24,10 @@ type UiState = {
   // so j/k and open/approve know what the keyboard is moving over.
   queueRows: QueueRowRef[];
   setQueueRows: (rows: QueueRowRef[]) => void;
+
+  // Where the line composer is open (one at a time, spec §3.2 line click).
+  composerTarget: ComposerTarget | null;
+  setComposerTarget: (target: ComposerTarget | null) => void;
 
   // Persisted display prefs.
   diffStyle: DiffStyle;
@@ -46,6 +51,9 @@ export const useUiStore = create<UiState>()(
 
       queueRows: [],
       setQueueRows: (rows) => set({ queueRows: rows }),
+
+      composerTarget: null,
+      setComposerTarget: (target) => set({ composerTarget: target }),
 
       diffStyle: 'unified',
       setDiffStyle: (style) => set({ diffStyle: style }),

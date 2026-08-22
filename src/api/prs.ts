@@ -13,6 +13,10 @@ export function approvePr(prId: PrId): Promise<{ ok: true; url: string }> {
   return apiRequest<{ ok: true; url: string }>(`${prApiBase(prId)}/approve`, { method: 'POST' });
 }
 
+export function submitPr(prId: PrId, input: { verdict: 'APPROVE' | 'REQUEST_CHANGES' | 'COMMENT'; summaryBody?: string }): Promise<{ ok: true; url: string }> {
+  return apiRequest<{ ok: true; url: string }>(`${prApiBase(prId)}/submit`, { method: 'POST', body: input });
+}
+
 export function fetchPrDetail(prId: PrId, signal?: AbortSignal): Promise<PrDetail> {
   return apiRequest<PrDetail>(prApiBase(prId), { signal });
 }
