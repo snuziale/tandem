@@ -45,6 +45,15 @@ export type AgentRunStatus = 'queued' | 'fetching' | 'analyzing' | 'ready' | 'fa
 
 export type SkipReason = 'draft' | 'too-many-files' | 'diff-too-large' | 'generated-only' | 'budget' | 'agent-disabled';
 
+export const SKIP_REASON_LABEL: Record<SkipReason, string> = {
+  draft: 'draft',
+  'too-many-files': 'over file cap',
+  'diff-too-large': 'diff too large',
+  'generated-only': 'generated files only',
+  budget: 'daily budget spent',
+  'agent-disabled': 'agent off for repo',
+};
+
 export type AgentRun = {
   id: string;
   prId: PrId;

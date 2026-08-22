@@ -29,6 +29,12 @@ type UiState = {
   composerTarget: ComposerTarget | null;
   setComposerTarget: (target: ComposerTarget | null) => void;
 
+  // Finding triage focus/editing on the detail screen (j/k · y/e/x).
+  focusedFindingId: string | null;
+  setFocusedFinding: (id: string | null) => void;
+  editingFindingId: string | null;
+  setEditingFinding: (id: string | null) => void;
+
   // Persisted display prefs.
   diffStyle: DiffStyle;
   setDiffStyle: (style: DiffStyle) => void;
@@ -54,6 +60,11 @@ export const useUiStore = create<UiState>()(
 
       composerTarget: null,
       setComposerTarget: (target) => set({ composerTarget: target }),
+
+      focusedFindingId: null,
+      setFocusedFinding: (id) => set({ focusedFindingId: id }),
+      editingFindingId: null,
+      setEditingFinding: (id) => set({ editingFindingId: id }),
 
       diffStyle: 'unified',
       setDiffStyle: (style) => set({ diffStyle: style }),

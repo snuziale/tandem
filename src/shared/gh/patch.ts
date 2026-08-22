@@ -58,3 +58,40 @@ function pathOfSection(section: string): string | null {
 export function countDiffLines(files: Array<Pick<FileChange, 'additions' | 'deletions'>>): number {
   return files.reduce((sum, f) => sum + f.additions + f.deletions, 0);
 }
+
+export type DiffLineIndex = {
+  /** Old-file line numbers present in the patch (deletions + context). */
+  left: Set<number>;
+  /** New-file line numbers present in the patch (additions + context). */
+  right: Set<number>;
+};
+
+/**
+ * Which line numbers a comment/finding can anchor to on each side of this
+ * file's patch. Used to reject model output citing lines outside the diff and
+ * to detect moved anchors after new commits.
+ */
+export function diffLineIndex(patch: string): DiffLineIndex {
+  const left = new Set<number>();
+  const right = new Set<number>();
+  let oldLine = 0;
+  let newLine = 0;
+  for (const line of patch.split('\n')) {
+    const hunk = /^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/.exec(line);
+    if (hunk) {
+      oldLine = Number(hunk[1]);
+      newLine = Number(hunk[2]);
+      continue;
+    }
+    if (line.startsWith('\\')) continue; // "\ No newline at end of file"
+    if (line.startsWith('-')) {
+      left.add(oldLine++);
+    } else if (line.startsWith('+')) {
+      right.add(newLine++);
+    } else if (line.startsWith(' ') || line === '') {
+      left.add(oldLine++);
+      right.add(newLine++);
+    }
+  }
+  return { left, right };
+}

@@ -2,6 +2,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { Button, cn } from '@uipath/apollo-wind';
 import { Check, ExternalLink } from 'lucide-react';
 import { approvePrAction, openPrExternal } from '../../hooks/queueActions';
+import type { AgentRun } from '../../shared/agent-types';
 import type { PullRequest } from '../../shared/review-types';
 import { relativeAge } from '../../utils/time';
 import { AgentCell, ChecksCell, ReviewCell, SizeCell } from './cells';
@@ -10,12 +11,13 @@ export const QUEUE_GRID = 'grid grid-cols-[minmax(0,1fr)_130px_160px_140px_190px
 
 type Props = {
   pr: PullRequest;
+  run: AgentRun | undefined;
   focused: boolean;
   onFocus: () => void;
   onOpen: () => void;
 };
 
-export function QueueRow({ pr, focused, onFocus, onOpen }: Props) {
+export function QueueRow({ pr, run, focused, onFocus, onOpen }: Props) {
   const queryClient = useQueryClient();
 
   return (
@@ -41,7 +43,7 @@ export function QueueRow({ pr, focused, onFocus, onOpen }: Props) {
       <ReviewCell pr={pr} />
       <SizeCell pr={pr} />
       <div className="flex items-center justify-between gap-2 min-w-0">
-        <AgentCell />
+        <AgentCell run={run} />
         <div className="hidden group-hover:flex items-center gap-1 shrink-0">
           <Button
             size="sm"

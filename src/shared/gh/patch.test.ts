@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { FileChange } from '../review-types';
-import { buildFilePatch, countDiffLines, splitRawDiff } from './patch';
+import { buildFilePatch, countDiffLines, diffLineIndex, splitRawDiff } from './patch';
 
 const base: FileChange = {
   path: 'src/a.ts',
@@ -70,5 +70,25 @@ describe('splitRawDiff', () => {
 describe('countDiffLines', () => {
   it('sums additions and deletions', () => {
     expect(countDiffLines([{ additions: 3, deletions: 1 }, { additions: 0, deletions: 2 }])).toBe(6);
+  });
+});
+
+describe('diffLineIndex', () => {
+  it('tracks per-side anchorable lines through hunks', () => {
+    const patch = ['@@ -10,3 +10,4 @@', ' ctx', '-gone', '+new1', '+new2', ' ctx2'].join('\n');
+    const idx = diffLineIndex(patch);
+    // old: 10 ctx, 11 gone, 12 ctx2 · new: 10 ctx, 11 new1, 12 new2, 13 ctx2
+    expect([...idx.left]).toEqual([10, 11, 12]);
+    expect([...idx.right]).toEqual([10, 11, 12, 13]);
+  });
+
+  it('handles multiple hunks and no-newline markers', () => {
+    const patch = ['@@ -1 +1 @@', '-a', '+b', '\\ No newline at end of file', '@@ -50,2 +50,2 @@', ' x', '-y', '+z'].join('\n');
+    const idx = diffLineIndex(patch);
+    expect(idx.left.has(1)).toBe(true);
+    expect(idx.right.has(1)).toBe(true);
+    expect(idx.left.has(51)).toBe(true);
+    expect(idx.right.has(51)).toBe(true);
+    expect(idx.right.has(2)).toBe(false);
   });
 });

@@ -3,6 +3,7 @@ import { Skeleton, cn } from '@uipath/apollo-wind';
 import { useUiStore } from '../../state/uiStore';
 import type { PullRequest } from '../../shared/review-types';
 import { openPrDetail } from '../../hooks/useKeyboardNav';
+import { runFor, useAgentRuns } from '../../hooks/useAgentRuns';
 import { QUEUE_GRID, QueueRow } from './QueueRow';
 
 type Props = {
@@ -17,6 +18,7 @@ export function QueueTable({ rows, isLoading, error, viewError }: Props) {
   const focusedPrId = useUiStore((s) => s.focusedPrId);
   const setFocusedPr = useUiStore((s) => s.setFocusedPr);
   const setQueueRows = useUiStore((s) => s.setQueueRows);
+  const runs = useAgentRuns();
 
   // Publish the visible rows for the keyboard handlers; clamp a focus that no
   // longer exists (row left the view on refetch).
@@ -56,6 +58,7 @@ export function QueueTable({ rows, isLoading, error, viewError }: Props) {
           <QueueRow
             key={pr.prId}
             pr={pr}
+            run={runFor(runs.data, pr.prId, pr.headSha)}
             focused={pr.prId === focusedPrId}
             onFocus={() => setFocusedPr(pr.prId)}
             onOpen={() => openPrDetail(pr.prId)}

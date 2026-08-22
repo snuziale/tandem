@@ -1,5 +1,7 @@
-import { cn } from '@uipath/apollo-wind';
+import { Spinner, cn } from '@uipath/apollo-wind';
+import { SKIP_REASON_LABEL, type AgentRun, type Severity } from '../../shared/agent-types';
 import type { PullRequest } from '../../shared/review-types';
+import { SeverityBadge } from '../agent/SeverityBadge';
 
 export function ChecksCell({ pr }: { pr: PullRequest }) {
   if (pr.checkRollup === 'NONE') {
@@ -57,10 +59,58 @@ export function SizeCell({ pr }: { pr: PullRequest }) {
   );
 }
 
-// Placeholder until agent runs land (M4). Violet is reserved for real agent
-// output — the placeholder stays neutral.
-export function AgentCell() {
-  return <span className="text-xs text-muted-foreground/60 font-mono">—</span>;
+const TALLY_ORDER: Severity[] = ['blocker', 'risk', 'nit', 'question', 'praise'];
+
+// Four visual states (spec §3.1): Analyzing… (pulsing), findings tally,
+// "Nothing to flag" (as legible as a finding — it earns the trust), and
+// Skipped with its reason. Violet marks it all as machine-authored.
+export function AgentCell({ run }: { run: AgentRun | undefined }) {
+  if (!run) return <span className="text-xs text-muted-foreground/60 font-mono">—</span>;
+
+  if (run.status === 'queued' || run.status === 'fetching' || run.status === 'analyzing') {
+    return (
+      <span className="flex items-center gap-1.5 text-xs font-mono animate-pulse" style={{ color: 'var(--tandem-agent)' }}>
+        <Spinner className="size-3" /> Analyzing…
+      </span>
+    );
+  }
+
+  if (run.status === 'skipped') {
+    return (
+      <span className="text-xs text-muted-foreground font-mono">
+        Skipped · {run.skipReason ? SKIP_REASON_LABEL[run.skipReason] : ''}
+      </span>
+    );
+  }
+
+  if (run.status === 'failed') {
+    return <span className="text-xs text-destructive font-mono">Run failed</span>;
+  }
+
+  if (run.status === 'stale') {
+    return <span className="text-xs text-yellow-400/90 font-mono">Stale · new commits</span>;
+  }
+
+  const triage = run.findings.filter((f) => f.state !== 'dismissed');
+  if (triage.length === 0) {
+    return (
+      <span className="text-xs text-muted-foreground font-mono">
+        Nothing to flag <span className="text-muted-foreground/60">· safe to review fast</span>
+      </span>
+    );
+  }
+  return (
+    <span className="flex flex-col gap-0.5 min-w-0">
+      <span className="text-xs font-mono" style={{ color: 'var(--tandem-agent)' }}>
+        {triage.length} finding{triage.length === 1 ? '' : 's'} ready
+      </span>
+      <span className="flex gap-1 flex-wrap">
+        {TALLY_ORDER.map((severity) => (
+          <SeverityBadge key={severity} severity={severity} count={triage.filter((f) => f.severity === severity).length} />
+        ))}
+      </span>
+    </span>
+  );
 }
 
 function compact(n: number): string {

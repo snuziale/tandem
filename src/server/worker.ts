@@ -1,7 +1,9 @@
+import { handleAgent, handleRuns } from './agent/routes';
 import { handleConfig } from './config/routes';
 import { handleQueue } from './github/queue';
 import { handlePrs } from './github/routes';
 import { handleReviews } from './reviews/routes';
+import { handleSettings } from './settings/routes';
 import { handleViews } from './views/routes';
 import { serveAsset } from './assets';
 import { log } from './log';
@@ -34,9 +36,13 @@ function listen(port: number): ReturnType<typeof Bun.serve> {
           res = await handleReviews(req);
         } else if (url.pathname.startsWith(API_PATHS.VIEWS)) {
           res = await handleViews(req);
+        } else if (url.pathname.startsWith(API_PATHS.RUNS)) {
+          res = await handleRuns(req);
+        } else if (url.pathname.startsWith(API_PATHS.AGENT)) {
+          res = await handleAgent(req);
+        } else if (url.pathname.startsWith(API_PATHS.SETTINGS)) {
+          res = await handleSettings(req);
         } else if (url.pathname.startsWith(`${API_PATHS.API}/`)) {
-          // Remaining /api/* families (reviews, runs, settings) are wired in
-          // as their milestones land.
           res = Response.json({ error: 'not found' }, { status: 404 });
         } else {
           res = await serveAsset(url.pathname);

@@ -1,10 +1,12 @@
 import { useMemo } from 'react';
 import { parsePatchFiles } from '@pierre/diffs';
 import { CodeView, type CodeViewDiffItem, type CodeViewHandle, type CodeViewReactOptions, type DiffLineAnnotation } from '@pierre/diffs/react';
+import type { Finding } from '../../shared/agent-types';
 import { buildFilePatch } from '../../shared/gh/patch';
 import type { FileChange, PendingComment, ReviewThread } from '../../shared/review-types';
 import { resolveTheme, useThemeStore } from '../../state/themeStore';
 import { useUiStore } from '../../state/uiStore';
+import { FindingCard } from '../agent/FindingCard';
 import { annotationSideOf, diffSideOf, type TandemAnno } from './annotations';
 import { ComposerCard } from './ComposerCard';
 import { PendingCard } from './PendingCard';
@@ -17,6 +19,8 @@ type Props = {
   files: FileChange[];
   threads: ReviewThread[];
   pendingComments: PendingComment[];
+  /** Agent findings still in triage (proposed/edited) — rendered inline. */
+  findings: Finding[];
   onAddComment: (comment: Omit<PendingComment, 'localId'>) => void;
   onUpdateComment: (localId: string, patch: Partial<PendingComment>) => void;
   onRemoveComment: (localId: string) => void;
@@ -36,7 +40,7 @@ function versionOf(headSha: string, annotations: DiffLineAnnotation<TandemAnno>[
   return ((h | 0) >>> 0) + annotations.length;
 }
 
-export function DiffPane({ headSha, files, threads, pendingComments, onAddComment, onUpdateComment, onRemoveComment, codeViewRef }: Props) {
+export function DiffPane({ headSha, files, threads, pendingComments, findings, onAddComment, onUpdateComment, onRemoveComment, codeViewRef }: Props) {
   const diffStyle = useUiStore((s) => s.diffStyle);
   const themePreference = useThemeStore((s) => s.preference);
   const composerTarget = useUiStore((s) => s.composerTarget);
@@ -58,6 +62,9 @@ export function DiffPane({ headSha, files, threads, pendingComments, onAddCommen
     for (const comment of pendingComments) {
       push(comment.path, { side: annotationSideOf(comment.side), lineNumber: comment.line, metadata: { kind: 'pending', comment } });
     }
+    for (const finding of findings) {
+      push(finding.path, { side: annotationSideOf(finding.side), lineNumber: finding.endLine, metadata: { kind: 'finding', finding } });
+    }
     if (composerTarget) {
       push(composerTarget.path, {
         side: annotationSideOf(composerTarget.side),
@@ -66,7 +73,7 @@ export function DiffPane({ headSha, files, threads, pendingComments, onAddCommen
       });
     }
     return map;
-  }, [threads, pendingComments, composerTarget]);
+  }, [threads, pendingComments, findings, composerTarget]);
 
   const items = useMemo(() => {
     const out: CodeViewDiffItem<TandemAnno>[] = [];
@@ -148,6 +155,8 @@ export function DiffPane({ headSha, files, threads, pendingComments, onAddCommen
                 onRemove={() => onRemoveComment(meta.comment.localId)}
               />
             );
+          case 'finding':
+            return <FindingCard finding={meta.finding} addComment={onAddComment} />;
           default:
             return null;
         }
