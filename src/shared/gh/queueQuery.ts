@@ -18,6 +18,7 @@ fragment PrFields on PullRequest {
   deletions
   changedFiles
   reviewDecision
+  createdAt
   updatedAt
   reviewThreads(first: 1) { totalCount }
   commits(last: 1) {

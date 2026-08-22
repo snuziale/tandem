@@ -1,18 +1,11 @@
-// Prompt builders for the three passes (spec §4). The review rules live in
-// RULES verbatim — every quality lever the spec names is enforced here first,
-// then re-checked deterministically in parse.ts.
+// Prompt assembly for the three passes (spec §4). The INSTRUCTION halves come
+// from settings.prompts (user-editable, defaults in shared/prompt-defaults.ts);
+// the data blocks and the JSON output contracts below are code-owned — the
+// contracts must match the zod schemas in shared/finding-schema.ts, and
+// parse.ts re-enforces the rules deterministically regardless of edits.
 import type { Pass1Plan, FindingJson } from '../../../shared/finding-schema';
+import type { PromptTexts } from '../../../shared/prompt-defaults';
 import type { FileChange, PullRequest, ReviewThread } from '../../../shared/review-types';
-
-const RULES = `Rules — follow every one:
-- Every finding must cite evidence: a file and line range you actually read in the diff below.
-- No findings about formatting, import order, naming style, or anything a linter/formatter owns.
-- Never restate what the diff does. If the comment would be obvious to the author, drop it.
-- "blocker" means the code is wrong or unsafe — NOT that you would have written it differently.
-- Emitting zero findings is a correct and expected outcome. Do not invent work.
-- When you are uncertain, emit a "question" instead of a low-confidence assertion.
-- Line anchors: side "RIGHT" + a line number that exists in the NEW file's diff lines (additions or context), or side "LEFT" + a line from the old file (deletions). endLine is the anchor; startLine only for multi-line ranges.
-- "suggestion" is the exact replacement text for lines startLine..endLine — include it only when you are confident in the exact code.`;
 
 const FINDING_SHAPE = `{
   "path": "file path from the diff",
@@ -47,6 +40,7 @@ function conventionsBlock(conventions: string | null): string {
 }
 
 export function buildOrientPrompt(input: {
+  prompts: PromptTexts;
   pr: PullRequest;
   files: FileChange[];
   conventions: string | null;
@@ -55,9 +49,7 @@ export function buildOrientPrompt(input: {
   const fileList = input.files
     .map((f) => `- ${f.path} (${f.status}, +${f.additions} −${f.deletions}${f.isGenerated ? ', generated' : ''})`)
     .join('\n');
-  return `You are the reviewing agent inside Tandem, a code-review client. A human reviewer will triage everything you produce; nothing you write reaches GitHub.
-
-Pass 1 of 3 — ORIENT. Read the PR metadata and produce a short review plan: the 3-6 things actually worth checking in THIS specific PR. Be concrete ("does the new reducer handle the COMMIT race", not "check correctness").
+  return `${input.prompts.orient}
 
 ${prHeaderBlock(input.pr)}
 
@@ -72,16 +64,15 @@ Reply with ONLY a JSON object in a \`\`\`json fence:
 }
 
 export function buildAnalyzePrompt(input: {
+  prompts: PromptTexts;
   pr: PullRequest;
   plan: Pass1Plan;
   files: FileChange[];
   conventions: string | null;
 }): string {
-  return `You are the reviewing agent inside Tandem, a code-review client. A human reviewer will triage everything you produce; nothing you write reaches GitHub.
+  return `${input.prompts.analyze}
 
-Pass 2 of 3 — ANALYZE. Apply the review plan to the diffs below and emit candidate findings.
-
-${RULES}
+${input.prompts.rules}
 
 ${prHeaderBlock(input.pr)}
 
@@ -98,6 +89,7 @@ An empty findings array is a valid answer.`;
 }
 
 export function buildReconcilePrompt(input: {
+  prompts: PromptTexts;
   pr: PullRequest;
   candidates: FindingJson[];
   threads: ReviewThread[];
@@ -110,16 +102,12 @@ export function buildReconcilePrompt(input: {
           .map((t) => `- ${t.path}:${t.line ?? '?'} (@${t.comments[0]?.author ?? '?'}${t.isResolved ? ', resolved' : ''}): ${t.comments[0]?.bodyMarkdown.slice(0, 200) ?? ''}`)
           .join('\n')
       : '(none)';
-  return `You are the reviewing agent inside Tandem, a code-review client. A human reviewer will triage everything you produce; nothing you write reaches GitHub.
+  const mission = input.prompts.reconcile
+    .replaceAll('{findingCap}', String(input.findingCap))
+    .replaceAll('{nitCap}', String(input.nitCap));
+  return `${mission}
 
-Pass 3 of 3 — RECONCILE. Below are ALL candidate findings from analysis, plus the review comments humans have already left. Produce the final signal-dense set:
-- Merge duplicates (keep the better-written one, highest severity wins).
-- DROP any finding that substantively duplicates an existing human comment.
-- Re-check each severity against the definitions; downgrade anything hedged.
-- Keep at most ${input.findingCap} findings total and at most ${input.nitCap} nits — cut the weakest.
-- Write a run summary: 2-4 sentences on what you read, what is sound, and what needs attention. Written for the reviewer, plain prose, no hedging. If checks are failing or something outside the diff matters, say so.
-
-${RULES}
+${input.prompts.rules}
 
 ${prHeaderBlock(input.pr)}
 

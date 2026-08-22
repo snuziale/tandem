@@ -20,6 +20,7 @@ query TandemPrDetail($owner: String!, $name: String!, $number: Int!) {
       deletions
       changedFiles
       reviewDecision
+      createdAt
       updatedAt
       reviewThreads(first: 100) {
         totalCount

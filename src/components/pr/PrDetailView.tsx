@@ -17,6 +17,7 @@ import { hasOpenBlocker, runFor, useAgentRuns } from '../../hooks/useAgentRuns';
 import { usePendingReview } from '../../hooks/usePendingReview';
 import { usePrDetail, usePrFiles } from '../../hooks/usePrDetail';
 import { useRunStream } from '../../hooks/useRunStream';
+import { useMarkSeen } from '../../hooks/useSeen';
 import { useSettings } from '../../hooks/useSettings';
 import { hasOpenDialog, isTypingTarget } from '../../keyboard/target';
 import { navigate } from '../../routes';
@@ -41,6 +42,8 @@ export function PrDetailView({ prId }: { prId: PrId }) {
   const run = runFor(runs.data, prId, headSha);
   const progress = useRunStream(run);
   const settings = useSettings();
+  // Opening the PR clears its "unseen changes" marker in the queue.
+  useMarkSeen(prId, detail.data?.pr.updatedAt);
 
   const codeViewRef = useRef<DiffPaneHandle>(null);
   const [selectedPath, setSelectedPath] = useState<string | null>(null);

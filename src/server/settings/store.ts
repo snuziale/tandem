@@ -2,6 +2,7 @@
 // keys are dropped on save. Values merge over DEFAULT_SETTINGS so adding a
 // setting never requires a migration.
 import { isPlainObject } from '../../shared/isPlainObject';
+import { promptTextsOf } from '../../shared/prompt-defaults';
 import { DEFAULT_SETTINGS, type TandemSettings } from '../../shared/settings-types';
 import { enqueueMutation, readTextFile, storagePath, writeTextFile } from '../storage/jsonFile';
 
@@ -56,6 +57,7 @@ export function sanitize(raw: unknown): TandemSettings {
       analyze: typeof models.analyze === 'string' && models.analyze ? models.analyze : d.models.analyze,
       reconcile: typeof models.reconcile === 'string' && models.reconcile ? models.reconcile : d.models.reconcile,
     },
+    prompts: promptTextsOf(raw.prompts),
   };
 }
 

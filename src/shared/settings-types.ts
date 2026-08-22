@@ -1,6 +1,7 @@
 // User-tunable settings served by /api/settings and persisted server-side in
 // ~/.tandem/settings.json. Defaults here are the spec's defaults.
 import type { Severity } from './agent-types';
+import { DEFAULT_PROMPTS, type PromptTexts } from './prompt-defaults';
 
 export type PassModels = {
   orient: string;
@@ -29,6 +30,9 @@ export type TandemSettings = {
   repos: Record<string, { agentEnabled: boolean }>;
   agentEnabledByDefault: boolean;
   models: PassModels;
+  /** The editable halves of the agent prompts; data blocks and the JSON
+   * output contracts stay code-owned (they must match the zod schemas). */
+  prompts: PromptTexts;
 };
 
 export const DEFAULT_SETTINGS: TandemSettings = {
@@ -47,4 +51,5 @@ export const DEFAULT_SETTINGS: TandemSettings = {
     analyze: 'sonnet',
     reconcile: 'sonnet',
   },
+  prompts: DEFAULT_PROMPTS,
 };

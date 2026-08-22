@@ -17,6 +17,7 @@ function prNode(overrides: Partial<GqlPrNode> = {}): GqlPrNode {
     deletions: 94,
     changedFiles: 6,
     reviewDecision: 'REVIEW_REQUIRED',
+    createdAt: '2026-08-19T08:00:00Z',
     updatedAt: '2026-08-21T10:00:00Z',
     reviewThreads: { totalCount: 1 },
     commits: {

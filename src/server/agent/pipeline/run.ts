@@ -140,7 +140,7 @@ async function executePipeline(
   // --- Pass 1: orient (cheap model) ---
   emit({ type: 'pass', pass: 1, label: 'orienting' });
   const planResult = await validatedPass(
-    buildOrientPrompt({ pr, files, conventions, commitSubjects }),
+    buildOrientPrompt({ prompts: settings.prompts, pr, files, conventions, commitSubjects }),
     settings.models.orient,
     Pass1PlanSchema,
     signal,
@@ -159,7 +159,7 @@ async function executePipeline(
     if (signal.aborted) throw new Error('cancelled');
     emit({ type: 'pass', pass: 2, label: `analyzing ${i + 1}/${clusters.length}` });
     const passResult = await validatedPass(
-      buildAnalyzePrompt({ pr, plan, files: clusters[i], conventions }),
+      buildAnalyzePrompt({ prompts: settings.prompts, pr, plan, files: clusters[i], conventions }),
       settings.models.analyze,
       Pass2OutputSchema,
       signal,
@@ -175,7 +175,7 @@ async function executePipeline(
   // --- Pass 3: reconcile — the pass that keeps output signal-dense. Do not skip. ---
   emit({ type: 'pass', pass: 3, label: 'reconciling' });
   const reconcileResult = await validatedPass(
-    buildReconcilePrompt({ pr, candidates: sanitized.kept, threads, findingCap: settings.findingCap, nitCap: settings.nitCap }),
+    buildReconcilePrompt({ prompts: settings.prompts, pr, candidates: sanitized.kept, threads, findingCap: settings.findingCap, nitCap: settings.nitCap }),
     settings.models.reconcile,
     Pass3OutputSchema,
     signal,

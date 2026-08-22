@@ -3,6 +3,7 @@ import { handleConfig } from './config/routes';
 import { handleQueue } from './github/queue';
 import { handlePrs } from './github/routes';
 import { handleReviews } from './reviews/routes';
+import { handleSeen } from './seen/routes';
 import { handleSettings } from './settings/routes';
 import { handleViews } from './views/routes';
 import { serveAsset } from './assets';
@@ -40,6 +41,8 @@ function listen(port: number): ReturnType<typeof Bun.serve> {
           res = await handleRuns(req);
         } else if (url.pathname.startsWith(API_PATHS.AGENT)) {
           res = await handleAgent(req);
+        } else if (url.pathname.startsWith(API_PATHS.SEEN)) {
+          res = await handleSeen(req);
         } else if (url.pathname.startsWith(API_PATHS.SETTINGS)) {
           res = await handleSettings(req);
         } else if (url.pathname.startsWith(`${API_PATHS.API}/`)) {

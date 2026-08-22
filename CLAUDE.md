@@ -45,8 +45,13 @@ browser → /api/* → Vite proxy (dev) → Bun server (src/server/worker.ts)
   /api/prs/:o/:r/:n[...]  github/routes.ts  detail (GraphQL) · files (REST+fallback) ·
                                             approve · submit  ← the only two GitHub writes
   /api/reviews/:prId  reviews/routes.ts  local pending-review draft (GET/PUT/DELETE)
-  /api/views       views/routes.ts       saved queue views
-  /api/settings    settings/routes.ts    caps, threshold, models, per-repo agent toggle
+  /api/views       views/routes.ts       saved queue views (created/edited/imported from the
+                                         queue UI; the views-JSON dialog round-trips the exact
+                                         views.json array — utils/viewsJson.ts validates imports)
+  /api/seen        seen/routes.ts        last-seen per PR (detail marks; queue shows the
+                                         unseen-changes dot when updatedAt moved past it)
+  /api/settings    settings/routes.ts    caps, threshold, models, per-repo agent toggle,
+                                         prompts (see below)
   /api/runs[...]   agent/routes.ts       run records · SSE stream · cancel · finding state
   /api/agent/health                      claude CLI availability
   /*               assets.ts             SPA (embedded via asset-manifest in the binary)
@@ -68,6 +73,12 @@ errors, and a single 502-retry in `github/client.ts`.
    candidate findings as strict JSON.
 3. **Reconcile** (sonnet): candidates + existing human threads → deduped, ranked, capped final set
    + run summary. This pass keeps output signal-dense; do not skip it.
+
+**Prompts are half-configurable**: the instruction blocks (rules + per-pass missions) live in
+`shared/prompt-defaults.ts`, are overridable via `settings.prompts` (Settings → Agent prompts,
+with per-field reset), and interpolate `{findingCap}`/`{nitCap}` in reconcile. The data blocks
+and JSON output contracts in `pipeline/prompts.ts` stay code-owned — they must match the zod
+schemas, and parse.ts re-enforces the rules regardless of prompt edits.
 
 Model output is untrusted (`pipeline/parse.ts`): last-JSON extraction → zod (`shared/
 finding-schema.ts`) → ONE repair attempt → visible failure. Then deterministic re-enforcement:

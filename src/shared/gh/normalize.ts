@@ -85,6 +85,7 @@ export function normalizePr(node: GqlPrNode | null): PullRequest | null {
     // Accurate only when the caller fetched thread nodes (the detail query);
     // the queue search fetches totalCount alone and renders just that.
     unresolvedThreadCount: threads ? threads.filter((t) => !t.isResolved).length : 0,
+    createdAt: node.createdAt,
     updatedAt: node.updatedAt,
     url: node.url,
   };

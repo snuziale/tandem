@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Button, Card, Input, Label, Switch, ToggleGroup, ToggleGroupItem } from '@uipath/apollo-wind';
+import { Button, Card, Input, Label, Switch, Textarea, ToggleGroup, ToggleGroupItem } from '@uipath/apollo-wind';
 import { ArrowLeft } from 'lucide-react';
 import { fetchAgentHealth } from '../../api/runs';
 import { useAgentRuns } from '../../hooks/useAgentRuns';
@@ -8,6 +8,7 @@ import { useConfigStatus } from '../../hooks/useConfigStatus';
 import { useSaveSettings, useSettings } from '../../hooks/useSettings';
 import { hasOpenDialog, isTypingTarget } from '../../keyboard/target';
 import { navigate } from '../../routes';
+import { DEFAULT_PROMPTS, type PromptTexts } from '../../shared/prompt-defaults';
 import type { TandemSettings } from '../../shared/settings-types';
 import { TopBar } from '../layout/TopBar';
 import { CredentialsForm } from '../setup/CredentialsForm';
@@ -153,8 +154,92 @@ export function SettingsView() {
               </>
             ) : null}
           </Card>
+
+          {settings ? (
+            <Card className="p-5 space-y-4">
+              <div>
+                <h2 className="text-sm font-semibold">Agent prompts</h2>
+                <p className="text-[11px] text-muted-foreground mt-0.5">
+                  The instruction halves of each pass. The data blocks (PR metadata, diffs, candidate findings) and the strict-JSON
+                  output contracts are code-owned — they must match the validation schemas — and are appended automatically.
+                  Findings that break the rules are dropped by validation regardless of prompt edits.
+                </p>
+              </div>
+              {(
+                [
+                  ['rules', 'Review rules', 'Injected into the analyze and reconcile passes.'],
+                  ['orient', 'Pass 1 · orient', 'Produces the review plan from PR metadata.'],
+                  ['analyze', 'Pass 2 · analyze', 'Runs once per file cluster with the diffs in context.'],
+                  ['reconcile', 'Pass 3 · reconcile', 'Dedupes, ranks, caps. {findingCap} and {nitCap} interpolate from the caps above.'],
+                ] as Array<[keyof PromptTexts, string, string]>
+              ).map(([key, label, hint]) => (
+                <PromptField
+                  key={key}
+                  label={label}
+                  hint={hint}
+                  value={settings.prompts[key]}
+                  defaultValue={DEFAULT_PROMPTS[key]}
+                  onCommit={(value) => patch({ prompts: { ...settings.prompts, [key]: value } })}
+                />
+              ))}
+            </Card>
+          ) : null}
         </div>
       </div>
+    </div>
+  );
+}
+
+function PromptField({
+  label,
+  hint,
+  value,
+  defaultValue,
+  onCommit,
+}: {
+  label: string;
+  hint: string;
+  value: string;
+  defaultValue: string;
+  onCommit: (value: string) => void;
+}) {
+  const [draft, setDraft] = useState(value);
+  const [last, setLast] = useState(value);
+  if (value !== last) {
+    setLast(value);
+    setDraft(value);
+  }
+  const commit = () => {
+    const next = draft.trim() ? draft : defaultValue;
+    if (next !== value) onCommit(next);
+    if (!draft.trim()) setDraft(defaultValue);
+  };
+  const isDefault = value === defaultValue;
+
+  return (
+    <div className="space-y-1.5">
+      <div className="flex items-baseline gap-2">
+        <Label className="text-xs">{label}</Label>
+        <span className="text-[10px] text-muted-foreground">{hint}</span>
+        <span className="flex-1" />
+        {!isDefault ? (
+          <>
+            <span className="text-[10px] uppercase tracking-wide" style={{ color: 'var(--tandem-agent)' }}>
+              customized
+            </span>
+            <Button size="sm" variant="ghost" className="h-5 px-1.5 text-[10px]" onClick={() => onCommit(defaultValue)}>
+              reset to default
+            </Button>
+          </>
+        ) : null}
+      </div>
+      <Textarea
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={commit}
+        spellCheck={false}
+        className="min-h-28 text-xs font-mono leading-relaxed"
+      />
     </div>
   );
 }

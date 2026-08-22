@@ -31,6 +31,7 @@ export type GqlPrNode = {
   deletions: number;
   changedFiles: number;
   reviewDecision: 'APPROVED' | 'CHANGES_REQUESTED' | 'REVIEW_REQUIRED' | null;
+  createdAt: string;
   updatedAt: string;
   reviewThreads: { totalCount: number; nodes?: GqlReviewThread[] };
   commits: { nodes: GqlCommitWithChecks[] };

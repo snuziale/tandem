@@ -4,6 +4,8 @@ import { useUiStore } from '../../state/uiStore';
 import type { PullRequest } from '../../shared/review-types';
 import { openPrDetail } from '../../hooks/useKeyboardNav';
 import { runFor, useAgentRuns } from '../../hooks/useAgentRuns';
+import { hasUnseenChanges, useSeen } from '../../hooks/useSeen';
+import { useNow } from '../../hooks/useNow';
 import { QUEUE_GRID, QueueRow } from './QueueRow';
 
 type Props = {
@@ -19,6 +21,8 @@ export function QueueTable({ rows, isLoading, error, viewError }: Props) {
   const setFocusedPr = useUiStore((s) => s.setFocusedPr);
   const setQueueRows = useUiStore((s) => s.setQueueRows);
   const runs = useAgentRuns();
+  const seen = useSeen();
+  const now = useNow();
 
   // Publish the visible rows for the keyboard handlers (including whether the
   // agent found a blocker — the 'a' guard reads it); clamp a focus that no
@@ -38,7 +42,7 @@ export function QueueTable({ rows, isLoading, error, viewError }: Props) {
   return (
     <div className="flex-1 overflow-y-auto">
       <div className={cn(QUEUE_GRID, 'py-1.5 border-b border-border sticky top-0 bg-background z-10')}>
-        {['pull request', 'checks', 'review', 'size', 'agent'].map((label) => (
+        {['pull request', 'checks', 'review', 'size', 'updated', 'agent'].map((label) => (
           <span key={label} className="text-[10px] uppercase tracking-wider text-muted-foreground font-mono">
             {label}
           </span>
@@ -65,6 +69,8 @@ export function QueueTable({ rows, isLoading, error, viewError }: Props) {
             key={pr.prId}
             pr={pr}
             run={runFor(runs.data, pr.prId, pr.headSha)}
+            unseen={hasUnseenChanges(seen.data, pr)}
+            now={now}
             focused={pr.prId === focusedPrId}
             onFocus={() => setFocusedPr(pr.prId)}
             onOpen={() => openPrDetail(pr.prId)}

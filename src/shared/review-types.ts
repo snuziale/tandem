@@ -38,9 +38,14 @@ export type PullRequest = {
   checkRuns: CheckRun[];
   threadCount: number;
   unresolvedThreadCount: number;
+  createdAt: string;
   updatedAt: string;
   url: string;
 };
+
+/** Last time the reviewer opened a PR in Tandem, and how fresh it was then —
+ * drives the queue's "unseen changes" marker. */
+export type SeenRecord = { prId: PrId; updatedAt: string; seenAt: string };
 
 export type FileChangeStatus = 'added' | 'removed' | 'modified' | 'renamed' | 'copied' | 'changed' | 'unchanged';
 

@@ -15,4 +15,5 @@ export const API_PATHS = {
   AGENT_HEALTH: '/api/agent/health',
   SETTINGS: '/api/settings',
   VIEWS: '/api/views',
+  SEEN: '/api/seen',
 } as const;
