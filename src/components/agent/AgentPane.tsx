@@ -51,7 +51,7 @@ export function AgentPane({ prId, run, progress, settings, onSelectFinding }: Pr
 
   return (
     <div className="h-full flex flex-col min-h-0">
-      <div className="flex items-center gap-2 px-3 py-1 border-b border-border">
+      <div className="flex items-center gap-2 px-3 h-9 border-b border-border shrink-0">
         <span className="text-[10px] uppercase tracking-wider font-mono" style={{ color: 'var(--tandem-agent)' }}>
           ● agent
         </span>

@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { FileTree as TreesFileTree, useFileTree, useFileTreeSearch } from '@pierre/trees/react';
-import type { FileTree as FileTreeModel, GitStatusEntry } from '@pierre/trees';
-import { Button, Tooltip, TooltipContent, TooltipPortal, TooltipTrigger } from '@uipath/apollo-wind';
-import { Search } from 'lucide-react';
+import { resolveTheme as resolveShikiTheme } from '@pierre/diffs';
+import { FileTree as TreesFileTree, useFileTree } from '@pierre/trees/react';
+import { themeToTreeStyles, type FileTree as FileTreeModel, type GitStatusEntry } from '@pierre/trees';
+import { Button, Input, Tooltip, TooltipContent, TooltipPortal, TooltipTrigger } from '@uipath/apollo-wind';
+import { Search, X } from 'lucide-react';
 import type { FileChange } from '../../shared/review-types';
+import { resolveTheme, useThemeStore } from '../../state/themeStore';
 
 type Props = {
   files: FileChange[];
@@ -43,7 +45,9 @@ export function FileTree({ files, viewedFiles, selectedPath, onSelect, agentPath
     flattenEmptyDirectories: true,
     stickyFolders: true,
     density: 'compact',
-    search: true,
+    // Our own search input lives in the header; the model still does the
+    // filtering (setSearch works without the built-in UI).
+    search: false,
     fileTreeSearchMode: 'hide-non-matches',
     gitStatus: gitStatusOf(files),
     onSelectionChange: (selected) => {
@@ -74,7 +78,46 @@ export function FileTree({ files, viewedFiles, selectedPath, onSelect, agentPath
     },
   });
 
-  const search = useFileTreeSearch(model);
+  // Header-owned search: open/close and the input value live in React; the
+  // model only does the filtering (setSearch). The model's own search SESSION
+  // (openSearch) is deliberately not used — it closes itself when focus isn't
+  // inside the tree, and our input lives in the header.
+  //
+  // setSearch is debounced and focus re-asserted after it fires: a model
+  // mutation re-renders the header slot, which remounts the input mid-typing.
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchValue, setSearchValue] = useState('');
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
+  const searchDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const applySearch = (value: string) => {
+    setSearchValue(value);
+    if (searchDebounce.current) clearTimeout(searchDebounce.current);
+    searchDebounce.current = setTimeout(() => {
+      model.setSearch(value || null);
+      requestAnimationFrame(() => searchInputRef.current?.focus());
+    }, 150);
+  };
+  const closeSearch = () => {
+    if (searchDebounce.current) clearTimeout(searchDebounce.current);
+    setSearchOpen(false);
+    setSearchValue('');
+    model.setSearch(null);
+  };
+
+  // Match the tree's shadow-DOM styling to the app theme via the same shiki
+  // themes the diff pane uses (themeToTreeStyles → --trees-theme-* vars).
+  const themePreference = useThemeStore((s) => s.preference);
+  const isDark = resolveTheme(themePreference) === 'future-dark';
+  const [treeStyles, setTreeStyles] = useState<Record<string, string>>({});
+  useEffect(() => {
+    let cancelled = false;
+    void resolveShikiTheme(isDark ? 'github-dark' : 'github-light').then((theme) => {
+      if (!cancelled) setTreeStyles(themeToTreeStyles(theme));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [isDark]);
 
   useEffect(() => {
     onModelReady?.(model);
@@ -104,19 +147,48 @@ export function FileTree({ files, viewedFiles, selectedPath, onSelect, agentPath
       <TreesFileTree
         model={model}
         className="flex-1 min-h-0"
+        style={treeStyles as React.CSSProperties}
         header={
-          <div className="flex items-center gap-2 px-3 py-1.5 border-b border-border bg-background sticky top-0">
-            <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-mono">files</span>
-            <span className="text-[10px] text-muted-foreground font-mono">{count}</span>
-            <span className="flex-1" />
+          // h-9 matches the diff and agent pane headers — fixed, never grows.
+          <div className="flex items-center gap-2 px-3 h-9 border-b border-border bg-background sticky top-0">
+            {searchOpen ? (
+              // The search input takes over the header row while open.
+              <Input
+                autoFocus
+                ref={searchInputRef}
+                value={searchValue}
+                onChange={(e) => applySearch(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Escape') {
+                    e.stopPropagation();
+                    closeSearch();
+                  }
+                }}
+                placeholder={`Search ${count} files…`}
+                spellCheck={false}
+                className="h-6 text-xs font-mono flex-1 min-w-0"
+              />
+            ) : (
+              <>
+                <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-mono">files</span>
+                <span className="text-[10px] text-muted-foreground font-mono">{count}</span>
+                <span className="flex-1" />
+              </>
+            )}
             <Tooltip>
               <TooltipTrigger asChild>
-                <Button size="2xs" icon variant="ghost" aria-label="Search files" onClick={() => (search.isOpen ? search.close() : search.open())}>
-                  <Search />
+                <Button
+                  size="2xs"
+                  icon
+                  variant="ghost"
+                  aria-label={searchOpen ? 'Close file search' : 'Search files'}
+                  onClick={() => (searchOpen ? closeSearch() : setSearchOpen(true))}
+                >
+                  {searchOpen ? <X /> : <Search />}
                 </Button>
               </TooltipTrigger>
               <TooltipPortal>
-                <TooltipContent>Search files</TooltipContent>
+                <TooltipContent>{searchOpen ? 'Close search' : 'Search files'}</TooltipContent>
               </TooltipPortal>
             </Tooltip>
           </div>

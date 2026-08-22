@@ -267,7 +267,7 @@ export function PrDetailView({ prId }: { prId: PrId }) {
             <ResizableHandle />
             <ResizablePanel defaultSize="62" minSize="30">
               <div className="h-full min-w-0 flex flex-col">
-                <div className="flex items-center gap-2 px-3 py-1 border-b border-border">
+                <div className="flex items-center gap-2 px-3 h-9 border-b border-border shrink-0">
                   <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-mono">diff</span>
                   <span className="text-xs text-muted-foreground font-mono truncate flex-1">{selectedPath ?? ''}</span>
                   <span className="text-[11px] text-muted-foreground font-mono">
