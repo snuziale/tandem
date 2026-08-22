@@ -2,9 +2,16 @@
 // ENTERS the queue, not when you open it. handleQueue hands every fetched PR
 // from an agent-enabled view here after responding; this module decides —
 // cache hit, cheap skip, stale sweep, or enqueue — and drains the work queue
-// at bounded concurrency. Staleness (spec §2): a moved headSha marks the old
-// run + findings stale, flags draft comments whose anchors vanished, and
-// auto-enqueues the new sha. Nothing is ever silently deleted.
+// at bounded concurrency.
+//
+// AUTOMATIC RUNS ARE OPT-IN (user decision, 2026-08-21): unless
+// settings.autoRunEnabled is true, the sweep performs only MAINTENANCE —
+// staleness marking and draft re-anchoring — and never starts a model run or
+// records a skip. Runs are user-initiated (rerun button / `r`).
+//
+// Staleness (spec §2): a moved headSha marks the old run + findings stale and
+// flags draft comments whose anchors vanished. Nothing is ever silently
+// deleted; the new sha is auto-enqueued only when auto-run is on.
 import type { AgentRun, SkipReason } from '../../shared/agent-types';
 import { diffLineIndex, type DiffLineIndex } from '../../shared/gh/patch';
 import { parsePrId } from '../../shared/gh/prKey';
@@ -51,6 +58,9 @@ async function sweep(cfg: Config, prs: PullRequest[]): Promise<void> {
         await flagMovedAnchors(cfg, pr);
       }
     }
+
+    // Maintenance stops here unless the user opted into automatic runs.
+    if (!settings.autoRunEnabled) continue;
 
     const existing = await getRun(pr.prId, pr.headSha);
     // Cache rule: never auto re-run a sha. Failed runs also stay manual —

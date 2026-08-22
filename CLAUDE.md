@@ -13,8 +13,11 @@ app, Vite/React 19 SPA, Apollo Wind, TanStack Query, Zustand.
 1. **The agent never writes to GitHub.** `server/github/submit.ts` is the ONLY module that mutates
    GitHub, and it exposes exactly two operations: submit-review and quick-approve, both
    human-triggered. The claude CLI runs with `--safe-mode --tools ''` — no write tools exist.
-2. **Pre-warming hides latency.** Every queue poll feeds `server/agent/prewarm.ts`; by the time a
-   PR is opened its findings are usually waiting, cached by `(prId, headSha)`.
+2. **Pre-warming hides latency — but automatic runs are OPT-IN** (user decision 2026-08-21,
+   overriding the spec's default). `settings.autoRunEnabled` is false by default: the queue sweep
+   only does maintenance (staleness marking, draft re-anchoring); model runs start from the rerun
+   button / `r`. When the user flips it on, every queue poll feeds `server/agent/prewarm.ts`,
+   cached by `(prId, headSha)`.
 3. **Violet = machine-authored, nowhere else.** `--tandem-agent*` tokens in `src/index.css`. Queue
    agent cell, file-tree dots, finding rails/labels, agent rows in the tray. Never reuse it.
 
@@ -75,8 +78,10 @@ duplicates drop, severity×confidence ranking under the caps (default 8 findings
   the only kill switch. SSE = replay-then-tail in one synchronous block.
 - **Cache rule**: never re-run a sha without explicit rerun. Failed runs stay manual — auto-retry
   would burn budget every poll.
-- **Prewarm** (`prewarm.ts`): cheap skips (pure `pipeline/decide.ts` — draft/caps/budget/disabled)
-  are recorded as Skipped runs without invoking the model; real work queues behind a 2-run cap.
+- **Prewarm** (`prewarm.ts`): gated on `settings.autoRunEnabled` (default OFF — runs are manual).
+  When on: cheap skips (pure `pipeline/decide.ts` — draft/caps/budget/disabled) are recorded as
+  Skipped runs without invoking the model; real work queues behind a 2-run cap. When off, the
+  sweep still does staleness marking + draft re-anchoring — that's maintenance, not a run.
 - **Staleness** (spec §2): new headSha → old run + findings `stale` (kept visible, never deleted),
   draft comments re-anchored (`anchorMoved` flags what no longer lands; draft sha advances), new
   sha auto-enqueued. State machines are edge tables in `shared/agent-types.ts`, enforced in

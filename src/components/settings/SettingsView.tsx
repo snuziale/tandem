@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Button, Card, Input, Label, Switch, cn } from '@uipath/apollo-wind';
+import { Button, Card, Input, Label, Switch, ToggleGroup, ToggleGroupItem } from '@uipath/apollo-wind';
 import { ArrowLeft } from 'lucide-react';
 import { fetchAgentHealth } from '../../api/runs';
 import { useAgentRuns } from '../../hooks/useAgentRuns';
@@ -80,8 +80,14 @@ export function SettingsView() {
             {settings ? (
               <>
                 <ToggleRow
+                  label="Run automatically (pre-warm)"
+                  hint="Off: the agent only runs when you press rerun (r) on a PR. On: PRs entering agent-enabled views are analyzed in the background."
+                  checked={settings.autoRunEnabled}
+                  onChange={(v) => patch({ autoRunEnabled: v })}
+                />
+                <ToggleRow
                   label="Analyze PRs by default"
-                  hint="Repos can override below. Agent-enabled saved views feed the pre-warm queue."
+                  hint="Repos can override below. Applies to manual and automatic runs."
                   checked={settings.agentEnabledByDefault}
                   onChange={(v) => patch({ agentEnabledByDefault: v })}
                 />
@@ -103,23 +109,23 @@ export function SettingsView() {
 
                 <div className="space-y-1.5">
                   <Label className="text-xs">Collapse findings below</Label>
-                  <div className="flex gap-1">
+                  <ToggleGroup
+                    type="single"
+                    size="sm"
+                    variant="outline"
+                    value={settings.severityThreshold}
+                    onValueChange={(threshold) => {
+                      if (threshold === 'blocker' || threshold === 'risk' || threshold === 'nit') patch({ severityThreshold: threshold });
+                    }}
+                    className="justify-start"
+                    aria-label="Severity threshold"
+                  >
                     {(['blocker', 'risk', 'nit'] as const).map((threshold) => (
-                      <button
-                        key={threshold}
-                        type="button"
-                        onClick={() => patch({ severityThreshold: threshold })}
-                        className={cn(
-                          'text-xs font-mono border rounded px-2.5 py-1',
-                          settings.severityThreshold === threshold
-                            ? 'bg-accent text-foreground border-primary/40'
-                            : 'border-border text-muted-foreground hover:bg-accent/40'
-                        )}
-                      >
+                      <ToggleGroupItem key={threshold} value={threshold} className="text-xs font-mono">
                         {threshold === 'nit' ? 'show everything' : `${threshold}+`}
-                      </button>
+                      </ToggleGroupItem>
                     ))}
-                  </div>
+                  </ToggleGroup>
                 </div>
 
                 <div className="grid grid-cols-2 gap-3 items-end">

@@ -10,8 +10,8 @@ Three principles drive every design decision:
 
 1. **The agent never writes to GitHub.** Agent output lands in a local pending-review draft. The
    only mutations are the human pressing *Submit review* or *Approve*.
-2. **Latency is hidden by pre-warming.** Analysis starts when a PR enters your queue, not when you
-   open it.
+2. **The agent runs when you ask.** By default analysis starts only from the rerun button (`r`).
+   Flip *Run automatically* in Settings to pre-warm PRs as they enter your queue instead.
 3. **Provenance is always visible.** One reserved color (violet) marks everything machine-authored.
 
 See [`CLAUDE.md`](./CLAUDE.md) for architecture and [`AGENTS.md`](./AGENTS.md) for collaboration norms.

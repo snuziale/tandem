@@ -9,6 +9,10 @@ export type PassModels = {
 };
 
 export type TandemSettings = {
+  /** Pre-warming: start runs automatically as PRs enter agent-enabled views.
+   * OFF by default — runs are user-initiated (rerun button / `r`) unless the
+   * user explicitly opts in. */
+  autoRunEnabled: boolean;
   /** Findings below this severity collapse into the Nits group in the agent pane. */
   severityThreshold: Extract<Severity, 'blocker' | 'risk' | 'nit'>;
   /** Skip the run entirely above these sizes (spec §4 cost caps). */
@@ -28,6 +32,7 @@ export type TandemSettings = {
 };
 
 export const DEFAULT_SETTINGS: TandemSettings = {
+  autoRunEnabled: false,
   severityThreshold: 'risk',
   maxChangedFiles: 40,
   maxDiffLines: 3000,

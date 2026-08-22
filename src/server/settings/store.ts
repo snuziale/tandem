@@ -41,6 +41,7 @@ export function sanitize(raw: unknown): TandemSettings {
     }
   }
   return {
+    autoRunEnabled: raw.autoRunEnabled === true,
     severityThreshold: threshold === 'blocker' || threshold === 'risk' || threshold === 'nit' ? threshold : d.severityThreshold,
     maxChangedFiles: num(raw.maxChangedFiles, d.maxChangedFiles),
     maxDiffLines: num(raw.maxDiffLines, d.maxDiffLines),
