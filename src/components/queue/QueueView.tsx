@@ -1,5 +1,4 @@
 import { useEffect } from 'react';
-import { useKeyboardNav } from '../../hooks/useKeyboardNav';
 import { useQueue } from '../../hooks/useQueue';
 import { useSavedViews, useSaveViews } from '../../hooks/useSavedViews';
 import { useUiStore } from '../../state/uiStore';
@@ -9,7 +8,6 @@ import { QueueTable } from './QueueTable';
 import { ViewTabs } from './ViewTabs';
 
 export function QueueView() {
-  useKeyboardNav();
   const viewsQuery = useSavedViews();
   const saveViews = useSaveViews();
   const views = viewsQuery.data;

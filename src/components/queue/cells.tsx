@@ -69,7 +69,7 @@ export function AgentCell({ run }: { run: AgentRun | undefined }) {
 
   if (run.status === 'queued' || run.status === 'fetching' || run.status === 'analyzing') {
     return (
-      <span className="flex items-center gap-1.5 text-xs font-mono animate-pulse" style={{ color: 'var(--tandem-agent)' }}>
+      <span className="flex items-center gap-1.5 text-xs font-mono motion-safe:animate-pulse" style={{ color: 'var(--tandem-agent)' }}>
         <Spinner className="size-3" /> Analyzing…
       </span>
     );

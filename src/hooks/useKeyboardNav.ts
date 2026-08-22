@@ -97,14 +97,20 @@ export function useKeyboardNav(): void {
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
       if (e.metaKey || e.ctrlKey || e.altKey) return;
-      // These are the QUEUE keys; the PR detail screen binds its own.
-      if (useUiStore.getState().route.name !== 'queue') return;
       if (hasOpenDialog()) return;
       if (isTypingTarget(e.target)) {
         // Esc blurs the field rather than doing anything destructive.
         if (e.key === 'Escape' && e.target instanceof HTMLElement) e.target.blur();
         return;
       }
+      // `?` works on every screen; everything else here is queue-scoped
+      // (the PR detail screen binds its own keys).
+      if (e.key === '?') {
+        e.preventDefault();
+        useUiStore.getState().setShortcutsOpen(true);
+        return;
+      }
+      if (useUiStore.getState().route.name !== 'queue') return;
       // Cheap gate before any store reads — most keys are handled by nobody.
       if (!Object.hasOwn(QUEUE_HANDLERS, e.key)) return;
       QUEUE_HANDLERS[e.key]({ e, queryClient });
