@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { ChevronDown, ChevronRight } from 'lucide-react';
+import { Markdown } from '../common/Markdown';
 
 export function DescriptionCollapse({ body }: { body: string }) {
   const [open, setOpen] = useState(false);
@@ -17,7 +18,7 @@ export function DescriptionCollapse({ body }: { body: string }) {
         {open ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
         Description · {paragraphs} paragraph{paragraphs === 1 ? '' : 's'}
       </button>
-      {open ? <div className="text-sm mt-2 mb-1 max-w-[72ch] whitespace-pre-wrap break-words">{trimmed}</div> : null}
+      {open ? <Markdown className="mt-2 mb-1 max-w-[72ch]">{trimmed}</Markdown> : null}
     </div>
   );
 }

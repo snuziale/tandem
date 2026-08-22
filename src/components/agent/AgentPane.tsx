@@ -5,6 +5,7 @@ import { startRun } from '../../api/runs';
 import { SKIP_REASON_LABEL, type AgentRun, type Finding, type RunEvent, type Severity } from '../../shared/agent-types';
 import type { TandemSettings } from '../../shared/settings-types';
 import { useUiStore } from '../../state/uiStore';
+import { Markdown } from '../common/Markdown';
 import { SeverityBadge } from './SeverityBadge';
 
 type Props = {
@@ -38,7 +39,7 @@ export function AgentPane({ prId, run, progress, settings, onSelectFinding }: Pr
   const worthRaising = visible.filter((f) => f.severity !== 'blocker');
 
   return (
-    <div className="w-[340px] shrink-0 border-l border-border flex flex-col min-h-0">
+    <div className="h-full flex flex-col min-h-0">
       <div className="flex items-center gap-2 px-3 py-1 border-b border-border">
         <span className="text-[10px] uppercase tracking-wider font-mono" style={{ color: 'var(--tandem-agent)' }}>
           ● agent
@@ -54,7 +55,7 @@ export function AgentPane({ prId, run, progress, settings, onSelectFinding }: Pr
 
         {run?.status === 'ready' ? (
           <>
-            {run.summary ? <p className="px-3 pt-1 pb-2 text-sm text-muted-foreground leading-relaxed">{run.summary}</p> : null}
+            {run.summary ? <Markdown className="px-3 pt-1 pb-2 text-muted-foreground leading-relaxed">{run.summary}</Markdown> : null}
 
             {triage.length > 0 ? (
               <div className="px-3 pb-2 flex flex-wrap gap-1">

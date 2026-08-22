@@ -1,6 +1,7 @@
 import { cn } from '@uipath/apollo-wind';
 import type { ReviewThread } from '../../shared/review-types';
 import { relativeAge } from '../../utils/time';
+import { Markdown } from '../common/Markdown';
 
 // An existing human review thread, rendered inline in the diff. Blue rail =
 // human-authored (violet is reserved for the agent).
@@ -27,7 +28,7 @@ export function ThreadCard({ thread }: { thread: ReviewThread }) {
               </span>
             ) : null}
           </div>
-          <div className="text-sm mt-1 whitespace-pre-wrap break-words">{comment.bodyMarkdown}</div>
+          <Markdown className="mt-1">{comment.bodyMarkdown}</Markdown>
         </div>
       ))}
     </div>

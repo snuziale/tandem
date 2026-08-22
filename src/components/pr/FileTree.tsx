@@ -15,7 +15,7 @@ type Props = {
 export function FileTree({ files, viewedFiles, selectedPath, onSelect, onToggleViewed, agentPaths }: Props) {
   const groups = groupByDir(files);
   return (
-    <div className="w-56 shrink-0 border-r border-border overflow-y-auto py-1">
+    <div className="h-full overflow-y-auto py-1">
       <div className="px-3 py-1 text-[10px] uppercase tracking-wider text-muted-foreground font-mono flex justify-between">
         <span>files</span>
         <span>{files.length}</span>

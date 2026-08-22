@@ -10,6 +10,8 @@ import {
   DialogHeader,
   DialogTitle,
   Textarea,
+  ToggleGroup,
+  ToggleGroupItem,
   cn,
   toast,
 } from '@uipath/apollo-wind';
@@ -92,21 +94,24 @@ export function ReviewTray({ prId, review, onVerdict, onSummary, submitDisabledR
           </span>
         </span>
         <span className="flex-1" />
-        <div className="flex items-center gap-1">
+        <ToggleGroup
+          type="single"
+          size="sm"
+          variant="outline"
+          value={verdict ?? ''}
+          onValueChange={(value) => onVerdict(value === '' ? undefined : (value as ReviewVerdict))}
+          aria-label="Review verdict"
+        >
           {VERDICTS.map((v) => (
-            <button
+            <ToggleGroupItem
               key={v.value}
-              type="button"
-              onClick={() => onVerdict(verdict === v.value ? undefined : v.value)}
-              className={cn(
-                'text-xs font-mono border rounded px-2.5 py-1',
-                verdict === v.value ? v.activeClass : 'border-border text-muted-foreground hover:bg-accent/40'
-              )}
+              value={v.value}
+              className={cn('text-xs font-mono', verdict === v.value && v.activeClass)}
             >
               {v.label}
-            </button>
+            </ToggleGroupItem>
           ))}
-        </div>
+        </ToggleGroup>
         <Button
           size="sm"
           disabled={!canSubmit || !!submitDisabledReason}

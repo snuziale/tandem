@@ -5,6 +5,7 @@ import { acceptFinding, commentBodyOf, dismissFinding } from '../../hooks/findin
 import type { Finding } from '../../shared/agent-types';
 import type { PendingComment } from '../../shared/review-types';
 import { useUiStore } from '../../state/uiStore';
+import { Markdown } from '../common/Markdown';
 
 type Props = {
   finding: Finding;
@@ -62,7 +63,7 @@ export function FindingCard({ finding, addComment }: Props) {
         ) : (
           <>
             <div className="text-sm font-semibold mt-1.5">{finding.title}</div>
-            <div className="text-sm mt-1 whitespace-pre-wrap break-words">{finding.body}</div>
+            <Markdown className="mt-1">{finding.body}</Markdown>
           </>
         )}
 

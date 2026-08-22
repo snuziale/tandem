@@ -1,6 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { Button, Spinner, cn } from '@uipath/apollo-wind';
+import {
+  Button,
+  ResizableHandle,
+  ResizablePanel,
+  ResizablePanelGroup,
+  Spinner,
+  ToggleGroup,
+  ToggleGroupItem,
+} from '@uipath/apollo-wind';
 import { ExternalLink } from 'lucide-react';
 import { startRun } from '../../api/runs';
 import { acceptFinding, dismissFinding, unstageFinding } from '../../hooks/findingActions';
@@ -238,55 +246,67 @@ export function PrDetailView({ prId }: { prId: PrId }) {
             Files failed to load: {filesQuery.error instanceof Error ? filesQuery.error.message : 'unknown error'}
           </div>
         ) : (
-          <>
-            <FileTree
-              files={files}
-              viewedFiles={review?.viewedFiles ?? []}
-              selectedPath={selectedPath}
-              onSelect={selectFile}
-              onToggleViewed={toggleViewed}
-              agentPaths={agentPaths}
-            />
-            <div className="flex-1 min-w-0 flex flex-col">
-              <div className="flex items-center gap-2 px-3 py-1 border-b border-border">
-                <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-mono">diff</span>
-                <span className="text-xs text-muted-foreground font-mono truncate flex-1">{selectedPath ?? ''}</span>
-                <span className="text-[11px] text-muted-foreground font-mono">
-                  viewed {review?.viewedFiles.length ?? 0}/{files.length}
-                </span>
-                <div className="flex border border-border rounded overflow-hidden">
-                  {(['unified', 'split'] as const).map((style) => (
-                    <button
-                      key={style}
-                      type="button"
-                      onClick={() => setDiffStyle(style)}
-                      className={cn(
-                        'px-2 py-0.5 text-[11px] font-mono',
-                        diffStyle === style ? 'bg-accent text-foreground' : 'text-muted-foreground'
-                      )}
-                    >
-                      {style}
-                    </button>
-                  ))}
-                </div>
-                <Button size="sm" variant="ghost" className="h-6 w-6 p-0" aria-label="Open on GitHub" onClick={() => openPrExternal(pr.url)}>
-                  <ExternalLink className="w-3 h-3" />
-                </Button>
-              </div>
-              <DiffPane
-                headSha={pr.headSha}
+          // react-resizable-panels v4: numeric sizes are PIXELS, strings are
+          // percents; orientation defaults to horizontal.
+          <ResizablePanelGroup className="flex-1 min-h-0">
+            <ResizablePanel defaultSize="15" minSize={150} maxSize="35">
+              <FileTree
                 files={files}
-                threads={threads}
-                pendingComments={review?.comments ?? []}
-                findings={triageFindings}
-                onAddComment={addComment}
-                onUpdateComment={updateComment}
-                onRemoveComment={removeCommentAndUnstage}
-                codeViewRef={codeViewRef}
+                viewedFiles={review?.viewedFiles ?? []}
+                selectedPath={selectedPath}
+                onSelect={selectFile}
+                onToggleViewed={toggleViewed}
+                agentPaths={agentPaths}
               />
-            </div>
-            <AgentPane prId={prId} run={run} progress={progress} settings={settings.data} onSelectFinding={focusFinding} />
-          </>
+            </ResizablePanel>
+            <ResizableHandle />
+            <ResizablePanel defaultSize="62" minSize="30">
+              <div className="h-full min-w-0 flex flex-col">
+                <div className="flex items-center gap-2 px-3 py-1 border-b border-border">
+                  <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-mono">diff</span>
+                  <span className="text-xs text-muted-foreground font-mono truncate flex-1">{selectedPath ?? ''}</span>
+                  <span className="text-[11px] text-muted-foreground font-mono">
+                    viewed {review?.viewedFiles.length ?? 0}/{files.length}
+                  </span>
+                  <ToggleGroup
+                    type="single"
+                    size="xs"
+                    variant="outline"
+                    value={diffStyle}
+                    onValueChange={(style) => {
+                      if (style === 'unified' || style === 'split') setDiffStyle(style);
+                    }}
+                    aria-label="Diff layout"
+                  >
+                    <ToggleGroupItem value="unified" className="font-mono text-[11px]">
+                      unified
+                    </ToggleGroupItem>
+                    <ToggleGroupItem value="split" className="font-mono text-[11px]">
+                      split
+                    </ToggleGroupItem>
+                  </ToggleGroup>
+                  <Button size="sm" variant="ghost" className="h-6 w-6 p-0" aria-label="Open on GitHub" onClick={() => openPrExternal(pr.url)}>
+                    <ExternalLink className="w-3 h-3" />
+                  </Button>
+                </div>
+                <DiffPane
+                  headSha={pr.headSha}
+                  files={files}
+                  threads={threads}
+                  pendingComments={review?.comments ?? []}
+                  findings={triageFindings}
+                  onAddComment={addComment}
+                  onUpdateComment={updateComment}
+                  onRemoveComment={removeCommentAndUnstage}
+                  codeViewRef={codeViewRef}
+                />
+              </div>
+            </ResizablePanel>
+            <ResizableHandle />
+            <ResizablePanel defaultSize="23" minSize={240} maxSize="45">
+              <AgentPane prId={prId} run={run} progress={progress} settings={settings.data} onSelectFinding={focusFinding} />
+            </ResizablePanel>
+          </ResizablePanelGroup>
         )}
       </div>
       <ReviewTray

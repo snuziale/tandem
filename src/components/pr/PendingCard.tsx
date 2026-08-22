@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Button, Textarea, cn } from '@uipath/apollo-wind';
 import { Pencil, Trash2 } from 'lucide-react';
 import type { PendingComment } from '../../shared/review-types';
+import { Markdown } from '../common/Markdown';
 
 type Props = {
   comment: PendingComment;
@@ -59,7 +60,7 @@ export function PendingCard({ comment, onUpdate, onRemove }: Props) {
             className="mt-1 min-h-14 text-sm font-mono"
           />
         ) : (
-          <div className="text-sm mt-1 whitespace-pre-wrap break-words">{comment.body}</div>
+          <Markdown className="mt-1">{comment.body}</Markdown>
         )}
         {comment.suggestion !== undefined ? (
           <pre className="mt-2 text-xs font-mono border border-border rounded p-2 overflow-x-auto bg-accent/30">
