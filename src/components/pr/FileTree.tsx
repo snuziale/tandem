@@ -111,14 +111,8 @@ export function FileTree({ files, viewedFiles, selectedPath, onSelect, agentPath
             <span className="flex-1" />
             <Tooltip>
               <TooltipTrigger asChild>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  className="h-6 w-6 p-0"
-                  aria-label="Search files"
-                  onClick={() => (search.isOpen ? search.close() : search.open())}
-                >
-                  <Search className="w-3.5 h-3.5" />
+                <Button size="2xs" icon variant="ghost" aria-label="Search files" onClick={() => (search.isOpen ? search.close() : search.open())}>
+                  <Search />
                 </Button>
               </TooltipTrigger>
               <TooltipPortal>

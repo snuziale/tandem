@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { Toggle, Tooltip, TooltipContent, TooltipPortal, TooltipTrigger } from '@uipath/apollo-wind';
-import { SlidersHorizontal } from 'lucide-react';
+import { Button, Tooltip, TooltipContent, TooltipPortal, TooltipTrigger } from '@uipath/apollo-wind';
+import { Braces, SlidersHorizontal, X } from 'lucide-react';
 import { useQueue } from '../../hooks/useQueue';
 import { useSavedViews, useSaveViews } from '../../hooks/useSavedViews';
 import type { SavedView } from '../../shared/review-types';
@@ -64,26 +64,30 @@ export function QueueView() {
           activeViewId={activeViewId}
           onSelect={(id) => setActiveView(id)}
           onAddView={() => setEditor({ mode: 'new' })}
-          onOpenJson={() => setJsonOpen(true)}
         />
         <Tooltip>
           <TooltipTrigger asChild>
-            <Toggle
-              size="sm"
-              pressed={queryBarOpen}
-              onPressedChange={setQueryBarOpen}
-              aria-label="Show the view's query"
-              className="h-7 w-7 p-0 shrink-0"
-            >
-              <SlidersHorizontal className="w-3.5 h-3.5" />
-            </Toggle>
+            <Button size="2xs" icon variant="ghost" aria-label="Show the view's raw query" onClick={() => setQueryBarOpen((o) => !o)}>
+              {queryBarOpen ? <X /> : <SlidersHorizontal />}
+            </Button>
           </TooltipTrigger>
           <TooltipPortal>
-            <TooltipContent>Show / edit the view's raw query (/)</TooltipContent>
+            <TooltipContent>{queryBarOpen ? 'Hide' : 'Show / edit'} the view's raw query (/)</TooltipContent>
           </TooltipPortal>
         </Tooltip>
         <div className="flex-1" />
-        <TopBarActions />
+        <TopBarActions>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button size="2xs" icon variant="ghost" aria-label="Views as JSON" onClick={() => setJsonOpen(true)}>
+                <Braces />
+              </Button>
+            </TooltipTrigger>
+            <TooltipPortal>
+              <TooltipContent>View / export / import the views as JSON</TooltipContent>
+            </TooltipPortal>
+          </Tooltip>
+        </TopBarActions>
       </header>
       {queryBarOpen && activeView ? (
         <QueryBar

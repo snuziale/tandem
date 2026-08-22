@@ -59,10 +59,10 @@ export function ComposerCard({ target, onSubmit, onCancel }: Props) {
         />
       ) : null}
       <div className="flex items-center justify-end gap-2">
-        <Button size="sm" variant="ghost" onClick={onCancel}>
+        <Button size="xs" variant="ghost" onClick={onCancel}>
           Cancel
         </Button>
-        <Button size="sm" disabled={!canSubmit} onClick={submit}>
+        <Button size="xs" disabled={!canSubmit} onClick={submit}>
           Add to review
         </Button>
       </div>

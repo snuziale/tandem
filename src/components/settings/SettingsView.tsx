@@ -234,7 +234,7 @@ function AgentsCard({ settings, onPatch }: { settings: TandemSettings; onPatch: 
             </ToggleGroupItem>
           ))}
         </ToggleGroup>
-        <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={addAgent}>
+        <Button size="xs" variant="ghost" onClick={addAgent}>
           + agent
         </Button>
       </div>
@@ -274,22 +274,10 @@ function AgentsCard({ settings, onPatch }: { settings: TandemSettings; onPatch: 
       ))}
 
       <div className="flex items-center gap-2">
-        <Button
-          size="sm"
-          variant="outline"
-          className="h-7 px-2 text-xs"
-          disabled={settings.defaultAgentId === agent.id}
-          onClick={() => onPatch({ defaultAgentId: agent.id })}
-        >
+        <Button size="xs" variant="outline" disabled={settings.defaultAgentId === agent.id} onClick={() => onPatch({ defaultAgentId: agent.id })}>
           Make default
         </Button>
-        <Button
-          size="sm"
-          variant="ghost"
-          className="h-7 px-2 text-xs text-destructive"
-          disabled={settings.agents.length <= 1}
-          onClick={deleteAgent}
-        >
+        <Button size="xs" variant="ghost" disabled={settings.agents.length <= 1} onClick={deleteAgent}>
           Delete agent
         </Button>
       </div>
@@ -334,7 +322,7 @@ function PromptField({
             <span className="text-[10px] uppercase tracking-wide" style={{ color: 'var(--tandem-agent)' }}>
               customized
             </span>
-            <Button size="sm" variant="ghost" className="h-5 px-1.5 text-[10px]" onClick={() => onCommit(defaultValue)}>
+            <Button size="3xs" variant="ghost" onClick={() => onCommit(defaultValue)}>
               reset to default
             </Button>
           </>
@@ -450,9 +438,8 @@ function RepoOverrides({ settings, onPatch }: { settings: TandemSettings; onPatc
             onCheckedChange={(v) => onPatch({ repos: { ...settings.repos, [repo]: { agentEnabled: v } } })}
           />
           <Button
-            size="sm"
+            size="2xs"
             variant="ghost"
-            className="h-6 px-1.5 text-[11px]"
             onClick={() => {
               const next = { ...settings.repos };
               delete next[repo];
@@ -471,7 +458,7 @@ function RepoOverrides({ settings, onPatch }: { settings: TandemSettings; onPatc
           placeholder="owner/repo"
           className="h-7 text-xs font-mono flex-1"
         />
-        <Button size="sm" variant="outline" className="h-7 px-2 text-[11px]" onClick={add}>
+        <Button size="xs" variant="outline" onClick={add}>
           Add override
         </Button>
       </div>

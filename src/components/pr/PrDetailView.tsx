@@ -228,7 +228,7 @@ export function PrDetailView({ prId }: { prId: PrId }) {
           <div>
             Could not load {prId}: {detail.error instanceof Error ? detail.error.message : 'not found'}
           </div>
-          <Button variant="outline" size="sm" onClick={() => navigate({ name: 'queue' })}>
+          <Button variant="outline" size="xs" onClick={() => navigate({ name: 'queue' })}>
             Back to queue
           </Button>
         </div>
@@ -274,13 +274,7 @@ export function PrDetailView({ prId }: { prId: PrId }) {
                     viewed {review?.viewedFiles.length ?? 0}/{files.length}
                   </span>
                   {selectedPath ? (
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      className="h-6 px-2 text-[11px]"
-                      onClick={() => toggleViewed(selectedPath)}
-                      title="Toggle viewed for the selected file (v)"
-                    >
+                    <Button size="2xs" variant="ghost" onClick={() => toggleViewed(selectedPath)} title="Toggle viewed for the selected file (v)">
                       {review?.viewedFiles.includes(selectedPath) ? '✓ viewed' : 'mark viewed'}
                     </Button>
                   ) : null}
@@ -301,8 +295,8 @@ export function PrDetailView({ prId }: { prId: PrId }) {
                       split
                     </ToggleGroupItem>
                   </ToggleGroup>
-                  <Button size="sm" variant="ghost" className="h-6 w-6 p-0" aria-label="Open on GitHub" onClick={() => openPrExternal(pr.url)}>
-                    <ExternalLink className="w-3 h-3" />
+                  <Button size="2xs" icon variant="ghost" aria-label="Open on GitHub" onClick={() => openPrExternal(pr.url)}>
+                    <ExternalLink />
                   </Button>
                 </div>
                 <DiffPane

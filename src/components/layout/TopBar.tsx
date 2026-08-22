@@ -12,16 +12,17 @@ const THEME_ICON: Record<ThemePreference, typeof Sun> = {
 
 export function BrandMark() {
   return (
-    <button type="button" className="flex items-baseline gap-2 shrink-0" onClick={() => navigate({ name: 'queue' })}>
+    <button type="button" className="flex items-center gap-2 shrink-0" onClick={() => navigate({ name: 'queue' })}>
+      <img src="/favicon.svg" alt="" className="w-5 h-5 rounded" />
       <span className="font-semibold tracking-[0.2em] text-sm">TANDEM</span>
-      <span className="text-xs text-muted-foreground max-lg:hidden">review center</span>
     </button>
   );
 }
 
-/** Right-side controls: agent status pill, settings, theme. Shared by the
- * standard TopBar and the queue's merged header row. */
-export function TopBarActions() {
+/** Right-side controls: agent pill · settings · {children} · theme. The theme
+ * cycler is ALWAYS the last item; screen-specific buttons (e.g. the queue's
+ * views-JSON) slot in via children, right of settings. */
+export function TopBarActions({ children }: { children?: React.ReactNode }) {
   const preference = useThemeStore((s) => s.preference);
   const cyclePreference = useThemeStore((s) => s.cyclePreference);
   const Icon = THEME_ICON[preference];
@@ -43,18 +44,19 @@ export function TopBarActions() {
       </span>
       <Tooltip>
         <TooltipTrigger asChild>
-          <Button variant="ghost" size="icon" className="size-8" onClick={() => navigate({ name: 'settings' })} aria-label="Settings">
-            <Settings className="w-4 h-4" />
+          <Button size="xs" icon variant="ghost" aria-label="Settings" onClick={() => navigate({ name: 'settings' })}>
+            <Settings />
           </Button>
         </TooltipTrigger>
         <TooltipPortal>
           <TooltipContent>Settings</TooltipContent>
         </TooltipPortal>
       </Tooltip>
+      {children}
       <Tooltip>
         <TooltipTrigger asChild>
-          <Button variant="ghost" size="icon" className="size-8" onClick={cyclePreference} aria-label="Cycle theme">
-            <Icon className="w-4 h-4" />
+          <Button size="xs" icon variant="ghost" aria-label="Cycle theme" onClick={cyclePreference}>
+            <Icon />
           </Button>
         </TooltipTrigger>
         <TooltipPortal>

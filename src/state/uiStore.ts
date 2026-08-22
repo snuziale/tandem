@@ -44,7 +44,7 @@ type UiState = {
 
   // The queue's query row is hidden until its toggle latches on (or `/`).
   queryBarOpen: boolean;
-  setQueryBarOpen: (open: boolean) => void;
+  setQueryBarOpen: (open: boolean | ((current: boolean) => boolean)) => void;
 };
 
 export const useUiStore = create<UiState>()(
@@ -77,7 +77,7 @@ export const useUiStore = create<UiState>()(
       setShortcutsOpen: (open) => set({ shortcutsOpen: open }),
 
       queryBarOpen: false,
-      setQueryBarOpen: (open) => set({ queryBarOpen: open }),
+      setQueryBarOpen: (open) => set((s) => ({ queryBarOpen: typeof open === 'function' ? open(s.queryBarOpen) : open })),
     }),
     {
       name: 'tandem:ui:v1',

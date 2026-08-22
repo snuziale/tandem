@@ -89,7 +89,7 @@ export function ViewEditorDialog({ view, open, onClose, onSave, onDelete }: Edit
           {view && onDelete ? (
             <Button
               variant="ghost"
-              className="mr-auto text-destructive"
+              className="mr-auto"
               onClick={() => {
                 onDelete(view.id);
                 onClose();

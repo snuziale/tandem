@@ -56,20 +56,14 @@ export function AgentPane({ prId, run, progress, settings, onSelectFinding }: Pr
           ● agent
         </span>
         <span className="flex-1" />
-        <Button
-          size="sm"
-          variant="ghost"
-          className="h-6 px-2 text-[11px]"
-          disabled={rerun.isPending || isActive(run)}
-          onClick={() => rerun.mutate(undefined)}
-        >
-          rerun <span className="ml-1 opacity-60">r</span>
+        <Button size="2xs" variant="ghost" disabled={rerun.isPending || isActive(run)} onClick={() => rerun.mutate(undefined)}>
+          rerun <span className="opacity-60">r</span>
         </Button>
         {agents.length > 1 ? (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button size="sm" variant="ghost" className="h-6 w-5 p-0" aria-label="Run with a specific agent" disabled={rerun.isPending || isActive(run)}>
-                <ChevronDown className="w-3 h-3" />
+              <Button size="2xs" icon variant="ghost" aria-label="Run with a specific agent" disabled={rerun.isPending || isActive(run)}>
+                <ChevronDown />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
@@ -155,7 +149,7 @@ function StatusCard({ run, progress, onStart, starting }: { run: AgentRun | unde
       <div className="px-3 py-2 space-y-1.5">
         {run?.status === 'stale' ? <div className="text-xs text-yellow-400 font-mono">new commits — findings below are stale</div> : null}
         {run?.status === 'failed' ? <div className="text-xs text-destructive font-mono break-words">run failed: {run.error}</div> : null}
-        <Button size="sm" variant="outline" onClick={onStart} disabled={starting}>
+        <Button size="xs" variant="outline" onClick={onStart} disabled={starting}>
           {starting ? 'Starting…' : run ? 'Rerun agent' : 'Run agent'}
         </Button>
       </div>

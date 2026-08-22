@@ -81,8 +81,7 @@ export function FindingCard({ finding, addComment }: Props) {
           {editing ? (
             <>
               <Button
-                size="sm"
-                className="h-6 px-2 text-[11px]"
+                size="2xs"
                 onClick={() => {
                   void acceptFinding(queryClient, finding, addComment, { editedBody: draft });
                   setEditingFinding(null);
@@ -90,25 +89,24 @@ export function FindingCard({ finding, addComment }: Props) {
               >
                 Add edited to review
               </Button>
-              <Button size="sm" variant="ghost" className="h-6 px-2 text-[11px]" onClick={() => setEditingFinding(null)}>
+              <Button size="2xs" variant="ghost" onClick={() => setEditingFinding(null)}>
                 Cancel
               </Button>
             </>
           ) : (
             <>
               <Button
-                size="sm"
+                size="2xs"
                 variant="outline"
-                className="h-6 px-2 text-[11px]"
                 style={{ borderColor: 'var(--tandem-agent-dim)', color: 'var(--tandem-agent)' }}
                 onClick={() => void acceptFinding(queryClient, finding, addComment)}
               >
                 Add to review
               </Button>
-              <Button size="sm" variant="ghost" className="h-6 px-2 text-[11px]" onClick={() => setEditingFinding(finding.id)}>
+              <Button size="2xs" variant="ghost" onClick={() => setEditingFinding(finding.id)}>
                 Edit
               </Button>
-              <Button size="sm" variant="ghost" className="h-6 px-2 text-[11px]" onClick={() => void dismissFinding(queryClient, finding)}>
+              <Button size="2xs" variant="ghost" onClick={() => void dismissFinding(queryClient, finding)}>
                 Dismiss
               </Button>
               <span className="flex-1" />

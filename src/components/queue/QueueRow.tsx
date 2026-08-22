@@ -70,9 +70,8 @@ export function QueueRow({ pr, run, unseen, now, focused, onFocus, onOpen }: Pro
             hovering never changes the row height. */}
         <div className="invisible group-hover:visible flex items-center gap-1 shrink-0">
           <Button
-            size="sm"
+            size="2xs"
             variant="outline"
-            className="h-6 px-2 text-[11px]"
             disabled={pr.isDraft || !!blocker}
             title={blocker ? `Agent found a blocker: ${blocker.title} (shift+A overrides)` : undefined}
             onClick={(e) => {
@@ -80,19 +79,19 @@ export function QueueRow({ pr, run, unseen, now, focused, onFocus, onOpen }: Pro
               void approvePrAction(queryClient, pr.prId);
             }}
           >
-            <Check className="w-3 h-3 mr-1" /> Approve
+            <Check /> Approve
           </Button>
           <Button
-            size="sm"
+            size="2xs"
+            icon
             variant="ghost"
-            className="h-6 w-6 p-0"
             aria-label="Open on GitHub"
             onClick={(e) => {
               e.stopPropagation();
               openPrExternal(pr.url);
             }}
           >
-            <ExternalLink className="w-3 h-3" />
+            <ExternalLink />
           </Button>
         </div>
       </div>

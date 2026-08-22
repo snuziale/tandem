@@ -87,12 +87,12 @@ export function CredentialsForm({ fields, initialValues, submitLabel, mode, onSa
         <Button
           type="button"
           variant="outline"
-          size="sm"
+          size="xs"
           onClick={runTest}
           disabled={!canTest || test.kind === 'testing'}
           title={!canTest ? 'Re-enter the token to test the connection' : undefined}
         >
-          {test.kind === 'testing' ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : null}
+          {test.kind === 'testing' ? <Loader2 className="animate-spin" /> : null}
           Test connection
         </Button>
         {test.kind === 'result' && test.result.ok ? (
@@ -116,7 +116,7 @@ export function CredentialsForm({ fields, initialValues, submitLabel, mode, onSa
           </Button>
         ) : null}
         <Button type="submit" disabled={saving || missingRequired}>
-          {saving ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : null}
+          {saving ? <Loader2 className="animate-spin" /> : null}
           {submitLabel}
         </Button>
       </div>

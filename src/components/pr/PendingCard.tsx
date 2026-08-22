@@ -29,11 +29,11 @@ export function PendingCard({ comment, onUpdate, onRemove }: Props) {
           </span>
           {comment.anchorMoved ? <span className="text-yellow-400">anchor moved — fix before submit</span> : null}
           <span className="flex-1" />
-          <Button size="sm" variant="ghost" className="h-5 w-5 p-0" aria-label="Edit" onClick={() => setEditing((v) => !v)}>
-            <Pencil className="w-3 h-3" />
+          <Button size="3xs" icon variant="ghost" aria-label="Edit" onClick={() => setEditing((v) => !v)}>
+            <Pencil />
           </Button>
-          <Button size="sm" variant="ghost" className="h-5 w-5 p-0" aria-label="Remove from review" onClick={onRemove}>
-            <Trash2 className="w-3 h-3" />
+          <Button size="3xs" icon variant="ghost" aria-label="Remove from review" onClick={onRemove}>
+            <Trash2 />
           </Button>
         </div>
         {editing ? (

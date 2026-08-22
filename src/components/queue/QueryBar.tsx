@@ -45,8 +45,8 @@ export function QueryBar({ query, onCommit, onEditView, rateLimit, dataUpdatedAt
         spellCheck={false}
         className="h-7 font-mono text-xs flex-1"
       />
-      <Button size="sm" variant="ghost" className="h-7 w-7 p-0 shrink-0" aria-label="Edit this view" onClick={onEditView}>
-        <Pencil className="w-3.5 h-3.5" />
+      <Button size="2xs" icon variant="ghost" aria-label="Edit this view" onClick={onEditView}>
+        <Pencil />
       </Button>
       <span className="text-[11px] text-muted-foreground font-mono shrink-0">
         {rateLimit ? `GraphQL ${rateLimit.remaining}/${rateLimit.limit} · ` : ''}

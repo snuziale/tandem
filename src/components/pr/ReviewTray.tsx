@@ -113,7 +113,7 @@ export function ReviewTray({ prId, review, onVerdict, onSummary, submitDisabledR
           ))}
         </ToggleGroup>
         <Button
-          size="sm"
+          size="xs"
           disabled={!canSubmit || !!submitDisabledReason}
           title={submitDisabledReason ?? (!verdict ? 'Pick a verdict first' : undefined)}
           onClick={() => setConfirmOpen(true)}
