@@ -83,11 +83,16 @@ const QUEUE_HANDLERS: Record<string, (ctx: NavCtx) => void> = {
     void ctx.queryClient.invalidateQueries({ queryKey: ['queue'] });
   },
   '/': (ctx) => {
-    const input = document.getElementById('queue-query-input');
-    if (!(input instanceof HTMLInputElement)) return;
     ctx.e.preventDefault();
-    input.focus();
-    input.select();
+    // The query row hides until latched — `/` latches it, then focuses.
+    useUiStore.getState().setQueryBarOpen(true);
+    requestAnimationFrame(() => {
+      const input = document.getElementById('queue-query-input');
+      if (input instanceof HTMLInputElement) {
+        input.focus();
+        input.select();
+      }
+    });
   },
 };
 

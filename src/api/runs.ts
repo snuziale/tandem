@@ -9,8 +9,8 @@ export function fetchRuns(): Promise<RunsSnapshot> {
   return apiRequest<RunsSnapshot>(API_PATHS.RUNS);
 }
 
-export function startRun(prId: PrId, force = false): Promise<{ run: AgentRun; started: boolean }> {
-  return apiRequest<{ run: AgentRun; started: boolean }>(`${API_PATHS.RUNS}/start`, { method: 'POST', body: { prId, force } });
+export function startRun(prId: PrId, force = false, agentId?: string): Promise<{ run: AgentRun; started: boolean }> {
+  return apiRequest<{ run: AgentRun; started: boolean }>(`${API_PATHS.RUNS}/start`, { method: 'POST', body: { prId, force, agentId } });
 }
 
 export function cancelRun(runId: string): Promise<{ ok: boolean }> {

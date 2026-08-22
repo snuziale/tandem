@@ -13,6 +13,10 @@ app, Vite/React 19 SPA, Apollo Wind, TanStack Query, Zustand.
 1. **The agent never writes to GitHub.** `server/github/submit.ts` is the ONLY module that mutates
    GitHub, and it exposes exactly two operations: submit-review and quick-approve, both
    human-triggered. The claude CLI runs with `--safe-mode --tools ''` — no write tools exist.
+   **One sanctioned exception, explicitly opt-in**: `settings.autoApprove` (default OFF) lets
+   `maybeAutoApprove` in `pipeline/run.ts` post an empty APPROVE when EVERY gate holds — pass-3
+   score ≥ threshold, zero undismissed blocker/risk findings, checks green (unless waived), not a
+   draft, and no human draft in progress. Never widen those gates silently.
 2. **Pre-warming hides latency — but automatic runs are OPT-IN** (user decision 2026-08-21,
    overriding the spec's default). `settings.autoRunEnabled` is false by default: the queue sweep
    only does maintenance (staleness marking, draft re-anchoring); model runs start from the rerun
@@ -74,11 +78,16 @@ errors, and a single 502-retry in `github/client.ts`.
 3. **Reconcile** (sonnet): candidates + existing human threads → deduped, ranked, capped final set
    + run summary. This pass keeps output signal-dense; do not skip it.
 
-**Prompts are half-configurable**: the instruction blocks (rules + per-pass missions) live in
-`shared/prompt-defaults.ts`, are overridable via `settings.prompts` (Settings → Agent prompts,
-with per-field reset), and interpolate `{findingCap}`/`{nitCap}` in reconcile. The data blocks
-and JSON output contracts in `pipeline/prompts.ts` stay code-owned — they must match the zod
-schemas, and parse.ts re-enforces the rules regardless of prompt edits.
+**Agents are configurable profiles** (`settings.agents: AgentProfile[]` + `defaultAgentId`): each
+profile carries its own per-pass models and prompt instruction blocks, so agents can specialize
+(security sweep, test-coverage, …). Runs record `agentId`/`agentName`; the pane's rerun menu can
+run any profile; prewarm/plain reruns use the default. Legacy top-level `models`/`prompts`
+migrate into the default profile on load (settings/store.ts sanitizeAgents). Defaults live in
+`shared/prompt-defaults.ts` (per-field reset in Settings); `{findingCap}`/`{nitCap}` interpolate
+in reconcile. The data blocks and JSON output contracts in `pipeline/prompts.ts` stay code-owned —
+they must match the zod schemas, and parse.ts re-enforces the rules regardless of prompt edits.
+Pass 3 also emits a 0-100 merge-readiness `score` (stored on the run, shown in queue + pane) —
+the auto-approve gate reads it.
 
 Model output is untrusted (`pipeline/parse.ts`): last-JSON extraction → zod (`shared/
 finding-schema.ts`) → ONE repair attempt → visible failure. Then deterministic re-enforcement:
@@ -133,6 +142,14 @@ One controlled `CodeView` hosts every file (`components/pr/DiffPane.tsx`):
 - `scrollTo` against virtualized estimates lands short — scroll twice (immediately + ~350ms).
 - Split/unified via `options.diffStyle`; theming via `options.theme {dark, light}` +
   `options.themeType` (shadow DOM — Tailwind classes don't reach inside).
+
+The FILE TREE is `@pierre/trees` (`components/pr/FileTree.tsx`): `useFileTree` constructs the
+model ONCE — later state reaches rows through model methods, so `renderRowDecoration` reads a
+ref (`stateRef`) and a `setGitStatus(freshArray)` call after viewed/agent changes re-renders the
+visible rows. Git-status badges come from the PR's change types; decorations carry `+a −d`,
+viewed ✓, and the violet agent dot. External selection follows the `selectedPath` prop
+(select + scrollToPath). The tree owns its keyboard (arrows, a-z type-ahead, search) — the detail
+key handler bails when the event target is inside `[data-tandem-filetree]`.
 
 ## Layout
 

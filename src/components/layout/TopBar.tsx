@@ -10,7 +10,18 @@ const THEME_ICON: Record<ThemePreference, typeof Sun> = {
   system: SunMoon,
 };
 
-export function TopBar() {
+export function BrandMark() {
+  return (
+    <button type="button" className="flex items-baseline gap-2 shrink-0" onClick={() => navigate({ name: 'queue' })}>
+      <span className="font-semibold tracking-[0.2em] text-sm">TANDEM</span>
+      <span className="text-xs text-muted-foreground max-lg:hidden">review center</span>
+    </button>
+  );
+}
+
+/** Right-side controls: agent status pill, settings, theme. Shared by the
+ * standard TopBar and the queue's merged header row. */
+export function TopBarActions() {
   const preference = useThemeStore((s) => s.preference);
   const cyclePreference = useThemeStore((s) => s.cyclePreference);
   const Icon = THEME_ICON[preference];
@@ -18,17 +29,14 @@ export function TopBar() {
   const liveCount = runs.data?.liveCount ?? 0;
 
   return (
-    <header className="flex items-center gap-3 px-4 h-12 border-b border-border shrink-0">
-      <button type="button" className="flex items-baseline gap-2" onClick={() => navigate({ name: 'queue' })}>
-        <span className="font-semibold tracking-[0.2em] text-sm">TANDEM</span>
-        <span className="text-xs text-muted-foreground">review center</span>
-      </button>
-      <div className="flex-1" />
+    <>
       <span
-        className={cn('flex items-center gap-1.5 text-xs font-mono', liveCount === 0 && 'text-muted-foreground')}
+        className={cn('flex items-center gap-1.5 text-xs font-mono shrink-0', liveCount === 0 && 'text-muted-foreground')}
         style={liveCount > 0 ? { color: 'var(--tandem-agent)' } : undefined}
       >
-        agent <span className={cn('inline-block w-1.5 h-1.5 rounded-full', liveCount > 0 ? 'motion-safe:animate-pulse' : 'bg-muted-foreground/40')}
+        agent{' '}
+        <span
+          className={cn('inline-block w-1.5 h-1.5 rounded-full', liveCount > 0 ? 'motion-safe:animate-pulse' : 'bg-muted-foreground/40')}
           style={liveCount > 0 ? { background: 'var(--tandem-agent)' } : undefined}
         />{' '}
         {liveCount > 0 ? `${liveCount} running` : 'idle'}
@@ -53,6 +61,16 @@ export function TopBar() {
           <TooltipContent>Theme: {preference}</TooltipContent>
         </TooltipPortal>
       </Tooltip>
+    </>
+  );
+}
+
+export function TopBar() {
+  return (
+    <header className="flex items-center gap-3 px-4 h-12 border-b border-border shrink-0">
+      <BrandMark />
+      <div className="flex-1" />
+      <TopBarActions />
     </header>
   );
 }

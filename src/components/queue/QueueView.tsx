@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react';
+import { Toggle, Tooltip, TooltipContent, TooltipPortal, TooltipTrigger } from '@uipath/apollo-wind';
+import { SlidersHorizontal } from 'lucide-react';
 import { useQueue } from '../../hooks/useQueue';
 import { useSavedViews, useSaveViews } from '../../hooks/useSavedViews';
 import type { SavedView } from '../../shared/review-types';
 import { useUiStore } from '../../state/uiStore';
-import { TopBar } from '../layout/TopBar';
+import { BrandMark, TopBarActions } from '../layout/TopBar';
 import { QueryBar } from './QueryBar';
 import { QueueTable } from './QueueTable';
 import { ViewEditorDialog, ViewsJsonDialog } from './ViewDialogs';
@@ -48,18 +50,42 @@ export function QueueView() {
     if (activeViewId === id) setActiveView(remaining[0]?.id ?? null);
   };
 
+  const queryBarOpen = useUiStore((s) => s.queryBarOpen);
+  const setQueryBarOpen = useUiStore((s) => s.setQueryBarOpen);
+
   return (
     <div className="h-dvh flex flex-col bg-background text-foreground">
-      <TopBar />
-      <ViewTabs
-        views={views ?? []}
-        counts={queue.data?.counts ?? {}}
-        activeViewId={activeViewId}
-        onSelect={(id) => setActiveView(id)}
-        onAddView={() => setEditor({ mode: 'new' })}
-        onOpenJson={() => setJsonOpen(true)}
-      />
-      {activeView ? (
+      {/* One header row: brand · view tabs · query toggle · agent/settings/theme. */}
+      <header className="flex items-center gap-3 px-4 h-12 border-b border-border shrink-0">
+        <BrandMark />
+        <ViewTabs
+          views={views ?? []}
+          counts={queue.data?.counts ?? {}}
+          activeViewId={activeViewId}
+          onSelect={(id) => setActiveView(id)}
+          onAddView={() => setEditor({ mode: 'new' })}
+          onOpenJson={() => setJsonOpen(true)}
+        />
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Toggle
+              size="sm"
+              pressed={queryBarOpen}
+              onPressedChange={setQueryBarOpen}
+              aria-label="Show the view's query"
+              className="h-7 w-7 p-0 shrink-0"
+            >
+              <SlidersHorizontal className="w-3.5 h-3.5" />
+            </Toggle>
+          </TooltipTrigger>
+          <TooltipPortal>
+            <TooltipContent>Show / edit the view's raw query (/)</TooltipContent>
+          </TooltipPortal>
+        </Tooltip>
+        <div className="flex-1" />
+        <TopBarActions />
+      </header>
+      {queryBarOpen && activeView ? (
         <QueryBar
           query={activeView.query}
           onCommit={(query) => {

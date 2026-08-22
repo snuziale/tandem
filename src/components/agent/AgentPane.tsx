@@ -1,6 +1,16 @@
 import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { Button, Spinner, cn, toast } from '@uipath/apollo-wind';
+import {
+  Button,
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+  Spinner,
+  cn,
+  toast,
+} from '@uipath/apollo-wind';
+import { ChevronDown } from 'lucide-react';
 import { startRun } from '../../api/runs';
 import { SKIP_REASON_LABEL, type AgentRun, type Finding, type RunEvent, type Severity } from '../../shared/agent-types';
 import type { TandemSettings } from '../../shared/settings-types';
@@ -26,10 +36,11 @@ export function AgentPane({ prId, run, progress, settings, onSelectFinding }: Pr
   const [showNits, setShowNits] = useState(false);
 
   const rerun = useMutation({
-    mutationFn: () => startRun(prId, true),
+    mutationFn: (agentId?: string) => startRun(prId, true, agentId),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['runs'] }),
     onError: (e) => toast.error('Could not start run', { description: e instanceof Error ? e.message : undefined }),
   });
+  const agents = settings?.agents ?? [];
 
   const triage = (run?.findings ?? []).filter((f) => f.state === 'proposed' || f.state === 'edited');
   const threshold = settings?.severityThreshold ?? 'risk';
@@ -45,13 +56,38 @@ export function AgentPane({ prId, run, progress, settings, onSelectFinding }: Pr
           ● agent
         </span>
         <span className="flex-1" />
-        <Button size="sm" variant="ghost" className="h-6 px-2 text-[11px]" disabled={rerun.isPending || isActive(run)} onClick={() => rerun.mutate()}>
+        <Button
+          size="sm"
+          variant="ghost"
+          className="h-6 px-2 text-[11px]"
+          disabled={rerun.isPending || isActive(run)}
+          onClick={() => rerun.mutate(undefined)}
+        >
           rerun <span className="ml-1 opacity-60">r</span>
         </Button>
+        {agents.length > 1 ? (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button size="sm" variant="ghost" className="h-6 w-5 p-0" aria-label="Run with a specific agent" disabled={rerun.isPending || isActive(run)}>
+                <ChevronDown className="w-3 h-3" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              {agents.map((agent) => (
+                <DropdownMenuItem key={agent.id} onSelect={() => rerun.mutate(agent.id)}>
+                  <span className="text-xs">
+                    Run with {agent.name}
+                    {agent.id === settings?.defaultAgentId ? ' (default)' : ''}
+                  </span>
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        ) : null}
       </div>
 
       <div className="flex-1 overflow-y-auto">
-        <StatusCard run={run} progress={progress} onStart={() => rerun.mutate()} starting={rerun.isPending} />
+        <StatusCard run={run} progress={progress} onStart={() => rerun.mutate(undefined)} starting={rerun.isPending} />
 
         {run?.status === 'ready' ? (
           <>
@@ -148,13 +184,20 @@ function StatusCard({ run, progress, onStart, starting }: { run: AgentRun | unde
   const duration = run.startedAt && run.finishedAt ? `${Math.round((+new Date(run.finishedAt) - +new Date(run.startedAt)) / 1000)}s` : null;
   const cost = run.costUsd > 0 ? `$${run.costUsd.toFixed(2)}` : `${Math.round(run.tokensUsed / 1000)}k tok`;
   return (
-    <div className="px-3 py-2 flex items-center gap-2 text-xs font-mono text-muted-foreground">
-      <span className="text-emerald-400">● review ready</span>
-      <span className="flex-1" />
-      <span>
-        {run.headSha.slice(0, 7)}
-        {duration ? ` · ${duration}` : ''} · {cost}
-      </span>
+    <div className="px-3 py-2 space-y-1">
+      <div className="flex items-center gap-2 text-xs font-mono text-muted-foreground">
+        <span className="text-emerald-400">● review ready</span>
+        {run.score !== undefined ? <span className="text-foreground/80">score {run.score}/100</span> : null}
+        <span className="flex-1" />
+        <span>
+          {run.headSha.slice(0, 7)}
+          {duration ? ` · ${duration}` : ''} · {cost}
+        </span>
+      </div>
+      <div className="flex items-center gap-2 text-[10px] font-mono text-muted-foreground">
+        {run.agentName ? <span>{run.agentName}</span> : null}
+        {run.autoApproved ? <span className="text-emerald-400">✓ auto-approved</span> : null}
+      </div>
     </div>
   );
 }

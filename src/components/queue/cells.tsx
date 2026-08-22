@@ -125,11 +125,17 @@ export function AgentCell({ run }: { run: AgentRun | undefined }) {
     return <span className="text-xs text-yellow-600 dark:text-yellow-400">Stale · new commits</span>;
   }
 
+  const score = run.score !== undefined ? ` · ${run.score}/100` : '';
   const triage = run.findings.filter((f) => f.state !== 'dismissed');
   if (triage.length === 0) {
     return (
       <span className="text-xs">
-        <span className="font-medium">Nothing to flag</span> <span className="text-muted-foreground">· safe to review fast</span>
+        <span className="font-medium">Nothing to flag</span>
+        <span className="text-muted-foreground">
+          {score}
+          {run.autoApproved ? ' · ' : ' · safe to review fast'}
+        </span>
+        {run.autoApproved ? <span className="text-emerald-600 dark:text-emerald-400">✓ auto-approved</span> : null}
       </span>
     );
   }
@@ -137,6 +143,8 @@ export function AgentCell({ run }: { run: AgentRun | undefined }) {
     <span className="flex flex-col gap-1 min-w-0">
       <span className="text-xs font-medium" style={{ color: 'var(--tandem-agent)' }}>
         {triage.length} finding{triage.length === 1 ? '' : 's'} ready
+        <span className="text-muted-foreground font-normal">{score}</span>
+        {run.autoApproved ? <span className="text-emerald-600 dark:text-emerald-400"> · ✓ auto-approved</span> : null}
       </span>
       <span className="flex gap-1 flex-wrap">
         {TALLY_ORDER.map((severity) => (

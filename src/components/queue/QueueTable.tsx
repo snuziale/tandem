@@ -40,7 +40,10 @@ export function QueueTable({ rows, isLoading, error, viewError }: Props) {
   }, [rows, runsData, setQueueRows, setFocusedPr]);
 
   return (
-    <div className="flex-1 overflow-y-auto">
+    // Horizontal scroll floor: below ~1080px the table scrolls sideways
+    // instead of crushing the title column into invisibility.
+    <div className="flex-1 overflow-auto">
+      <div className="min-w-[1080px]">
       <div className={cn(QUEUE_GRID, 'py-1.5 border-b border-border sticky top-0 bg-background z-10')}>
         {['pull request', 'checks', 'review', 'size', 'updated', 'agent'].map((label) => (
           <span key={label} className="text-[10px] uppercase tracking-wider text-muted-foreground font-mono">
@@ -77,6 +80,7 @@ export function QueueTable({ rows, isLoading, error, viewError }: Props) {
           />
         ))
       )}
+      </div>
     </div>
   );
 }

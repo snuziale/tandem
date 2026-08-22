@@ -55,10 +55,13 @@ async function handleStart(req: Request): Promise<Response> {
   if (!cfg) return Response.json({ error: 'unconfigured' }, { status: 503 });
   const body = await parseJsonBody(req);
   if (!isPlainObject(body) || typeof body.prId !== 'string') {
-    return Response.json({ error: 'expected { prId, force? }' }, { status: 400 });
+    return Response.json({ error: 'expected { prId, force?, agentId? }' }, { status: 400 });
   }
   try {
-    const result = await startRun(cfg, body.prId, { force: body.force === true });
+    const result = await startRun(cfg, body.prId, {
+      force: body.force === true,
+      agentId: typeof body.agentId === 'string' ? body.agentId : undefined,
+    });
     return Response.json(result);
   } catch (e) {
     return Response.json({ error: e instanceof Error ? e.message : 'start failed' }, { status: 500 });

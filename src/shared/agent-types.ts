@@ -59,8 +59,15 @@ export type AgentRun = {
   prId: PrId;
   headSha: string;
   status: AgentRunStatus;
+  /** Which configured agent profile produced this run. */
+  agentId?: string;
+  agentName?: string;
   /** Prose summary of what the agent read and concluded (pass 3 output). */
   summary?: string;
+  /** Pass-3 merge-readiness score, 0-100. */
+  score?: number;
+  /** This run met the opt-in auto-approve gate and an APPROVE was posted. */
+  autoApproved?: boolean;
   findings: Finding[];
   startedAt?: string;
   finishedAt?: string;

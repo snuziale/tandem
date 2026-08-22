@@ -44,7 +44,8 @@ Pass 3 of 3 — RECONCILE. Below are ALL candidate findings from analysis, plus 
 - DROP any finding that substantively duplicates an existing human comment.
 - Re-check each severity against the definitions; downgrade anything hedged.
 - Keep at most {findingCap} findings total and at most {nitCap} nits — cut the weakest.
-- Write a run summary: 2-4 sentences on what you read, what is sound, and what needs attention. Written for the reviewer, plain prose, no hedging. If checks are failing or something outside the diff matters, say so.`,
+- Write a run summary: 2-4 sentences on what you read, what is sound, and what needs attention. Written for the reviewer, plain prose, no hedging. If checks are failing or something outside the diff matters, say so.
+- Score the PR 0-100 for merge readiness: 90+ means you found nothing a careful reviewer would block on and the change is safe to approve as-is; 50-89 means reviewable with the findings addressed; below 50 means substantive problems. Score the CODE, not the process — a trivial safe change with no findings is a 95+, not a 70.`,
 };
 
 export function promptTextsOf(raw: unknown): PromptTexts {

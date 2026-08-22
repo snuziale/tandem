@@ -31,7 +31,8 @@ export function QueueRow({ pr, run, unseen, now, focused, onFocus, onOpen }: Pro
       onClick={onOpen}
       onMouseEnter={onFocus}
       className={cn(
-        'group py-2 min-h-14 border-b border-border/60 cursor-pointer relative',
+        // Fixed height — content clips rather than ever growing the row.
+        'group h-14 overflow-hidden border-b border-border/60 cursor-pointer relative',
         QUEUE_GRID,
         focused ? 'bg-accent/60 shadow-[inset_2px_0_0_0_var(--color-primary)]' : 'hover:bg-accent/30',
         // Drafts read as background noise until they're ready for review.

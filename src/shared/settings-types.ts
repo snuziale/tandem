@@ -9,6 +9,38 @@ export type PassModels = {
   reconcile: string;
 };
 
+/** A configured reviewer: its own models and prompt blocks, so different
+ * agents can specialize (security sweep, test-coverage, API-contract, …).
+ * Every run records which agent produced it. */
+export type AgentProfile = {
+  id: string;
+  name: string;
+  description?: string;
+  models: PassModels;
+  prompts: PromptTexts;
+};
+
+export const DEFAULT_AGENT: AgentProfile = {
+  id: 'general',
+  name: 'General reviewer',
+  description: 'Balanced correctness-first review of the whole diff.',
+  models: {
+    orient: 'haiku',
+    analyze: 'sonnet',
+    reconcile: 'sonnet',
+  },
+  prompts: DEFAULT_PROMPTS,
+};
+
+/** Opt-in unattended approval — the ONE exception to "the agent never writes
+ * to GitHub", disabled by default and gated hard (see maybeAutoApprove). */
+export type AutoApproveSettings = {
+  enabled: boolean;
+  /** Minimum pass-3 merge-readiness score (0-100). */
+  minScore: number;
+  requireChecksPassing: boolean;
+};
+
 export type TandemSettings = {
   /** Pre-warming: start runs automatically as PRs enter agent-enabled views.
    * OFF by default — runs are user-initiated (rerun button / `r`) unless the
@@ -29,10 +61,11 @@ export type TandemSettings = {
    * `agentEnabledByDefault`. */
   repos: Record<string, { agentEnabled: boolean }>;
   agentEnabledByDefault: boolean;
-  models: PassModels;
-  /** The editable halves of the agent prompts; data blocks and the JSON
-   * output contracts stay code-owned (they must match the zod schemas). */
-  prompts: PromptTexts;
+  /** Configured reviewer profiles; `defaultAgentId` picks which one automatic
+   * and unqualified manual runs use. */
+  agents: AgentProfile[];
+  defaultAgentId: string;
+  autoApprove: AutoApproveSettings;
 };
 
 export const DEFAULT_SETTINGS: TandemSettings = {
@@ -46,10 +79,15 @@ export const DEFAULT_SETTINGS: TandemSettings = {
   dailyCostUsd: 20,
   repos: {},
   agentEnabledByDefault: true,
-  models: {
-    orient: 'haiku',
-    analyze: 'sonnet',
-    reconcile: 'sonnet',
+  agents: [DEFAULT_AGENT],
+  defaultAgentId: DEFAULT_AGENT.id,
+  autoApprove: {
+    enabled: false,
+    minScore: 90,
+    requireChecksPassing: true,
   },
-  prompts: DEFAULT_PROMPTS,
 };
+
+export function agentById(settings: TandemSettings, agentId: string | undefined): AgentProfile {
+  return settings.agents.find((a) => a.id === agentId) ?? settings.agents.find((a) => a.id === settings.defaultAgentId) ?? settings.agents[0] ?? DEFAULT_AGENT;
+}

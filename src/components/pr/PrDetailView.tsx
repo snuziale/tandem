@@ -67,11 +67,11 @@ export function PrDetailView({ prId }: { prId: PrId }) {
     setSelectedPath(path);
     // Item offsets are virtualized estimates until neighbours have been
     // measured — the first scroll gets close, the second (post-measurement)
-    // lands exactly. Same trick @pierre's own viewer uses.
+    // lands exactly. Same trick @pierre's own viewer uses. The file tree
+    // follows `selectedPath` on its own.
     const target = { type: 'item', id: path, align: 'start' } as const;
     codeViewRef.current?.scrollTo(target);
     window.setTimeout(() => codeViewRef.current?.scrollTo(target), 350);
-    document.querySelector(`[data-file-row="${CSS.escape(path)}"]`)?.scrollIntoView({ block: 'nearest' });
   };
 
   const focusFinding = (finding: Finding) => {
@@ -106,6 +106,9 @@ export function PrDetailView({ prId }: { prId: PrId }) {
     const onKey = (e: KeyboardEvent) => {
       if (e.metaKey || e.ctrlKey || e.altKey) return;
       if (hasOpenDialog() || isTypingTarget(e.target)) return;
+      // The @pierre/trees tree owns its keys (arrows, type-ahead a-z, its
+      // search input) — never double-handle while focus is inside it.
+      if (e.target instanceof HTMLElement && e.target.closest('[data-tandem-filetree]')) return;
       const state = keyState.current;
       const paths = (state.files ?? []).map((f) => f.path);
       const stepFile = (delta: 1 | -1) => {
@@ -258,7 +261,6 @@ export function PrDetailView({ prId }: { prId: PrId }) {
                 viewedFiles={review?.viewedFiles ?? []}
                 selectedPath={selectedPath}
                 onSelect={selectFile}
-                onToggleViewed={toggleViewed}
                 agentPaths={agentPaths}
               />
             </ResizablePanel>
@@ -271,6 +273,17 @@ export function PrDetailView({ prId }: { prId: PrId }) {
                   <span className="text-[11px] text-muted-foreground font-mono">
                     viewed {review?.viewedFiles.length ?? 0}/{files.length}
                   </span>
+                  {selectedPath ? (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-6 px-2 text-[11px]"
+                      onClick={() => toggleViewed(selectedPath)}
+                      title="Toggle viewed for the selected file (v)"
+                    >
+                      {review?.viewedFiles.includes(selectedPath) ? '✓ viewed' : 'mark viewed'}
+                    </Button>
+                  ) : null}
                   <ToggleGroup
                     type="single"
                     size="xs"

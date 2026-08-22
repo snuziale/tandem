@@ -40,9 +40,11 @@ export const Pass2OutputSchema = z.object({
 });
 export type Pass2Output = z.infer<typeof Pass2OutputSchema>;
 
-/** Pass 3 (reconcile): the final ranked, capped set plus the run summary. */
+/** Pass 3 (reconcile): the final ranked, capped set, the run summary, and a
+ * 0-100 merge-readiness score (drives the opt-in auto-approve gate). */
 export const Pass3OutputSchema = z.object({
   summary: z.string().min(1).max(4000),
   findings: z.array(FindingJsonSchema),
+  score: z.number().min(0).max(100).optional(),
 });
 export type Pass3Output = z.infer<typeof Pass3OutputSchema>;

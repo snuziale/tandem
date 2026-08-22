@@ -8,10 +8,12 @@ import { Pass1PlanSchema, Pass2OutputSchema, Pass3OutputSchema, type FindingJson
 import { countDiffLines, diffLineIndex, type DiffLineIndex } from '../../../shared/gh/patch';
 import { parsePrId, type PrRef } from '../../../shared/gh/prKey';
 import type { FileChange, PrDetail, PrId } from '../../../shared/review-types';
-import type { TandemSettings } from '../../../shared/settings-types';
+import { agentById, type AgentProfile, type TandemSettings } from '../../../shared/settings-types';
 import type { Config } from '../../config/store';
 import { fetchPrFiles } from '../../github/files';
 import { fetchPrDetail } from '../../github/pr';
+import { quickApprove } from '../../github/submit';
+import { loadReview } from '../../reviews/store';
 import { agentEnabledFor, loadSettings } from '../../settings/store';
 import { runClaudePass, type ClaudePassResult } from '../claude';
 import { createLive, finishLive, publish } from '../live';
@@ -29,7 +31,7 @@ export type StartResult = { run: AgentRun; started: boolean };
  * Idempotent entry point: an existing non-stale run for the PR's current head
  * sha is returned as-is unless `force`. Otherwise a new run starts detached.
  */
-export async function startRun(cfg: Config, prId: PrId, opts: { force?: boolean } = {}): Promise<StartResult> {
+export async function startRun(cfg: Config, prId: PrId, opts: { force?: boolean; agentId?: string } = {}): Promise<StartResult> {
   const ref = parsePrId(prId);
   if (!ref) throw new Error(`malformed prId: ${prId}`);
 
@@ -42,11 +44,16 @@ export async function startRun(cfg: Config, prId: PrId, opts: { force?: boolean 
     return { run: existing, started: false };
   }
 
+  const settings = await loadSettings();
+  const agent = agentById(settings, opts.agentId);
+
   const run: AgentRun = {
     id: randomUUID(),
     prId,
     headSha,
     status: 'queued',
+    agentId: agent.id,
+    agentName: agent.name,
     findings: [],
     tokensUsed: 0,
     costUsd: 0,
@@ -56,16 +63,23 @@ export async function startRun(cfg: Config, prId: PrId, opts: { force?: boolean 
   const signal = createLive(run.id, prId);
 
   // Detached: the HTTP response returns the queued snapshot; SSE follows along.
-  void driveRun(cfg, run, ref, detail, signal).catch((e) => {
+  void driveRun(cfg, settings, agent, run, ref, detail, signal).catch((e) => {
     console.error(`[pipeline] run ${run.id} crashed:`, e);
   });
 
   return { run, started: true };
 }
 
-async function driveRun(cfg: Config, run: AgentRun, ref: PrRef, detail: PrDetail, signal: AbortSignal): Promise<void> {
+async function driveRun(
+  cfg: Config,
+  settings: TandemSettings,
+  agent: AgentProfile,
+  run: AgentRun,
+  ref: PrRef,
+  detail: PrDetail,
+  signal: AbortSignal
+): Promise<void> {
   const emit = (event: RunEvent) => publish(run.id, event);
-  const settings = await loadSettings();
 
   const persist = async (patch: Partial<AgentRun>) => {
     Object.assign(run, patch);
@@ -73,9 +87,10 @@ async function driveRun(cfg: Config, run: AgentRun, ref: PrRef, detail: PrDetail
   };
 
   try {
-    const result = await executePipeline(cfg, settings, run, ref, detail, signal, emit);
+    const result = await executePipeline(cfg, settings, agent, run, ref, detail, signal, emit);
     await persist(result);
     await addSpend(result.costUsd ?? 0);
+    if (run.status === 'ready') await maybeAutoApprove(cfg, settings, run, detail);
     emit({ type: 'done', run });
   } catch (e) {
     const message = signal.aborted ? 'cancelled' : e instanceof Error ? e.message : String(e);
@@ -90,6 +105,7 @@ async function driveRun(cfg: Config, run: AgentRun, ref: PrRef, detail: PrDetail
 async function executePipeline(
   cfg: Config,
   settings: TandemSettings,
+  agent: AgentProfile,
   run: AgentRun,
   ref: PrRef,
   detail: PrDetail,
@@ -140,8 +156,8 @@ async function executePipeline(
   // --- Pass 1: orient (cheap model) ---
   emit({ type: 'pass', pass: 1, label: 'orienting' });
   const planResult = await validatedPass(
-    buildOrientPrompt({ prompts: settings.prompts, pr, files, conventions, commitSubjects }),
-    settings.models.orient,
+    buildOrientPrompt({ prompts: agent.prompts, pr, files, conventions, commitSubjects }),
+    agent.models.orient,
     Pass1PlanSchema,
     signal,
     track
@@ -159,8 +175,8 @@ async function executePipeline(
     if (signal.aborted) throw new Error('cancelled');
     emit({ type: 'pass', pass: 2, label: `analyzing ${i + 1}/${clusters.length}` });
     const passResult = await validatedPass(
-      buildAnalyzePrompt({ prompts: settings.prompts, pr, plan, files: clusters[i], conventions }),
-      settings.models.analyze,
+      buildAnalyzePrompt({ prompts: agent.prompts, pr, plan, files: clusters[i], conventions }),
+      agent.models.analyze,
       Pass2OutputSchema,
       signal,
       track
@@ -175,8 +191,8 @@ async function executePipeline(
   // --- Pass 3: reconcile — the pass that keeps output signal-dense. Do not skip. ---
   emit({ type: 'pass', pass: 3, label: 'reconciling' });
   const reconcileResult = await validatedPass(
-    buildReconcilePrompt({ prompts: settings.prompts, pr, candidates: sanitized.kept, threads, findingCap: settings.findingCap, nitCap: settings.nitCap }),
-    settings.models.reconcile,
+    buildReconcilePrompt({ prompts: agent.prompts, pr, candidates: sanitized.kept, threads, findingCap: settings.findingCap, nitCap: settings.nitCap }),
+    agent.models.reconcile,
     Pass3OutputSchema,
     signal,
     track
@@ -204,11 +220,45 @@ async function executePipeline(
   return {
     status: 'ready',
     summary: reconcileResult.value.summary,
+    score: reconcileResult.value.score,
     findings,
     tokensUsed: tokens,
     costUsd: cost,
     finishedAt: now(),
   };
+}
+
+/**
+ * The ONE sanctioned unattended GitHub write, and only because the user
+ * explicitly opted in (settings.autoApprove.enabled defaults to false).
+ * Every gate must hold:
+ *   opt-in ON · not a draft · pass-3 score ≥ threshold · zero undismissed
+ *   blocker/risk findings · checks green (unless waived) · no human draft
+ *   in progress for this PR (never preempt a review someone started).
+ * GitHub itself refuses self-approval (422) — logged, not surfaced.
+ */
+async function maybeAutoApprove(cfg: Config, settings: TandemSettings, run: AgentRun, detail: PrDetail): Promise<void> {
+  const gate = settings.autoApprove;
+  if (!gate.enabled) return;
+  const pr = detail.pr;
+  if (pr.isDraft) return;
+  if (run.score === undefined || run.score < gate.minScore) return;
+  const blocking = run.findings.some((f) => (f.severity === 'blocker' || f.severity === 'risk') && f.state !== 'dismissed');
+  if (blocking) return;
+  if (gate.requireChecksPassing && pr.checkRollup !== 'SUCCESS') return;
+  const draft = await loadReview(run.prId);
+  if (draft && (draft.comments.length > 0 || draft.verdict)) return;
+
+  const ref = parsePrId(run.prId);
+  if (!ref) return;
+  try {
+    await quickApprove(cfg.github, ref);
+    run.autoApproved = true;
+    await upsertRun(run);
+    console.error(`[pipeline] auto-approved ${run.prId} (score ${run.score} ≥ ${gate.minScore})`);
+  } catch (e) {
+    console.error(`[pipeline] auto-approve failed for ${run.prId}: ${e instanceof Error ? e.message : e}`);
+  }
 }
 
 /** Run one pass; on schema failure, one repair attempt, then give up (spec §4). */

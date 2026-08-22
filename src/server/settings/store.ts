@@ -3,7 +3,7 @@
 // setting never requires a migration.
 import { isPlainObject } from '../../shared/isPlainObject';
 import { promptTextsOf } from '../../shared/prompt-defaults';
-import { DEFAULT_SETTINGS, type TandemSettings } from '../../shared/settings-types';
+import { DEFAULT_AGENT, DEFAULT_SETTINGS, type AgentProfile, type TandemSettings } from '../../shared/settings-types';
 import { enqueueMutation, readTextFile, storagePath, writeTextFile } from '../storage/jsonFile';
 
 const FILE = 'settings.json';
@@ -34,7 +34,6 @@ export function sanitize(raw: unknown): TandemSettings {
   if (!isPlainObject(raw)) return d;
   const num = (v: unknown, fallback: number) => (typeof v === 'number' && Number.isFinite(v) && v >= 0 ? v : fallback);
   const threshold = raw.severityThreshold;
-  const models = isPlainObject(raw.models) ? raw.models : {};
   const repos: TandemSettings['repos'] = {};
   if (isPlainObject(raw.repos)) {
     for (const [key, value] of Object.entries(raw.repos)) {
@@ -52,12 +51,57 @@ export function sanitize(raw: unknown): TandemSettings {
     dailyCostUsd: num(raw.dailyCostUsd, d.dailyCostUsd),
     repos,
     agentEnabledByDefault: typeof raw.agentEnabledByDefault === 'boolean' ? raw.agentEnabledByDefault : d.agentEnabledByDefault,
-    models: {
-      orient: typeof models.orient === 'string' && models.orient ? models.orient : d.models.orient,
-      analyze: typeof models.analyze === 'string' && models.analyze ? models.analyze : d.models.analyze,
-      reconcile: typeof models.reconcile === 'string' && models.reconcile ? models.reconcile : d.models.reconcile,
-    },
-    prompts: promptTextsOf(raw.prompts),
+    ...sanitizeAgents(raw),
+    autoApprove: sanitizeAutoApprove(raw.autoApprove),
+  };
+}
+
+function sanitizeModels(raw: unknown): AgentProfile['models'] {
+  const models = isPlainObject(raw) ? raw : {};
+  const d = DEFAULT_AGENT.models;
+  const pick = (key: keyof AgentProfile['models']) => {
+    const value = models[key];
+    return typeof value === 'string' && value ? value : d[key];
+  };
+  return { orient: pick('orient'), analyze: pick('analyze'), reconcile: pick('reconcile') };
+}
+
+function sanitizeAgents(raw: Record<string, unknown>): Pick<TandemSettings, 'agents' | 'defaultAgentId'> {
+  const agents: AgentProfile[] = [];
+  if (Array.isArray(raw.agents)) {
+    for (const entry of raw.agents) {
+      if (!isPlainObject(entry) || typeof entry.id !== 'string' || !entry.id || typeof entry.name !== 'string' || !entry.name.trim()) continue;
+      agents.push({
+        id: entry.id,
+        name: entry.name,
+        description: typeof entry.description === 'string' && entry.description ? entry.description : undefined,
+        models: sanitizeModels(entry.models),
+        prompts: promptTextsOf(entry.prompts),
+      });
+    }
+  }
+  if (agents.length === 0) {
+    // Migration: pre-profile settings kept a single top-level models+prompts
+    // pair — fold it into the default profile so nothing the user tuned is lost.
+    agents.push({
+      ...DEFAULT_AGENT,
+      models: sanitizeModels(raw.models),
+      prompts: promptTextsOf(raw.prompts),
+    });
+  }
+  const defaultAgentId =
+    typeof raw.defaultAgentId === 'string' && agents.some((a) => a.id === raw.defaultAgentId) ? raw.defaultAgentId : agents[0].id;
+  return { agents, defaultAgentId };
+}
+
+function sanitizeAutoApprove(raw: unknown): TandemSettings['autoApprove'] {
+  const d = DEFAULT_SETTINGS.autoApprove;
+  if (!isPlainObject(raw)) return d;
+  return {
+    // Never defaults on: unattended approval is explicit opt-in.
+    enabled: raw.enabled === true,
+    minScore: typeof raw.minScore === 'number' && raw.minScore >= 0 && raw.minScore <= 100 ? raw.minScore : d.minScore,
+    requireChecksPassing: typeof raw.requireChecksPassing === 'boolean' ? raw.requireChecksPassing : d.requireChecksPassing,
   };
 }
 

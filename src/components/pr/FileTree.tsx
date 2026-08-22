@@ -1,4 +1,8 @@
-import { Checkbox, cn, Tooltip, TooltipContent, TooltipPortal, TooltipTrigger } from '@uipath/apollo-wind';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { FileTree as TreesFileTree, useFileTree, useFileTreeSearch } from '@pierre/trees/react';
+import type { FileTree as FileTreeModel, GitStatusEntry } from '@pierre/trees';
+import { Button, Tooltip, TooltipContent, TooltipPortal, TooltipTrigger } from '@uipath/apollo-wind';
+import { Search } from 'lucide-react';
 import type { FileChange } from '../../shared/review-types';
 
 type Props = {
@@ -6,93 +10,128 @@ type Props = {
   viewedFiles: string[];
   selectedPath: string | null;
   onSelect: (path: string) => void;
-  onToggleViewed: (path: string) => void;
-  /** Paths with agent findings — violet dot (M4 wires this up). */
+  /** Paths with agent findings — violet dot decoration. */
   agentPaths?: ReadonlySet<string>;
+  /** Hands the caller the tree model for scroll/select from keyboard + findings. */
+  onModelReady?: (model: FileTreeModel) => void;
 };
 
-// Flat-ish tree: files grouped by directory, directories in path order.
-export function FileTree({ files, viewedFiles, selectedPath, onSelect, onToggleViewed, agentPaths }: Props) {
-  const groups = groupByDir(files);
+const GIT_STATUS: Record<FileChange['status'], GitStatusEntry['status']> = {
+  added: 'added',
+  removed: 'deleted',
+  modified: 'modified',
+  renamed: 'renamed',
+  copied: 'added',
+  changed: 'modified',
+  unchanged: 'modified',
+};
+
+// The PR file tree on @pierre/trees: real hierarchy with flattened empty
+// dirs, always-virtualized, built-in search (the header's button / filters as
+// you type), git-status badges from the PR's change types, sticky folders,
+// and per-file decorations (+a −d · viewed ✓ · violet agent dot).
+export function FileTree({ files, viewedFiles, selectedPath, onSelect, agentPaths, onModelReady }: Props) {
+  // The model is constructed ONCE (useFileTree); everything row decorations
+  // need at render time is read through this ref so it never goes stale.
+  const stateRef = useRef({ files, viewedFiles, agentPaths });
+
+  const paths = useMemo(() => files.map((f) => f.path), [files]);
+
+  const { model } = useFileTree({
+    paths,
+    initialExpansion: 'open',
+    flattenEmptyDirectories: true,
+    stickyFolders: true,
+    density: 'compact',
+    search: true,
+    fileTreeSearchMode: 'hide-non-matches',
+    gitStatus: gitStatusOf(files),
+    onSelectionChange: (selected) => {
+      const path = selected[0];
+      if (!path) return;
+      const item = model.getItem(path);
+      if (item && !item.isDirectory()) onSelect(path);
+    },
+    renderRowDecoration: ({ row }) => {
+      if (row.kind !== 'file') return null;
+      const { files, viewedFiles, agentPaths } = stateRef.current;
+      const file = files.find((f) => f.path === row.path);
+      if (!file) return null;
+      const parts = [];
+      if (agentPaths?.has(row.path)) parts.push({ text: '● ', color: 'var(--tandem-agent)' });
+      if (file.isBinary || file.tooLarge) {
+        parts.push({ text: file.isBinary ? 'bin' : 'big' });
+      } else {
+        parts.push({ text: `+${file.additions}`, color: 'var(--color-emerald-500, #10b981)' });
+        parts.push({ text: ` −${file.deletions}`, color: 'var(--color-red-400, #f87171)' });
+      }
+      if (viewedFiles.includes(row.path)) parts.push({ text: ' ✓' });
+      return {
+        text: parts.map((p) => p.text).join(''),
+        parts,
+        title: `${file.path} · +${file.additions} −${file.deletions}${viewedFiles.includes(row.path) ? ' · viewed' : ''}`,
+      };
+    },
+  });
+
+  const search = useFileTreeSearch(model);
+
+  useEffect(() => {
+    onModelReady?.(model);
+  }, [model, onModelReady]);
+
+  // Refresh decorations when viewed/agent/file state changes: update the ref,
+  // then push a fresh gitStatus array — the mutation re-renders visible rows.
+  useEffect(() => {
+    stateRef.current = { files, viewedFiles, agentPaths };
+    model.setGitStatus(gitStatusOf(files));
+  }, [model, files, viewedFiles, agentPaths]);
+
+  // External selection (keyboard [ ] / finding clicks) → tree follows.
+  const lastExternal = useRef<string | null>(null);
+  useEffect(() => {
+    if (!selectedPath || selectedPath === lastExternal.current) return;
+    lastExternal.current = selectedPath;
+    const item = model.getItem(selectedPath);
+    if (item && !item.isSelected()) item.select();
+    model.scrollToPath(selectedPath, { offset: 'nearest' });
+  }, [model, selectedPath]);
+
+  const [count] = useState(() => files.length);
+
   return (
-    <div className="h-full overflow-y-auto py-1">
-      <div className="px-3 py-1 text-[10px] uppercase tracking-wider text-muted-foreground font-mono flex justify-between">
-        <span>files</span>
-        <span>{files.length}</span>
-      </div>
-      {groups.map(([dir, dirFiles]) => (
-        <div key={dir || '(root)'}>
-          <div className="px-3 pt-2 pb-0.5 text-[10px] uppercase tracking-wider text-muted-foreground/70 font-mono truncate" title={dir || 'root'}>
-            {dir || 'root'}
+    <div className="h-full min-h-0 flex flex-col" data-tandem-filetree>
+      <TreesFileTree
+        model={model}
+        className="flex-1 min-h-0"
+        header={
+          <div className="flex items-center gap-2 px-3 py-1.5 border-b border-border bg-background sticky top-0">
+            <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-mono">files</span>
+            <span className="text-[10px] text-muted-foreground font-mono">{count}</span>
+            <span className="flex-1" />
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-6 w-6 p-0"
+                  aria-label="Search files"
+                  onClick={() => (search.isOpen ? search.close() : search.open())}
+                >
+                  <Search className="w-3.5 h-3.5" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipPortal>
+                <TooltipContent>Search files</TooltipContent>
+              </TooltipPortal>
+            </Tooltip>
           </div>
-          {dirFiles.map((f) => {
-            const selected = f.path === selectedPath;
-            const viewed = viewedFiles.includes(f.path);
-            const name = f.path.slice(f.path.lastIndexOf('/') + 1);
-            return (
-              // A div, not a <button>: the row contains the viewed Checkbox,
-              // and buttons cannot nest.
-              <div
-                key={f.path}
-                role="button"
-                tabIndex={0}
-                data-file-row={f.path}
-                onClick={() => onSelect(f.path)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') onSelect(f.path);
-                }}
-                className={cn(
-                  'w-full flex items-center gap-1.5 px-3 py-1 text-left text-xs font-mono cursor-pointer',
-                  selected ? 'bg-accent text-foreground' : 'hover:bg-accent/40 text-muted-foreground',
-                  viewed && 'opacity-55'
-                )}
-              >
-                {agentPaths?.has(f.path) ? (
-                  <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: 'var(--tandem-agent)' }} />
-                ) : (
-                  <span className="w-1.5 shrink-0" />
-                )}
-                <span className="truncate flex-1" title={f.path}>
-                  {name}
-                </span>
-                {f.isBinary || f.tooLarge ? (
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <span className="text-[9px] uppercase border border-border rounded px-0.5">{f.isBinary ? 'bin' : 'big'}</span>
-                    </TooltipTrigger>
-                    <TooltipPortal>
-                      <TooltipContent>{f.isBinary ? 'Binary file — no diff' : 'Too large to render — open on GitHub'}</TooltipContent>
-                    </TooltipPortal>
-                  </Tooltip>
-                ) : (
-                  <span className="text-[10px] whitespace-nowrap">
-                    <span className="text-emerald-400">+{f.additions}</span> <span className="text-red-400">−{f.deletions}</span>
-                  </span>
-                )}
-                <Checkbox
-                  checked={viewed}
-                  onCheckedChange={() => onToggleViewed(f.path)}
-                  onClick={(e) => e.stopPropagation()}
-                  aria-label={`Mark ${name} viewed`}
-                  className="size-3"
-                />
-              </div>
-            );
-          })}
-        </div>
-      ))}
+        }
+      />
     </div>
   );
 }
 
-function groupByDir(files: FileChange[]): Array<[string, FileChange[]]> {
-  const map = new Map<string, FileChange[]>();
-  for (const f of files) {
-    const slash = f.path.lastIndexOf('/');
-    const dir = slash === -1 ? '' : f.path.slice(0, slash);
-    const list = map.get(dir) ?? [];
-    list.push(f);
-    map.set(dir, list);
-  }
-  return [...map.entries()];
+function gitStatusOf(files: FileChange[]): GitStatusEntry[] {
+  return files.map((f) => ({ path: f.path, status: GIT_STATUS[f.status] }));
 }

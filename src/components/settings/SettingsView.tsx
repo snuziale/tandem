@@ -9,7 +9,7 @@ import { useSaveSettings, useSettings } from '../../hooks/useSettings';
 import { hasOpenDialog, isTypingTarget } from '../../keyboard/target';
 import { navigate } from '../../routes';
 import { DEFAULT_PROMPTS, type PromptTexts } from '../../shared/prompt-defaults';
-import type { TandemSettings } from '../../shared/settings-types';
+import { DEFAULT_AGENT, type AgentProfile, type TandemSettings } from '../../shared/settings-types';
 import { TopBar } from '../layout/TopBar';
 import { CredentialsForm } from '../setup/CredentialsForm';
 
@@ -136,17 +136,6 @@ export function SettingsView() {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-3 gap-3">
-                  {(['orient', 'analyze', 'reconcile'] as const).map((pass) => (
-                    <TextField
-                      key={pass}
-                      label={`${pass} model`}
-                      value={settings.models[pass]}
-                      onCommit={(v) => patch({ models: { ...settings.models, [pass]: v } })}
-                    />
-                  ))}
-                </div>
-
                 <p className="text-[11px] text-muted-foreground">
                   Tip: a <code className="font-mono">.tandem/conventions.md</code> in a repo is read into every run — house rules,
                   known deprecations, links to postmortems. It's the main quality lever per repo.
@@ -155,38 +144,156 @@ export function SettingsView() {
             ) : null}
           </Card>
 
-          {settings ? (
-            <Card className="p-5 space-y-4">
-              <div>
-                <h2 className="text-sm font-semibold">Agent prompts</h2>
-                <p className="text-[11px] text-muted-foreground mt-0.5">
-                  The instruction halves of each pass. The data blocks (PR metadata, diffs, candidate findings) and the strict-JSON
-                  output contracts are code-owned — they must match the validation schemas — and are appended automatically.
-                  Findings that break the rules are dropped by validation regardless of prompt edits.
-                </p>
-              </div>
-              {(
-                [
-                  ['rules', 'Review rules', 'Injected into the analyze and reconcile passes.'],
-                  ['orient', 'Pass 1 · orient', 'Produces the review plan from PR metadata.'],
-                  ['analyze', 'Pass 2 · analyze', 'Runs once per file cluster with the diffs in context.'],
-                  ['reconcile', 'Pass 3 · reconcile', 'Dedupes, ranks, caps. {findingCap} and {nitCap} interpolate from the caps above.'],
-                ] as Array<[keyof PromptTexts, string, string]>
-              ).map(([key, label, hint]) => (
-                <PromptField
-                  key={key}
-                  label={label}
-                  hint={hint}
-                  value={settings.prompts[key]}
-                  defaultValue={DEFAULT_PROMPTS[key]}
-                  onCommit={(value) => patch({ prompts: { ...settings.prompts, [key]: value } })}
-                />
-              ))}
-            </Card>
-          ) : null}
+          {settings ? <AutoApproveCard settings={settings} onPatch={patch} /> : null}
+          {settings ? <AgentsCard settings={settings} onPatch={patch} /> : null}
         </div>
       </div>
     </div>
+  );
+}
+
+function AutoApproveCard({ settings, onPatch }: { settings: TandemSettings; onPatch: (p: Partial<TandemSettings>) => void }) {
+  const aa = settings.autoApprove;
+  const set = (p: Partial<TandemSettings['autoApprove']>) => onPatch({ autoApprove: { ...aa, ...p } });
+  return (
+    <Card className="p-5 space-y-4">
+      <div>
+        <h2 className="text-sm font-semibold">Auto-approve</h2>
+        <p className="text-[11px] text-muted-foreground mt-0.5">
+          The one unattended GitHub write Tandem can make, and only with this switch on. A run auto-approves ONLY when every gate
+          holds: score at or above the threshold, zero blocker/risk findings, checks green (unless waived), not a draft, and no
+          review of yours in progress on that PR.
+        </p>
+      </div>
+      <ToggleRow
+        label="Auto-approve qualifying PRs"
+        hint="Off = the agent never writes to GitHub, ever."
+        checked={aa.enabled}
+        onChange={(v) => set({ enabled: v })}
+      />
+      <div className="grid grid-cols-2 gap-3 items-end">
+        <NumberField label="Minimum score (0-100)" value={aa.minScore} onCommit={(v) => set({ minScore: Math.min(100, v) })} />
+        <ToggleRow label="Require checks passing" checked={aa.requireChecksPassing} onChange={(v) => set({ requireChecksPassing: v })} />
+      </div>
+    </Card>
+  );
+}
+
+function AgentsCard({ settings, onPatch }: { settings: TandemSettings; onPatch: (p: Partial<TandemSettings>) => void }) {
+  const [editingId, setEditingId] = useState(settings.defaultAgentId);
+  const agent = settings.agents.find((a) => a.id === editingId) ?? settings.agents[0];
+
+  const patchAgent = (patch: Partial<AgentProfile>) => {
+    onPatch({ agents: settings.agents.map((a) => (a.id === agent.id ? { ...a, ...patch } : a)) });
+  };
+
+  const addAgent = () => {
+    const id = crypto.randomUUID().slice(0, 8);
+    const next: AgentProfile = { ...DEFAULT_AGENT, id, name: 'New agent', description: undefined };
+    onPatch({ agents: [...settings.agents, next] });
+    setEditingId(id);
+  };
+
+  const deleteAgent = () => {
+    if (settings.agents.length <= 1) return;
+    const remaining = settings.agents.filter((a) => a.id !== agent.id);
+    onPatch({
+      agents: remaining,
+      defaultAgentId: settings.defaultAgentId === agent.id ? remaining[0].id : settings.defaultAgentId,
+    });
+    setEditingId(remaining[0].id);
+  };
+
+  if (!agent) return null;
+
+  return (
+    <Card className="p-5 space-y-4">
+      <div>
+        <h2 className="text-sm font-semibold">Agents</h2>
+        <p className="text-[11px] text-muted-foreground mt-0.5">
+          Reviewer profiles: each has its own models and prompt blocks, so agents can specialize (security sweep, test-coverage,
+          API-contract…). The default runs automatically; any agent can run from the PR's rerun menu. Data blocks and the
+          strict-JSON output contracts stay code-owned — findings that break the rules are dropped by validation regardless of
+          prompt edits.
+        </p>
+      </div>
+
+      <div className="flex items-center gap-2 flex-wrap">
+        <ToggleGroup
+          type="single"
+          size="sm"
+          variant="outline"
+          value={agent.id}
+          onValueChange={(id) => id && setEditingId(id)}
+          aria-label="Agent profile"
+        >
+          {settings.agents.map((a) => (
+            <ToggleGroupItem key={a.id} value={a.id} className="text-xs font-mono">
+              {a.name}
+              {a.id === settings.defaultAgentId ? ' ★' : ''}
+            </ToggleGroupItem>
+          ))}
+        </ToggleGroup>
+        <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={addAgent}>
+          + agent
+        </Button>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3">
+        <TextField label="Name" value={agent.name} onCommit={(v) => patchAgent({ name: v })} />
+        <TextField label="Description" value={agent.description ?? ''} onCommit={(v) => patchAgent({ description: v || undefined })} allowEmpty />
+      </div>
+
+      <div className="grid grid-cols-3 gap-3">
+        {(['orient', 'analyze', 'reconcile'] as const).map((pass) => (
+          <TextField
+            key={`${agent.id}-${pass}`}
+            label={`${pass} model`}
+            value={agent.models[pass]}
+            onCommit={(v) => patchAgent({ models: { ...agent.models, [pass]: v } })}
+          />
+        ))}
+      </div>
+
+      {(
+        [
+          ['rules', 'Review rules', 'Injected into the analyze and reconcile passes.'],
+          ['orient', 'Pass 1 · orient', 'Produces the review plan from PR metadata.'],
+          ['analyze', 'Pass 2 · analyze', 'Runs once per file cluster with the diffs in context.'],
+          ['reconcile', 'Pass 3 · reconcile', 'Dedupes, ranks, caps, scores. {findingCap} and {nitCap} interpolate from the caps above.'],
+        ] as Array<[keyof PromptTexts, string, string]>
+      ).map(([key, label, hint]) => (
+        <PromptField
+          key={`${agent.id}-${key}`}
+          label={label}
+          hint={hint}
+          value={agent.prompts[key]}
+          defaultValue={DEFAULT_PROMPTS[key]}
+          onCommit={(value) => patchAgent({ prompts: { ...agent.prompts, [key]: value } })}
+        />
+      ))}
+
+      <div className="flex items-center gap-2">
+        <Button
+          size="sm"
+          variant="outline"
+          className="h-7 px-2 text-xs"
+          disabled={settings.defaultAgentId === agent.id}
+          onClick={() => onPatch({ defaultAgentId: agent.id })}
+        >
+          Make default
+        </Button>
+        <Button
+          size="sm"
+          variant="ghost"
+          className="h-7 px-2 text-xs text-destructive"
+          disabled={settings.agents.length <= 1}
+          onClick={deleteAgent}
+        >
+          Delete agent
+        </Button>
+      </div>
+    </Card>
   );
 }
 
@@ -283,7 +390,17 @@ function NumberField({ label, value, onCommit }: { label: string; value: number;
   );
 }
 
-function TextField({ label, value, onCommit }: { label: string; value: string; onCommit: (v: string) => void }) {
+function TextField({
+  label,
+  value,
+  onCommit,
+  allowEmpty = false,
+}: {
+  label: string;
+  value: string;
+  onCommit: (v: string) => void;
+  allowEmpty?: boolean;
+}) {
   const [draft, setDraft] = useState(value);
   const [last, setLast] = useState(value);
   if (value !== last) {
@@ -291,7 +408,7 @@ function TextField({ label, value, onCommit }: { label: string; value: string; o
     setDraft(value);
   }
   const commit = () => {
-    if (draft.trim() && draft !== value) onCommit(draft.trim());
+    if ((draft.trim() || allowEmpty) && draft.trim() !== value) onCommit(draft.trim());
     else setDraft(value);
   };
   return (
