@@ -5,6 +5,7 @@
 // when any dialog is open).
 import { useEffect } from 'react';
 import { useQueryClient, type QueryClient } from '@tanstack/react-query';
+import { toast } from '@uipath/apollo-wind';
 import { hasOpenDialog, isTypingTarget } from '../keyboard/target';
 import { navigate } from '../routes';
 import { parsePrId } from '../shared/gh/prKey';
@@ -59,7 +60,19 @@ const QUEUE_HANDLERS: Record<string, (ctx: NavCtx) => void> = {
     ctx.e.preventDefault();
     openPrDetail(row.prId);
   },
+  // Guard rail, not a block (spec §3.1): 'a' refuses while the agent has an
+  // open blocker; shift+A overrides deliberately.
   a: (ctx) => {
+    const row = focusedRow();
+    if (!row) return;
+    ctx.e.preventDefault();
+    if (row.blockerTitle) {
+      toast.warning(`Agent found a blocker: ${row.blockerTitle}`, { description: 'shift+A approves anyway.' });
+      return;
+    }
+    void approvePrAction(ctx.queryClient, row.prId);
+  },
+  A: (ctx) => {
     const row = focusedRow();
     if (!row) return;
     ctx.e.preventDefault();

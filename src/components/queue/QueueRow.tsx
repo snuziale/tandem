@@ -19,6 +19,9 @@ type Props = {
 
 export function QueueRow({ pr, run, focused, onFocus, onOpen }: Props) {
   const queryClient = useQueryClient();
+  // Guard rail, not a block (spec §3.1): quick approve refuses while the agent
+  // has an undismissed blocker; the tooltip names it, shift+A overrides.
+  const blocker = run?.status === 'ready' ? run.findings.find((f) => f.severity === 'blocker' && f.state !== 'dismissed') : undefined;
 
   return (
     <div
@@ -49,7 +52,8 @@ export function QueueRow({ pr, run, focused, onFocus, onOpen }: Props) {
             size="sm"
             variant="outline"
             className="h-6 px-2 text-[11px]"
-            disabled={pr.isDraft}
+            disabled={pr.isDraft || !!blocker}
+            title={blocker ? `Agent found a blocker: ${blocker.title} (shift+A overrides)` : undefined}
             onClick={(e) => {
               e.stopPropagation();
               void approvePrAction(queryClient, pr.prId);

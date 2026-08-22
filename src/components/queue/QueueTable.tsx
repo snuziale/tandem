@@ -20,14 +20,20 @@ export function QueueTable({ rows, isLoading, error, viewError }: Props) {
   const setQueueRows = useUiStore((s) => s.setQueueRows);
   const runs = useAgentRuns();
 
-  // Publish the visible rows for the keyboard handlers; clamp a focus that no
+  // Publish the visible rows for the keyboard handlers (including whether the
+  // agent found a blocker — the 'a' guard reads it); clamp a focus that no
   // longer exists (row left the view on refetch).
+  const runsData = runs.data;
   useEffect(() => {
-    const refs = (rows ?? []).map((pr) => ({ prId: pr.prId, url: pr.url }));
+    const refs = (rows ?? []).map((pr) => {
+      const run = runFor(runsData, pr.prId, pr.headSha);
+      const blocker = run?.status === 'ready' ? run.findings.find((f) => f.severity === 'blocker' && f.state !== 'dismissed') : undefined;
+      return { prId: pr.prId, url: pr.url, blockerTitle: blocker?.title };
+    });
     setQueueRows(refs);
     const { focusedPrId: focused } = useUiStore.getState();
     if (focused && !refs.some((r) => r.prId === focused)) setFocusedPr(refs[0]?.prId ?? null);
-  }, [rows, setQueueRows, setFocusedPr]);
+  }, [rows, runsData, setQueueRows, setFocusedPr]);
 
   return (
     <div className="flex-1 overflow-y-auto">

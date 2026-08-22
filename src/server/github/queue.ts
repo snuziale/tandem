@@ -11,12 +11,15 @@ import { buildQueueQuery } from '../../shared/gh/queueQuery';
 import type { GqlRateLimit, GqlSearchResult } from '../../shared/gh/wire';
 import type { PullRequest, QueueResult, RateLimitInfo } from '../../shared/review-types';
 import { isPlainObject } from '../../shared/isPlainObject';
+import { prewarmSweep } from '../agent/prewarm';
 import { loadConfig } from '../config/store';
 import type { Config } from '../config/store';
 import { parseJsonBody } from '../requestJson';
 import { graphql, GitHubError } from './client';
 
 const MAX_VIEWS = 10;
+
+type QueueViewInput = { id: string; query: string; agentEnabled?: boolean };
 
 export async function handleQueue(req: Request): Promise<Response> {
   if (req.method !== 'POST') return new Response('Method Not Allowed', { status: 405 });
@@ -27,7 +30,17 @@ export async function handleQueue(req: Request): Promise<Response> {
   const views = readViews(body);
   if (!views) return Response.json({ error: 'expected { views: [{ id, query }] }' }, { status: 400 });
 
-  const result = await fetchQueueViews(cfg, views.slice(0, MAX_VIEWS), req.signal);
+  const capped = views.slice(0, MAX_VIEWS);
+  const result = await fetchQueueViews(cfg, capped, req.signal);
+
+  // Pre-warm: hand every PR from an agent-enabled view to the agent AFTER the
+  // response is built — the queue must never wait on the agent.
+  const agentViewIds = new Set(capped.filter((v) => v.agentEnabled).map((v) => v.id));
+  const prewarmPrs = Object.entries(result.views)
+    .filter(([viewId]) => agentViewIds.has(viewId))
+    .flatMap(([, prs]) => prs);
+  if (prewarmPrs.length > 0) prewarmSweep(cfg, prewarmPrs);
+
   return Response.json(result);
 }
 
@@ -62,12 +75,12 @@ export async function fetchQueueViews(
   return { views: byView, counts, errors, rateLimit, fetchedAt: new Date().toISOString() };
 }
 
-function readViews(body: unknown): Array<{ id: string; query: string }> | null {
+function readViews(body: unknown): QueueViewInput[] | null {
   if (!isPlainObject(body) || !Array.isArray(body.views)) return null;
-  const views: Array<{ id: string; query: string }> = [];
+  const views: QueueViewInput[] = [];
   for (const raw of body.views) {
     if (!isPlainObject(raw) || typeof raw.id !== 'string' || typeof raw.query !== 'string' || !raw.query.trim()) return null;
-    views.push({ id: raw.id, query: raw.query });
+    views.push({ id: raw.id, query: raw.query, agentEnabled: raw.agentEnabled === true });
   }
   return views;
 }

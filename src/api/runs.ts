@@ -3,9 +3,10 @@ import type { AgentRun, FindingState, RunEvent } from '../shared/agent-types';
 import type { PrId } from '../shared/review-types';
 import { apiRequest } from './http';
 
-export async function fetchRuns(): Promise<AgentRun[]> {
-  const { runs } = await apiRequest<{ runs: AgentRun[] }>(API_PATHS.RUNS);
-  return runs;
+export type RunsSnapshot = { runs: AgentRun[]; spendTodayUsd: number; liveCount: number };
+
+export function fetchRuns(): Promise<RunsSnapshot> {
+  return apiRequest<RunsSnapshot>(API_PATHS.RUNS);
 }
 
 export function startRun(prId: PrId, force = false): Promise<{ run: AgentRun; started: boolean }> {

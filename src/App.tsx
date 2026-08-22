@@ -1,5 +1,6 @@
 import { PrDetailView } from './components/pr/PrDetailView';
 import { QueueView } from './components/queue/QueueView';
+import { SettingsView } from './components/settings/SettingsView';
 import { useRouteSync } from './routes';
 import { useUiStore } from './state/uiStore';
 
@@ -12,8 +13,7 @@ export default function App() {
       // Keyed so switching PRs remounts local state (selected file, keys).
       return <PrDetailView key={route.prId} prId={route.prId} />;
     case 'settings':
-      // Settings screen lands with the agent milestones; queue until then.
-      return <QueueView />;
+      return <SettingsView />;
     case 'queue':
       return <QueueView />;
   }

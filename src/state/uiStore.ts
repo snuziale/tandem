@@ -6,7 +6,7 @@ import { persist } from 'zustand/middleware';
 import type { Route } from '../routes';
 import type { PrId } from '../shared/review-types';
 
-export type QueueRowRef = { prId: PrId; url: string };
+export type QueueRowRef = { prId: PrId; url: string; blockerTitle?: string };
 export type DiffStyle = 'unified' | 'split';
 export type ComposerTarget = { path: string; line: number; side: 'LEFT' | 'RIGHT' };
 

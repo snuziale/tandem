@@ -5,7 +5,7 @@ import { ExternalLink } from 'lucide-react';
 import { startRun } from '../../api/runs';
 import { acceptFinding, dismissFinding, unstageFinding } from '../../hooks/findingActions';
 import { openPrExternal } from '../../hooks/queueActions';
-import { runFor, useAgentRuns } from '../../hooks/useAgentRuns';
+import { hasOpenBlocker, runFor, useAgentRuns } from '../../hooks/useAgentRuns';
 import { usePendingReview } from '../../hooks/usePendingReview';
 import { usePrDetail, usePrFiles } from '../../hooks/usePrDetail';
 import { useRunStream } from '../../hooks/useRunStream';
@@ -289,7 +289,17 @@ export function PrDetailView({ prId }: { prId: PrId }) {
           </>
         )}
       </div>
-      <ReviewTray prId={prId} review={review} onVerdict={setVerdict} onSummary={setSummary} />
+      <ReviewTray
+        prId={prId}
+        review={review}
+        onVerdict={setVerdict}
+        onSummary={setSummary}
+        submitDisabledReason={
+          review?.verdict === 'APPROVE' && hasOpenBlocker(run)
+            ? 'The agent found a blocker — dismiss it or pick another verdict to approve'
+            : undefined
+        }
+      />
     </Shell>
   );
 }

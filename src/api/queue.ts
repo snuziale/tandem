@@ -5,7 +5,7 @@ import { apiRequest } from './http';
 export function fetchQueue(views: SavedView[], signal?: AbortSignal): Promise<QueueResult> {
   return apiRequest<QueueResult>(API_PATHS.QUEUE, {
     method: 'POST',
-    body: { views: views.map((v) => ({ id: v.id, query: v.query })) },
+    body: { views: views.map((v) => ({ id: v.id, query: v.query, agentEnabled: v.agentEnabled })) },
     signal,
   });
 }

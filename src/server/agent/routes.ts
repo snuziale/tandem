@@ -7,9 +7,9 @@ import { loadConfig } from '../config/store';
 import { matchIdPath } from '../pathMatch';
 import { parseJsonBody } from '../requestJson';
 import { checkClaudeAvailable } from './claude';
-import { cancelLive, isLive, replay, subscribe } from './live';
+import { cancelLive, isLive, liveCount, replay, subscribe } from './live';
 import { startRun } from './pipeline/run';
-import { getRunById, listRuns, transitionFinding } from './runsIndex';
+import { getRunById, listRuns, spendToday, transitionFinding } from './runsIndex';
 
 export async function handleAgent(req: Request): Promise<Response> {
   const url = new URL(req.url);
@@ -23,7 +23,7 @@ export async function handleRuns(req: Request): Promise<Response> {
   const url = new URL(req.url);
 
   if (url.pathname === API_PATHS.RUNS && req.method === 'GET') {
-    return Response.json({ runs: await listRuns() });
+    return Response.json({ runs: await listRuns(), spendTodayUsd: await spendToday(), liveCount: liveCount() });
   }
 
   if (url.pathname === `${API_PATHS.RUNS}/start` && req.method === 'POST') {
