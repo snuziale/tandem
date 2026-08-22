@@ -1,7 +1,20 @@
+import { PrDetailView } from './components/pr/PrDetailView';
 import { QueueView } from './components/queue/QueueView';
+import { useRouteSync } from './routes';
+import { useUiStore } from './state/uiStore';
 
-// Route shell. The queue is `/`; PR detail (`/:owner/:repo/pull/:number`) and
-// settings (`/settings`) mount here as their milestones land (useRouteSync).
 export default function App() {
-  return <QueueView />;
+  useRouteSync();
+  const route = useUiStore((s) => s.route);
+
+  switch (route.name) {
+    case 'pr':
+      // Keyed so switching PRs remounts local state (selected file, keys).
+      return <PrDetailView key={route.prId} prId={route.prId} />;
+    case 'settings':
+      // Settings screen lands with the agent milestones; queue until then.
+      return <QueueView />;
+    case 'queue':
+      return <QueueView />;
+  }
 }

@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import { Skeleton, cn } from '@uipath/apollo-wind';
 import { useUiStore } from '../../state/uiStore';
 import type { PullRequest } from '../../shared/review-types';
-import { openPrExternal } from '../../hooks/queueActions';
+import { openPrDetail } from '../../hooks/useKeyboardNav';
 import { QUEUE_GRID, QueueRow } from './QueueRow';
 
 type Props = {
@@ -58,8 +58,7 @@ export function QueueTable({ rows, isLoading, error, viewError }: Props) {
             pr={pr}
             focused={pr.prId === focusedPrId}
             onFocus={() => setFocusedPr(pr.prId)}
-            // In-app detail lands in M2; until then a row opens on GitHub.
-            onOpen={() => openPrExternal(pr.url)}
+            onOpen={() => openPrDetail(pr.prId)}
           />
         ))
       )}

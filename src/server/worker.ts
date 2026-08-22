@@ -1,6 +1,7 @@
 import { handleConfig } from './config/routes';
 import { handleQueue } from './github/queue';
 import { handlePrs } from './github/routes';
+import { handleReviews } from './reviews/routes';
 import { handleViews } from './views/routes';
 import { serveAsset } from './assets';
 import { log } from './log';
@@ -29,6 +30,8 @@ function listen(port: number): ReturnType<typeof Bun.serve> {
           res = await handleQueue(req);
         } else if (url.pathname.startsWith(API_PATHS.PRS)) {
           res = await handlePrs(req);
+        } else if (url.pathname.startsWith(API_PATHS.REVIEWS)) {
+          res = await handleReviews(req);
         } else if (url.pathname.startsWith(API_PATHS.VIEWS)) {
           res = await handleViews(req);
         } else if (url.pathname.startsWith(`${API_PATHS.API}/`)) {

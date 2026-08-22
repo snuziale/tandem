@@ -1,11 +1,18 @@
-// In-memory UI state. Keyboard handlers read this via getState() snapshots
-// (the Sift dispatch pattern) so the global keydown listener never re-binds.
+// In-memory UI state (+ a few persisted display prefs). Keyboard handlers
+// read this via getState() snapshots (the Sift dispatch pattern) so the global
+// keydown listener never re-binds.
 import { create } from 'zustand';
+import { persist } from 'zustand/middleware';
+import type { Route } from '../routes';
 import type { PrId } from '../shared/review-types';
 
 export type QueueRowRef = { prId: PrId; url: string };
+export type DiffStyle = 'unified' | 'split';
 
 type UiState = {
+  route: Route;
+  setRoute: (route: Route) => void;
+
   activeViewId: string | null;
   setActiveView: (id: string | null) => void;
 
@@ -17,20 +24,39 @@ type UiState = {
   queueRows: QueueRowRef[];
   setQueueRows: (rows: QueueRowRef[]) => void;
 
+  // Persisted display prefs.
+  diffStyle: DiffStyle;
+  setDiffStyle: (style: DiffStyle) => void;
+
   shortcutsOpen: boolean;
   setShortcutsOpen: (open: boolean) => void;
 };
 
-export const useUiStore = create<UiState>()((set) => ({
-  activeViewId: null,
-  setActiveView: (id) => set({ activeViewId: id }),
+export const useUiStore = create<UiState>()(
+  persist(
+    (set) => ({
+      route: { name: 'queue' },
+      setRoute: (route) => set({ route }),
 
-  focusedPrId: null,
-  setFocusedPr: (id) => set({ focusedPrId: id }),
+      activeViewId: null,
+      setActiveView: (id) => set({ activeViewId: id }),
 
-  queueRows: [],
-  setQueueRows: (rows) => set({ queueRows: rows }),
+      focusedPrId: null,
+      setFocusedPr: (id) => set({ focusedPrId: id }),
 
-  shortcutsOpen: false,
-  setShortcutsOpen: (open) => set({ shortcutsOpen: open }),
-}));
+      queueRows: [],
+      setQueueRows: (rows) => set({ queueRows: rows }),
+
+      diffStyle: 'unified',
+      setDiffStyle: (style) => set({ diffStyle: style }),
+
+      shortcutsOpen: false,
+      setShortcutsOpen: (open) => set({ shortcutsOpen: open }),
+    }),
+    {
+      name: 'tandem:ui:v1',
+      version: 1,
+      partialize: (s) => ({ diffStyle: s.diffStyle }),
+    }
+  )
+);

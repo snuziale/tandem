@@ -1,6 +1,6 @@
 import { API_PATHS } from '../shared/api-paths';
 import { parsePrId } from '../shared/gh/prKey';
-import type { PrId } from '../shared/review-types';
+import type { FileChange, PrDetail, PrId } from '../shared/review-types';
 import { apiRequest } from './http';
 
 export function prApiBase(prId: PrId): string {
@@ -11,4 +11,13 @@ export function prApiBase(prId: PrId): string {
 
 export function approvePr(prId: PrId): Promise<{ ok: true; url: string }> {
   return apiRequest<{ ok: true; url: string }>(`${prApiBase(prId)}/approve`, { method: 'POST' });
+}
+
+export function fetchPrDetail(prId: PrId, signal?: AbortSignal): Promise<PrDetail> {
+  return apiRequest<PrDetail>(prApiBase(prId), { signal });
+}
+
+export async function fetchPrFiles(prId: PrId, signal?: AbortSignal): Promise<FileChange[]> {
+  const { files } = await apiRequest<{ files: FileChange[] }>(`${prApiBase(prId)}/files`, { signal });
+  return files;
 }

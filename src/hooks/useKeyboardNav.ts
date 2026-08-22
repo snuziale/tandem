@@ -6,8 +6,16 @@
 import { useEffect } from 'react';
 import { useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { hasOpenDialog, isTypingTarget } from '../keyboard/target';
+import { navigate } from '../routes';
+import { parsePrId } from '../shared/gh/prKey';
 import { useUiStore } from '../state/uiStore';
 import { approvePrAction, openPrExternal } from './queueActions';
+
+export function openPrDetail(prId: string): void {
+  const ref = parsePrId(prId);
+  if (!ref) return;
+  navigate({ name: 'pr', ...ref, prId });
+}
 
 type NavCtx = {
   e: KeyboardEvent;
@@ -45,9 +53,12 @@ const QUEUE_HANDLERS: Record<string, (ctx: NavCtx) => void> = {
     ctx.e.preventDefault();
     openPrExternal(row.url);
   },
-  // Enter switches to the in-app detail view once it exists (M2); until then
-  // it mirrors `o`.
-  Enter: (ctx) => QUEUE_HANDLERS.o(ctx),
+  Enter: (ctx) => {
+    const row = focusedRow();
+    if (!row) return;
+    ctx.e.preventDefault();
+    openPrDetail(row.prId);
+  },
   a: (ctx) => {
     const row = focusedRow();
     if (!row) return;
@@ -73,6 +84,8 @@ export function useKeyboardNav(): void {
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
       if (e.metaKey || e.ctrlKey || e.altKey) return;
+      // These are the QUEUE keys; the PR detail screen binds its own.
+      if (useUiStore.getState().route.name !== 'queue') return;
       if (hasOpenDialog()) return;
       if (isTypingTarget(e.target)) {
         // Esc blurs the field rather than doing anything destructive.

@@ -5,6 +5,8 @@ import { API_PATHS } from '../../shared/api-paths';
 import type { PrRef } from '../../shared/gh/prKey';
 import { loadConfig } from '../config/store';
 import { GitHubError } from './client';
+import { fetchPrFiles } from './files';
+import { fetchPrDetail } from './pr';
 import { quickApprove } from './submit';
 
 export async function handlePrs(req: Request): Promise<Response> {
@@ -17,6 +19,14 @@ export async function handlePrs(req: Request): Promise<Response> {
   if (!cfg) return Response.json({ error: 'unconfigured' }, { status: 503 });
 
   try {
+    if (action === '' && req.method === 'GET') {
+      const detail = await fetchPrDetail(cfg, ref, req.signal);
+      if (!detail) return Response.json({ error: 'pull request not found' }, { status: 404 });
+      return Response.json(detail);
+    }
+    if (action === '/files' && req.method === 'GET') {
+      return Response.json({ files: await fetchPrFiles(cfg, ref, req.signal) });
+    }
     if (action === '/approve' && req.method === 'POST') {
       const result = await quickApprove(cfg.github, ref);
       return Response.json({ ok: true, ...result });
