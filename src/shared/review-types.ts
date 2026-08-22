@@ -130,6 +130,10 @@ export type RateLimitInfo = { remaining: number; limit: number; resetAt: string 
 /** Response of POST /api/queue. */
 export type QueueResult = {
   views: Record<string, PullRequest[]>;
+  /** GitHub's issueCount per view — can exceed the fetched page of 50. */
+  counts: Record<string, number>;
+  /** Per-view failures (searches run independently); absent views succeeded. */
+  errors: Record<string, string>;
   rateLimit: RateLimitInfo | null;
   fetchedAt: string;
 };

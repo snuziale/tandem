@@ -45,8 +45,16 @@ function rateLimitFrom(res: Response): RateLimitInfo | null {
 async function errorMessageFrom(res: Response): Promise<string> {
   let detail = '';
   try {
-    const body = (await res.json()) as { message?: string };
-    if (body?.message) detail = body.message;
+    const body = (await res.json()) as { message?: string; errors?: Array<string | { message?: string }> };
+    const parts: string[] = [];
+    if (body?.message) parts.push(body.message);
+    // Review submission puts the actionable detail ("Can not approve your own
+    // pull request", per-comment anchor errors) in errors[], not message.
+    for (const err of body?.errors ?? []) {
+      if (typeof err === 'string') parts.push(err);
+      else if (err?.message) parts.push(err.message);
+    }
+    detail = parts.join(': ');
   } catch {
     // non-JSON error body — status text is all we have
   }
@@ -93,12 +101,21 @@ export async function graphql<T>(
   variables: Record<string, unknown> = {},
   signal?: AbortSignal
 ): Promise<{ data: T; rateLimit: RateLimitInfo | null }> {
-  const res = await fetch(`${GITHUB_API}/graphql`, {
-    method: 'POST',
-    headers: { ...authHeaders(creds), 'Content-Type': 'application/json' },
-    body: JSON.stringify({ query, variables }),
-    signal,
-  });
+  const post = () =>
+    fetch(`${GITHUB_API}/graphql`, {
+      method: 'POST',
+      headers: { ...authHeaders(creds), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query, variables }),
+      signal,
+    });
+  let res = await post();
+  // GitHub's search + statusCheckRollup combination runs close to their ~10s
+  // execution budget and intermittently 502s. One retry absorbs the blip; a
+  // repeat failure surfaces to the caller.
+  if (res.status === 502 || res.status === 503 || res.status === 504) {
+    await new Promise((r) => setTimeout(r, 500));
+    res = await post();
+  }
   if (!res.ok) throw new GitHubError(res.status, await errorMessageFrom(res), undefined);
   const payload = (await res.json()) as GraphQLResponse<T>;
   // GraphQL can return partial data + errors (e.g. one inaccessible repo in a
