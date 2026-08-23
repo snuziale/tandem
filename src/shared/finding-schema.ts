@@ -2,7 +2,7 @@
 // pipeline validates every pass's output against these; on failure it gets one
 // repair attempt, then the run fails visibly. Model output is untrusted —
 // anything not matching is rejected, never coerced into the UI.
-import { z } from 'zod';
+import { z } from "zod";
 
 export const EvidenceSchema = z.object({
   path: z.string().min(1),
@@ -12,11 +12,19 @@ export const EvidenceSchema = z.object({
 
 export const FindingJsonSchema = z.object({
   path: z.string().min(1),
-  side: z.enum(['LEFT', 'RIGHT']).default('RIGHT'),
+  side: z.enum(["LEFT", "RIGHT"]).default("RIGHT"),
   startLine: z.number().int().positive().optional(),
   endLine: z.number().int().positive(),
-  severity: z.enum(['blocker', 'risk', 'nit', 'question', 'praise']),
-  category: z.enum(['correctness', 'security', 'performance', 'api-contract', 'test-gap', 'style', 'docs']),
+  severity: z.enum(["blocker", "risk", "nit", "question", "praise"]),
+  category: z.enum([
+    "correctness",
+    "security",
+    "performance",
+    "api-contract",
+    "test-gap",
+    "style",
+    "docs",
+  ]),
   title: z.string().min(1).max(200),
   body: z.string().min(1).max(2000),
   suggestion: z.string().max(8000).optional(),

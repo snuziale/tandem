@@ -1,11 +1,22 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { resolveTheme as resolveShikiTheme } from '@pierre/diffs';
-import { FileTree as TreesFileTree, useFileTree } from '@pierre/trees/react';
-import { themeToTreeStyles, type FileTree as FileTreeModel, type GitStatusEntry } from '@pierre/trees';
-import { Button, Input, Tooltip, TooltipContent, TooltipPortal, TooltipTrigger } from '@uipath/apollo-wind';
-import { Search, X } from 'lucide-react';
-import type { FileChange } from '../../shared/review-types';
-import { resolveTheme, useThemeStore } from '../../state/themeStore';
+import { useEffect, useMemo, useRef, useState } from "react";
+import { resolveTheme as resolveShikiTheme } from "@pierre/diffs";
+import { FileTree as TreesFileTree, useFileTree } from "@pierre/trees/react";
+import {
+  themeToTreeStyles,
+  type FileTree as FileTreeModel,
+  type GitStatusEntry,
+} from "@pierre/trees";
+import {
+  Button,
+  Input,
+  Tooltip,
+  TooltipContent,
+  TooltipPortal,
+  TooltipTrigger,
+} from "@uipath/apollo-wind";
+import { Search, X } from "lucide-react";
+import type { FileChange } from "../../shared/review-types";
+import { resolveTheme, useThemeStore } from "../../state/themeStore";
 
 type Props = {
   files: FileChange[];
@@ -18,21 +29,28 @@ type Props = {
   onModelReady?: (model: FileTreeModel) => void;
 };
 
-const GIT_STATUS: Record<FileChange['status'], GitStatusEntry['status']> = {
-  added: 'added',
-  removed: 'deleted',
-  modified: 'modified',
-  renamed: 'renamed',
-  copied: 'added',
-  changed: 'modified',
-  unchanged: 'modified',
+const GIT_STATUS: Record<FileChange["status"], GitStatusEntry["status"]> = {
+  added: "added",
+  removed: "deleted",
+  modified: "modified",
+  renamed: "renamed",
+  copied: "added",
+  changed: "modified",
+  unchanged: "modified",
 };
 
 // The PR file tree on @pierre/trees: real hierarchy with flattened empty
 // dirs, always-virtualized, built-in search (the header's button / filters as
 // you type), git-status badges from the PR's change types, sticky folders,
 // and per-file decorations (+a −d · viewed ✓ · violet agent dot).
-export function FileTree({ files, viewedFiles, selectedPath, onSelect, agentPaths, onModelReady }: Props) {
+export function FileTree({
+  files,
+  viewedFiles,
+  selectedPath,
+  onSelect,
+  agentPaths,
+  onModelReady,
+}: Props) {
   // The model is constructed ONCE (useFileTree); everything row decorations
   // need at render time is read through this ref so it never goes stale.
   const stateRef = useRef({ files, viewedFiles, agentPaths });
@@ -41,14 +59,14 @@ export function FileTree({ files, viewedFiles, selectedPath, onSelect, agentPath
 
   const { model } = useFileTree({
     paths,
-    initialExpansion: 'open',
+    initialExpansion: "open",
     flattenEmptyDirectories: true,
     stickyFolders: true,
-    density: 'compact',
+    density: "compact",
     // Our own search input lives in the header; the model still does the
     // filtering (setSearch works without the built-in UI).
     search: false,
-    fileTreeSearchMode: 'hide-non-matches',
+    fileTreeSearchMode: "hide-non-matches",
     gitStatus: gitStatusOf(files),
     onSelectionChange: (selected) => {
       const path = selected[0];
@@ -57,23 +75,30 @@ export function FileTree({ files, viewedFiles, selectedPath, onSelect, agentPath
       if (item && !item.isDirectory()) onSelect(path);
     },
     renderRowDecoration: ({ row }) => {
-      if (row.kind !== 'file') return null;
+      if (row.kind !== "file") return null;
       const { files, viewedFiles, agentPaths } = stateRef.current;
       const file = files.find((f) => f.path === row.path);
       if (!file) return null;
       const parts = [];
-      if (agentPaths?.has(row.path)) parts.push({ text: '● ', color: 'var(--tandem-agent)' });
+      if (agentPaths?.has(row.path))
+        parts.push({ text: "● ", color: "var(--tandem-agent)" });
       if (file.isBinary || file.tooLarge) {
-        parts.push({ text: file.isBinary ? 'bin' : 'big' });
+        parts.push({ text: file.isBinary ? "bin" : "big" });
       } else {
-        parts.push({ text: `+${file.additions}`, color: 'var(--color-emerald-500, #10b981)' });
-        parts.push({ text: ` −${file.deletions}`, color: 'var(--color-red-400, #f87171)' });
+        parts.push({
+          text: `+${file.additions}`,
+          color: "var(--color-emerald-500, #10b981)",
+        });
+        parts.push({
+          text: ` −${file.deletions}`,
+          color: "var(--color-red-400, #f87171)",
+        });
       }
-      if (viewedFiles.includes(row.path)) parts.push({ text: ' ✓' });
+      if (viewedFiles.includes(row.path)) parts.push({ text: " ✓" });
       return {
-        text: parts.map((p) => p.text).join(''),
+        text: parts.map((p) => p.text).join(""),
         parts,
-        title: `${file.path} · +${file.additions} −${file.deletions}${viewedFiles.includes(row.path) ? ' · viewed' : ''}`,
+        title: `${file.path} · +${file.additions} −${file.deletions}${viewedFiles.includes(row.path) ? " · viewed" : ""}`,
       };
     },
   });
@@ -86,7 +111,7 @@ export function FileTree({ files, viewedFiles, selectedPath, onSelect, agentPath
   // setSearch is debounced and focus re-asserted after it fires: a model
   // mutation re-renders the header slot, which remounts the input mid-typing.
   const [searchOpen, setSearchOpen] = useState(false);
-  const [searchValue, setSearchValue] = useState('');
+  const [searchValue, setSearchValue] = useState("");
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const searchDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
   const applySearch = (value: string) => {
@@ -100,20 +125,22 @@ export function FileTree({ files, viewedFiles, selectedPath, onSelect, agentPath
   const closeSearch = () => {
     if (searchDebounce.current) clearTimeout(searchDebounce.current);
     setSearchOpen(false);
-    setSearchValue('');
+    setSearchValue("");
     model.setSearch(null);
   };
 
   // Match the tree's shadow-DOM styling to the app theme via the same shiki
   // themes the diff pane uses (themeToTreeStyles → --trees-theme-* vars).
   const themePreference = useThemeStore((s) => s.preference);
-  const isDark = resolveTheme(themePreference) === 'future-dark';
+  const isDark = resolveTheme(themePreference) === "future-dark";
   const [treeStyles, setTreeStyles] = useState<Record<string, string>>({});
   useEffect(() => {
     let cancelled = false;
-    void resolveShikiTheme(isDark ? 'github-dark' : 'github-light').then((theme) => {
-      if (!cancelled) setTreeStyles(themeToTreeStyles(theme));
-    });
+    void resolveShikiTheme(isDark ? "github-dark" : "github-light").then(
+      (theme) => {
+        if (!cancelled) setTreeStyles(themeToTreeStyles(theme));
+      },
+    );
     return () => {
       cancelled = true;
     };
@@ -137,7 +164,7 @@ export function FileTree({ files, viewedFiles, selectedPath, onSelect, agentPath
     lastExternal.current = selectedPath;
     const item = model.getItem(selectedPath);
     if (item && !item.isSelected()) item.select();
-    model.scrollToPath(selectedPath, { offset: 'nearest' });
+    model.scrollToPath(selectedPath, { offset: "nearest" });
   }, [model, selectedPath]);
 
   const [count] = useState(() => files.length);
@@ -159,7 +186,7 @@ export function FileTree({ files, viewedFiles, selectedPath, onSelect, agentPath
                 value={searchValue}
                 onChange={(e) => applySearch(e.target.value)}
                 onKeyDown={(e) => {
-                  if (e.key === 'Escape') {
+                  if (e.key === "Escape") {
                     e.stopPropagation();
                     closeSearch();
                   }
@@ -170,8 +197,12 @@ export function FileTree({ files, viewedFiles, selectedPath, onSelect, agentPath
               />
             ) : (
               <>
-                <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-mono">files</span>
-                <span className="text-[10px] text-muted-foreground font-mono">{count}</span>
+                <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-mono">
+                  files
+                </span>
+                <span className="text-[10px] text-muted-foreground font-mono">
+                  {count}
+                </span>
                 <span className="flex-1" />
               </>
             )}
@@ -181,14 +212,18 @@ export function FileTree({ files, viewedFiles, selectedPath, onSelect, agentPath
                   size="2xs"
                   icon
                   variant="ghost"
-                  aria-label={searchOpen ? 'Close file search' : 'Search files'}
-                  onClick={() => (searchOpen ? closeSearch() : setSearchOpen(true))}
+                  aria-label={searchOpen ? "Close file search" : "Search files"}
+                  onClick={() =>
+                    searchOpen ? closeSearch() : setSearchOpen(true)
+                  }
                 >
                   {searchOpen ? <X /> : <Search />}
                 </Button>
               </TooltipTrigger>
               <TooltipPortal>
-                <TooltipContent>{searchOpen ? 'Close search' : 'Search files'}</TooltipContent>
+                <TooltipContent>
+                  {searchOpen ? "Close search" : "Search files"}
+                </TooltipContent>
               </TooltipPortal>
             </Tooltip>
           </div>

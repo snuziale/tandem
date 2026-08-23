@@ -1,39 +1,44 @@
-import { Webview, SizeHint } from 'webview-bun';
-import { COMPILED_WORKER_PATH, isCompiledBun } from './runtime';
+import { Webview, SizeHint } from "webview-bun";
+import { COMPILED_WORKER_PATH, isCompiledBun } from "./runtime";
 
 // webview-bun requires the OS native webview to own the main thread. We host
 // Bun.serve in a worker and wait for it to postMessage its bound port before
 // opening the window.
-const workerUrl = isCompiledBun() ? COMPILED_WORKER_PATH : new URL('./worker.ts', import.meta.url).href;
+const workerUrl = isCompiledBun()
+  ? COMPILED_WORKER_PATH
+  : new URL("./worker.ts", import.meta.url).href;
 
 const worker = new Worker(workerUrl);
 
 const webview = new Webview();
-webview.title = 'Tandem';
+webview.title = "Tandem";
 webview.size = { width: 1520, height: 960, hint: SizeHint.NONE };
 
 function openExternalUrl(value: unknown): boolean {
   try {
     const url = new URL(String(value));
-    if (url.protocol !== 'http:' && url.protocol !== 'https:') return false;
+    if (url.protocol !== "http:" && url.protocol !== "https:") return false;
     const cmd =
-      process.platform === 'darwin'
-        ? ['open', url.href]
-        : process.platform === 'win32'
-          ? ['cmd', '/c', 'start', '', url.href]
-          : ['xdg-open', url.href];
-    Bun.spawn(cmd, { stdout: 'ignore', stderr: 'ignore' });
+      process.platform === "darwin"
+        ? ["open", url.href]
+        : process.platform === "win32"
+          ? ["cmd", "/c", "start", "", url.href]
+          : ["xdg-open", url.href];
+    Bun.spawn(cmd, { stdout: "ignore", stderr: "ignore" });
     return true;
   } catch (e) {
-    console.error('[app] external open failed:', e instanceof Error ? e.message : String(e));
+    console.error(
+      "[app] external open failed:",
+      e instanceof Error ? e.message : String(e),
+    );
     return false;
   }
 }
 
-webview.bind('tandemOpenExternalUrl', openExternalUrl);
+webview.bind("tandemOpenExternalUrl", openExternalUrl);
 // webview-bun does not create a macOS application menu, so its usual Quit
 // command must be bridged from the web content.
-webview.bind('tandemQuit', () => process.exit(0));
+webview.bind("tandemQuit", () => process.exit(0));
 
 webview.init(`
   window.__TANDEM_HOST__ = 'native';
@@ -74,7 +79,7 @@ let navigated = false;
 
 worker.onmessage = (event: MessageEvent) => {
   const msg = event.data as { type?: string; host?: string; port?: number };
-  if (msg?.type === 'ready' && msg.host && msg.port && !navigated) {
+  if (msg?.type === "ready" && msg.host && msg.port && !navigated) {
     navigated = true;
     webview.navigate(`http://${msg.host}:${msg.port}`);
     webview.run();
@@ -83,5 +88,5 @@ worker.onmessage = (event: MessageEvent) => {
 };
 
 worker.onerror = (event: ErrorEvent) => {
-  console.error('[app] worker error:', event.message);
+  console.error("[app] worker error:", event.message);
 };

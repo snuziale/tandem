@@ -1,14 +1,16 @@
 // Pass-2 file clustering: related files analyzed together so cross-file
 // context survives (a hook and its test, a type and its consumer), while
 // keeping each invocation's prompt bounded.
-import type { FileChange } from '../../../shared/review-types';
+import type { FileChange } from "../../../shared/review-types";
 
 const MAX_FILES_PER_CLUSTER = 8;
 const MAX_LINES_PER_CLUSTER = 800;
 
 /** Files the agent should read: has a patch, not generated. */
 export function analyzableFiles(files: FileChange[]): FileChange[] {
-  return files.filter((f) => f.patch !== undefined && !f.isGenerated && !f.isBinary);
+  return files.filter(
+    (f) => f.patch !== undefined && !f.isGenerated && !f.isBinary,
+  );
 }
 
 /**
@@ -30,7 +32,11 @@ export function clusterFiles(files: FileChange[]): FileChange[][] {
     let lines = 0;
     for (const file of group) {
       const fileLines = file.additions + file.deletions;
-      if (current.length > 0 && (current.length >= MAX_FILES_PER_CLUSTER || lines + fileLines > MAX_LINES_PER_CLUSTER)) {
+      if (
+        current.length > 0 &&
+        (current.length >= MAX_FILES_PER_CLUSTER ||
+          lines + fileLines > MAX_LINES_PER_CLUSTER)
+      ) {
         clusters.push(current);
         current = [];
         lines = 0;
@@ -44,6 +50,6 @@ export function clusterFiles(files: FileChange[]): FileChange[][] {
 }
 
 function topDir(path: string): string {
-  const slash = path.indexOf('/');
-  return slash === -1 ? '(root)' : path.slice(0, slash);
+  const slash = path.indexOf("/");
+  return slash === -1 ? "(root)" : path.slice(0, slash);
 }

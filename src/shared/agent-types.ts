@@ -2,15 +2,37 @@
 // the Bun server (pipeline, run store, routes) and the SPA client (agent pane,
 // queue agent cell). State machines are enforced server-side via the edge
 // tables at the bottom — the client only ever requests transitions.
-import type { DiffSide, PrId } from './review-types';
+import type { DiffSide, PrId } from "./review-types";
 
-export type Severity = 'blocker' | 'risk' | 'nit' | 'question' | 'praise';
-export type Category = 'correctness' | 'security' | 'performance' | 'api-contract' | 'test-gap' | 'style' | 'docs';
+export type Severity = "blocker" | "risk" | "nit" | "question" | "praise";
+export type Category =
+  | "correctness"
+  | "security"
+  | "performance"
+  | "api-contract"
+  | "test-gap"
+  | "style"
+  | "docs";
 
-export const SEVERITIES: readonly Severity[] = ['blocker', 'risk', 'nit', 'question', 'praise'];
-export const CATEGORIES: readonly Category[] = ['correctness', 'security', 'performance', 'api-contract', 'test-gap', 'style', 'docs'];
+export const SEVERITIES: readonly Severity[] = [
+  "blocker",
+  "risk",
+  "nit",
+  "question",
+  "praise",
+];
+export const CATEGORIES: readonly Category[] = [
+  "correctness",
+  "security",
+  "performance",
+  "api-contract",
+  "test-gap",
+  "style",
+  "docs",
+];
 
-export type FindingState = 'proposed' | 'staged' | 'edited' | 'dismissed' | 'posted' | 'stale';
+export type FindingState =
+  "proposed" | "staged" | "edited" | "dismissed" | "posted" | "stale";
 
 export type Evidence = {
   path: string;
@@ -41,17 +63,30 @@ export type Finding = {
   state: FindingState;
 };
 
-export type AgentRunStatus = 'queued' | 'fetching' | 'analyzing' | 'ready' | 'failed' | 'skipped' | 'stale';
+export type AgentRunStatus =
+  | "queued"
+  | "fetching"
+  | "analyzing"
+  | "ready"
+  | "failed"
+  | "skipped"
+  | "stale";
 
-export type SkipReason = 'draft' | 'too-many-files' | 'diff-too-large' | 'generated-only' | 'budget' | 'agent-disabled';
+export type SkipReason =
+  | "draft"
+  | "too-many-files"
+  | "diff-too-large"
+  | "generated-only"
+  | "budget"
+  | "agent-disabled";
 
 export const SKIP_REASON_LABEL: Record<SkipReason, string> = {
-  draft: 'draft',
-  'too-many-files': 'over file cap',
-  'diff-too-large': 'diff too large',
-  'generated-only': 'generated files only',
-  budget: 'daily budget spent',
-  'agent-disabled': 'agent off for repo',
+  draft: "draft",
+  "too-many-files": "over file cap",
+  "diff-too-large": "diff too large",
+  "generated-only": "generated files only",
+  budget: "daily budget spent",
+  "agent-disabled": "agent off for repo",
 };
 
 export type AgentRun = {
@@ -79,40 +114,50 @@ export type AgentRun = {
 
 /** SSE frames on /api/runs/:id/stream. Coarse pass progress, not a token stream. */
 export type RunEvent =
-  | { type: 'status'; status: AgentRunStatus; detail?: string }
-  | { type: 'pass'; pass: 1 | 2 | 3; label: string }
-  | { type: 'usage'; tokens: number; costUsd: number }
-  | { type: 'done'; run: AgentRun }
-  | { type: 'error'; message: string };
+  | { type: "status"; status: AgentRunStatus; detail?: string }
+  | { type: "pass"; pass: 1 | 2 | 3; label: string }
+  | { type: "usage"; tokens: number; costUsd: number }
+  | { type: "done"; run: AgentRun }
+  | { type: "error"; message: string };
 
 // ---------------------------------------------------------------------------
 // State machines (spec §2). Enforced by the server stores: transitionRun /
 // transitionFinding throw on any edge not listed here. `stale` is reachable
 // from anywhere via the staleness sweep when headSha changes.
 
-export const RUN_EDGES: Readonly<Record<AgentRunStatus, readonly AgentRunStatus[]>> = {
-  queued: ['fetching', 'skipped', 'stale'],
-  fetching: ['analyzing', 'failed', 'stale'],
-  analyzing: ['ready', 'failed', 'stale'],
-  ready: ['stale'],
-  failed: ['queued', 'stale'],
-  skipped: ['queued', 'stale'],
-  stale: ['queued'],
+export const RUN_EDGES: Readonly<
+  Record<AgentRunStatus, readonly AgentRunStatus[]>
+> = {
+  queued: ["fetching", "skipped", "stale"],
+  fetching: ["analyzing", "failed", "stale"],
+  analyzing: ["ready", "failed", "stale"],
+  ready: ["stale"],
+  failed: ["queued", "stale"],
+  skipped: ["queued", "stale"],
+  stale: ["queued"],
 };
 
-export const FINDING_EDGES: Readonly<Record<FindingState, readonly FindingState[]>> = {
-  proposed: ['staged', 'edited', 'dismissed', 'stale'],
-  edited: ['staged', 'dismissed', 'stale'],
-  staged: ['posted', 'proposed', 'edited', 'dismissed', 'stale'],
-  dismissed: ['proposed', 'stale'],
+export const FINDING_EDGES: Readonly<
+  Record<FindingState, readonly FindingState[]>
+> = {
+  proposed: ["staged", "edited", "dismissed", "stale"],
+  edited: ["staged", "dismissed", "stale"],
+  staged: ["posted", "proposed", "edited", "dismissed", "stale"],
+  dismissed: ["proposed", "stale"],
   posted: [],
   stale: [],
 };
 
-export function canTransitionRun(from: AgentRunStatus, to: AgentRunStatus): boolean {
+export function canTransitionRun(
+  from: AgentRunStatus,
+  to: AgentRunStatus,
+): boolean {
   return RUN_EDGES[from].includes(to);
 }
 
-export function canTransitionFinding(from: FindingState, to: FindingState): boolean {
+export function canTransitionFinding(
+  from: FindingState,
+  to: FindingState,
+): boolean {
   return FINDING_EDGES[from].includes(to);
 }

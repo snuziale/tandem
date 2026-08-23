@@ -10,15 +10,21 @@
  * `id` is the first path segment only, so a caller checking `rest === '/run'`
  * can't be fooled by an id containing slashes.
  */
-export function matchIdPath(pathname: string, base: string): { id: string; rest: string } | null {
+export function matchIdPath(
+  pathname: string,
+  base: string,
+): { id: string; rest: string } | null {
   const prefix = `${base}/`;
   if (!pathname.startsWith(prefix)) return null;
   const tail = pathname.slice(prefix.length);
-  const slash = tail.indexOf('/');
+  const slash = tail.indexOf("/");
   const raw = slash === -1 ? tail : tail.slice(0, slash);
   if (!raw) return null;
   try {
-    return { id: decodeURIComponent(raw), rest: slash === -1 ? '' : tail.slice(slash) };
+    return {
+      id: decodeURIComponent(raw),
+      rest: slash === -1 ? "" : tail.slice(slash),
+    };
   } catch {
     return null; // malformed escape sequence — no such id
   }

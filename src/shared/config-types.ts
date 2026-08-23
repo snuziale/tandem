@@ -15,7 +15,8 @@ export type CredentialField = {
 
 // Result of POST /api/config/test. `login` is the authenticated GitHub user —
 // the identity reviews will be submitted as.
-export type CredentialTestResult = { ok: true; login: string } | { ok: false; message: string };
+export type CredentialTestResult =
+  { ok: true; login: string } | { ok: false; message: string };
 
 // Response of GET /api/config/status.
 export type ConfigStatus = {

@@ -1,16 +1,16 @@
-import { handleAgent, handleRuns } from './agent/routes';
-import { handleConfig } from './config/routes';
-import { handleQueue } from './github/queue';
-import { handlePrs } from './github/routes';
-import { handleReviews } from './reviews/routes';
-import { handleSeen } from './seen/routes';
-import { handleSettings } from './settings/routes';
-import { handleViews } from './views/routes';
-import { serveAsset } from './assets';
-import { log } from './log';
-import { API_PATHS } from '../shared/api-paths';
+import { handleAgent, handleRuns } from "./agent/routes";
+import { handleConfig } from "./config/routes";
+import { handleQueue } from "./github/queue";
+import { handlePrs } from "./github/routes";
+import { handleReviews } from "./reviews/routes";
+import { handleSeen } from "./seen/routes";
+import { handleSettings } from "./settings/routes";
+import { handleViews } from "./views/routes";
+import { serveAsset } from "./assets";
+import { log } from "./log";
+import { API_PATHS } from "../shared/api-paths";
 
-const HOST = '127.0.0.1';
+const HOST = "127.0.0.1";
 const FIRST_PORT = Number(Bun.env.TANDEM_SERVER_PORT ?? Bun.env.PORT ?? 5274);
 const PORT_RANGE = 8;
 
@@ -46,7 +46,7 @@ function listen(port: number): ReturnType<typeof Bun.serve> {
         } else if (url.pathname.startsWith(API_PATHS.SETTINGS)) {
           res = await handleSettings(req);
         } else if (url.pathname.startsWith(`${API_PATHS.API}/`)) {
-          res = Response.json({ error: 'not found' }, { status: 404 });
+          res = Response.json({ error: "not found" }, { status: 404 });
         } else {
           res = await serveAsset(url.pathname);
         }
@@ -60,18 +60,18 @@ function listen(port: number): ReturnType<typeof Bun.serve> {
           return new Response(null, { status: 499 });
         }
         log(req, 500, Date.now() - start, e);
-        return new Response('Internal error', { status: 500 });
+        return new Response("Internal error", { status: 500 });
       }
     },
   });
 }
 
 function isAddressInUse(e: unknown): boolean {
-  if (!e || typeof e !== 'object') return false;
+  if (!e || typeof e !== "object") return false;
   const err = e as { code?: string; message?: string };
-  if (err.code === 'EADDRINUSE') return true;
-  const msg = (err.message ?? '').toLowerCase();
-  return msg.includes('eaddrinuse') || msg.includes('in use');
+  if (err.code === "EADDRINUSE") return true;
+  const msg = (err.message ?? "").toLowerCase();
+  return msg.includes("eaddrinuse") || msg.includes("in use");
 }
 
 function tryListen(): ReturnType<typeof Bun.serve> {
@@ -87,7 +87,9 @@ function tryListen(): ReturnType<typeof Bun.serve> {
       throw e;
     }
   }
-  throw new Error(`could not bind any port in ${FIRST_PORT}..${FIRST_PORT + PORT_RANGE - 1}`);
+  throw new Error(
+    `could not bind any port in ${FIRST_PORT}..${FIRST_PORT + PORT_RANGE - 1}`,
+  );
 }
 
 const server = tryListen();
@@ -98,6 +100,6 @@ console.log(`tandem server → http://${HOST}:${server.port}`);
 // loaded directly (`bun src/server/worker.ts` — server-only, no native window),
 // postMessage is undefined and we just print the URL.
 declare const postMessage: ((msg: unknown) => void) | undefined;
-if (typeof postMessage === 'function') {
-  postMessage({ type: 'ready', host: HOST, port: server.port });
+if (typeof postMessage === "function") {
+  postMessage({ type: "ready", host: HOST, port: server.port });
 }

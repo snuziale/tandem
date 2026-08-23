@@ -4,7 +4,7 @@
 // splitRawDiff handles the fallback path: the whole-PR unified diff fetched
 // with `Accept: application/vnd.github.diff` (used when the files API omits
 // patches or the PR exceeds its 300-file window), split back per file.
-import type { FileChange } from '../review-types';
+import type { FileChange } from "../review-types";
 
 /** A complete single-file unified patch, or null when there is nothing to
  * render (binary or patch withheld by the API). */
@@ -12,18 +12,18 @@ export function buildFilePatch(f: FileChange): string | null {
   if (f.patch === undefined) return null;
   const oldPath = f.previousPath ?? f.path;
   const lines = [`diff --git a/${oldPath} b/${f.path}`];
-  if (f.status === 'renamed') {
+  if (f.status === "renamed") {
     lines.push(`rename from ${oldPath}`, `rename to ${f.path}`);
   }
-  if (f.status === 'added') {
-    lines.push('new file mode 100644', '--- /dev/null', `+++ b/${f.path}`);
-  } else if (f.status === 'removed') {
-    lines.push('deleted file mode 100644', `--- a/${oldPath}`, '+++ /dev/null');
+  if (f.status === "added") {
+    lines.push("new file mode 100644", "--- /dev/null", `+++ b/${f.path}`);
+  } else if (f.status === "removed") {
+    lines.push("deleted file mode 100644", `--- a/${oldPath}`, "+++ /dev/null");
   } else {
     lines.push(`--- a/${oldPath}`, `+++ b/${f.path}`);
   }
   lines.push(f.patch);
-  return `${lines.join('\n')}\n`;
+  return `${lines.join("\n")}\n`;
 }
 
 /**
@@ -36,7 +36,7 @@ export function splitRawDiff(raw: string): Map<string, string> {
   // for GitHub's .diff output).
   const sections = raw.split(/^(?=diff --git )/m);
   for (const section of sections) {
-    if (!section.startsWith('diff --git ')) continue;
+    if (!section.startsWith("diff --git ")) continue;
     const path = pathOfSection(section);
     if (path) out.set(path, section);
   }
@@ -55,7 +55,9 @@ function pathOfSection(section: string): string | null {
 }
 
 /** Total changed-line count of a diff (additions + deletions), for size caps. */
-export function countDiffLines(files: Array<Pick<FileChange, 'additions' | 'deletions'>>): number {
+export function countDiffLines(
+  files: Array<Pick<FileChange, "additions" | "deletions">>,
+): number {
   return files.reduce((sum, f) => sum + f.additions + f.deletions, 0);
 }
 
@@ -76,19 +78,19 @@ export function diffLineIndex(patch: string): DiffLineIndex {
   const right = new Set<number>();
   let oldLine = 0;
   let newLine = 0;
-  for (const line of patch.split('\n')) {
+  for (const line of patch.split("\n")) {
     const hunk = /^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/.exec(line);
     if (hunk) {
       oldLine = Number(hunk[1]);
       newLine = Number(hunk[2]);
       continue;
     }
-    if (line.startsWith('\\')) continue; // "\ No newline at end of file"
-    if (line.startsWith('-')) {
+    if (line.startsWith("\\")) continue; // "\ No newline at end of file"
+    if (line.startsWith("-")) {
       left.add(oldLine++);
-    } else if (line.startsWith('+')) {
+    } else if (line.startsWith("+")) {
       right.add(newLine++);
-    } else if (line.startsWith(' ') || line === '') {
+    } else if (line.startsWith(" ") || line === "") {
       left.add(oldLine++);
       right.add(newLine++);
     }

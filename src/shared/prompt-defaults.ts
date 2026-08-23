@@ -16,7 +16,7 @@ export type PromptTexts = {
 };
 
 const PREAMBLE =
-  'You are the reviewing agent inside Tandem, a code-review client. A human reviewer will triage everything you produce; nothing you write reaches GitHub.';
+  "You are the reviewing agent inside Tandem, a code-review client. A human reviewer will triage everything you produce; nothing you write reaches GitHub.";
 
 export const DEFAULT_PROMPTS: PromptTexts = {
   rules: `Rules — follow every one:
@@ -52,7 +52,14 @@ export function promptTextsOf(raw: unknown): PromptTexts {
   const source = (raw ?? {}) as Partial<Record<keyof PromptTexts, unknown>>;
   const pick = (key: keyof PromptTexts) => {
     const value = source[key];
-    return typeof value === 'string' && value.trim() ? value : DEFAULT_PROMPTS[key];
+    return typeof value === "string" && value.trim()
+      ? value
+      : DEFAULT_PROMPTS[key];
   };
-  return { rules: pick('rules'), orient: pick('orient'), analyze: pick('analyze'), reconcile: pick('reconcile') };
+  return {
+    rules: pick("rules"),
+    orient: pick("orient"),
+    analyze: pick("analyze"),
+    reconcile: pick("reconcile"),
+  };
 }

@@ -48,7 +48,10 @@ export type BuiltQueueQuery = {
   aliasToViewId: Record<string, string>;
 };
 
-export function buildQueueQuery(views: QueueQueryInput[], pageSize = 50): BuiltQueueQuery {
+export function buildQueueQuery(
+  views: QueueQueryInput[],
+  pageSize = 50,
+): BuiltQueueQuery {
   const aliasToViewId: Record<string, string> = {};
   const searches = views.map((view, i) => {
     const alias = `v${i}`;
@@ -60,7 +63,7 @@ export function buildQueueQuery(views: QueueQueryInput[], pageSize = 50): BuiltQ
   });
   const gql = `query TandemQueue {
   rateLimit { remaining limit resetAt }
-${searches.join('\n')}
+${searches.join("\n")}
 }
 ${PR_SEARCH_FRAGMENT}`;
   return { gql, aliasToViewId };

@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect } from "react";
 
 // webview-bun (macOS WKWebView, Windows WebView2) ships without a native
 // application menu, so Cmd+V / Cmd+C / Cmd+X / Cmd+A aren't delivered to
@@ -15,27 +15,28 @@ export function useNativeShortcuts(): void {
       if (!isEditableNativeField(el)) return;
 
       switch (e.key.toLowerCase()) {
-        case 'v':
+        case "v":
           e.preventDefault();
           void paste(el);
           return;
-        case 'c':
+        case "c":
           e.preventDefault();
           void copySelection(el);
           return;
-        case 'x':
+        case "x":
           if (e.shiftKey) return;
           e.preventDefault();
           void cut(el);
           return;
-        case 'a':
+        case "a":
           e.preventDefault();
           selectAll(el);
           return;
       }
     };
-    document.addEventListener('keydown', handler, { capture: true });
-    return () => document.removeEventListener('keydown', handler, { capture: true });
+    document.addEventListener("keydown", handler, { capture: true });
+    return () =>
+      document.removeEventListener("keydown", handler, { capture: true });
   }, []);
 }
 
@@ -66,9 +67,16 @@ async function paste(el: EditableField): Promise<void> {
 // a non-empty selection was actually written.
 async function copySelection(el: EditableField): Promise<boolean> {
   const { selectionStart, selectionEnd, value } = el;
-  if (selectionStart == null || selectionEnd == null || selectionStart === selectionEnd) return false;
+  if (
+    selectionStart == null ||
+    selectionEnd == null ||
+    selectionStart === selectionEnd
+  )
+    return false;
   try {
-    await navigator.clipboard.writeText(value.substring(selectionStart, selectionEnd));
+    await navigator.clipboard.writeText(
+      value.substring(selectionStart, selectionEnd),
+    );
     return true;
   } catch {
     // permission denied — leave the field untouched
@@ -77,7 +85,7 @@ async function copySelection(el: EditableField): Promise<boolean> {
 }
 
 async function cut(el: EditableField): Promise<void> {
-  if (await copySelection(el)) insertText(el, '');
+  if (await copySelection(el)) insertText(el, "");
 }
 
 function selectAll(el: EditableField): void {
@@ -89,7 +97,7 @@ function selectAll(el: EditableField): void {
 function insertText(el: EditableField, text: string): void {
   el.focus();
   if (document.execCommand) {
-    const ok = document.execCommand('insertText', false, text);
+    const ok = document.execCommand("insertText", false, text);
     if (ok) return;
   }
   const start = el.selectionStart ?? el.value.length;
@@ -98,5 +106,5 @@ function insertText(el: EditableField, text: string): void {
   el.value = next;
   const cursor = start + text.length;
   el.setSelectionRange(cursor, cursor);
-  el.dispatchEvent(new Event('input', { bubbles: true }));
+  el.dispatchEvent(new Event("input", { bubbles: true }));
 }

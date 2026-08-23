@@ -2,28 +2,58 @@
 // orient → analyze (per cluster) → reconcile, all through the read-only
 // claude CLI harness, findings validated and post-filtered before anything is
 // stored. Runs are detached from HTTP (live.ts); results land in runsIndex.
-import { randomUUID } from 'node:crypto';
-import type { AgentRun, Finding, RunEvent } from '../../../shared/agent-types';
-import { Pass1PlanSchema, Pass2OutputSchema, Pass3OutputSchema, type FindingJson, type Pass1Plan } from '../../../shared/finding-schema';
-import { countDiffLines, diffLineIndex, type DiffLineIndex } from '../../../shared/gh/patch';
-import { parsePrId, type PrRef } from '../../../shared/gh/prKey';
-import type { FileChange, PrDetail, PrId } from '../../../shared/review-types';
-import { agentById, type AgentProfile, type TandemSettings } from '../../../shared/settings-types';
-import type { Config } from '../../config/store';
-import { fetchPrFiles } from '../../github/files';
-import { fetchPrDetail } from '../../github/pr';
-import { quickApprove } from '../../github/submit';
-import { loadReview } from '../../reviews/store';
-import { agentEnabledFor, loadSettings } from '../../settings/store';
-import { runClaudePass, type ClaudePassResult } from '../claude';
-import { createLive, finishLive, publish } from '../live';
-import { addSpend, getRun, markRunStale, spendToday, upsertRun } from '../runsIndex';
-import { analyzableFiles, clusterFiles } from './cluster';
-import { fetchConventions, fetchRecentCommitSubjects } from './context';
-import { skipDecision } from './decide';
-import { parseWithSchema, sanitizeFindings, capFindings, type ParseResult } from './parse';
-import { buildAnalyzePrompt, buildOrientPrompt, buildReconcilePrompt, buildRepairPrompt } from './prompts';
-import type { ZodType } from 'zod';
+import { randomUUID } from "node:crypto";
+import type { AgentRun, Finding, RunEvent } from "../../../shared/agent-types";
+import {
+  Pass1PlanSchema,
+  Pass2OutputSchema,
+  Pass3OutputSchema,
+  type FindingJson,
+  type Pass1Plan,
+} from "../../../shared/finding-schema";
+import {
+  countDiffLines,
+  diffLineIndex,
+  type DiffLineIndex,
+} from "../../../shared/gh/patch";
+import { parsePrId, type PrRef } from "../../../shared/gh/prKey";
+import type { FileChange, PrDetail, PrId } from "../../../shared/review-types";
+import {
+  agentById,
+  type AgentProfile,
+  type TandemSettings,
+} from "../../../shared/settings-types";
+import type { Config } from "../../config/store";
+import { fetchPrFiles } from "../../github/files";
+import { fetchPrDetail } from "../../github/pr";
+import { quickApprove } from "../../github/submit";
+import { loadReview } from "../../reviews/store";
+import { agentEnabledFor, loadSettings } from "../../settings/store";
+import { runClaudePass, type ClaudePassResult } from "../claude";
+import { createLive, finishLive, publish } from "../live";
+import {
+  addSpend,
+  getRun,
+  markRunStale,
+  spendToday,
+  upsertRun,
+} from "../runsIndex";
+import { analyzableFiles, clusterFiles } from "./cluster";
+import { fetchConventions, fetchRecentCommitSubjects } from "./context";
+import { skipDecision } from "./decide";
+import {
+  parseWithSchema,
+  sanitizeFindings,
+  capFindings,
+  type ParseResult,
+} from "./parse";
+import {
+  buildAnalyzePrompt,
+  buildOrientPrompt,
+  buildReconcilePrompt,
+  buildRepairPrompt,
+} from "./prompts";
+import type { ZodType } from "zod";
 
 export type StartResult = { run: AgentRun; started: boolean };
 
@@ -31,7 +61,11 @@ export type StartResult = { run: AgentRun; started: boolean };
  * Idempotent entry point: an existing non-stale run for the PR's current head
  * sha is returned as-is unless `force`. Otherwise a new run starts detached.
  */
-export async function startRun(cfg: Config, prId: PrId, opts: { force?: boolean; agentId?: string } = {}): Promise<StartResult> {
+export async function startRun(
+  cfg: Config,
+  prId: PrId,
+  opts: { force?: boolean; agentId?: string } = {},
+): Promise<StartResult> {
   const ref = parsePrId(prId);
   if (!ref) throw new Error(`malformed prId: ${prId}`);
 
@@ -40,7 +74,12 @@ export async function startRun(cfg: Config, prId: PrId, opts: { force?: boolean;
   const headSha = detail.pr.headSha;
 
   const existing = await getRun(prId, headSha);
-  if (existing && !opts.force && existing.status !== 'stale' && existing.status !== 'failed') {
+  if (
+    existing &&
+    !opts.force &&
+    existing.status !== "stale" &&
+    existing.status !== "failed"
+  ) {
     return { run: existing, started: false };
   }
 
@@ -51,7 +90,7 @@ export async function startRun(cfg: Config, prId: PrId, opts: { force?: boolean;
     id: randomUUID(),
     prId,
     headSha,
-    status: 'queued',
+    status: "queued",
     agentId: agent.id,
     agentName: agent.name,
     findings: [],
@@ -77,7 +116,7 @@ async function driveRun(
   run: AgentRun,
   ref: PrRef,
   detail: PrDetail,
-  signal: AbortSignal
+  signal: AbortSignal,
 ): Promise<void> {
   const emit = (event: RunEvent) => publish(run.id, event);
 
@@ -87,16 +126,34 @@ async function driveRun(
   };
 
   try {
-    const result = await executePipeline(cfg, settings, agent, run, ref, detail, signal, emit);
+    const result = await executePipeline(
+      cfg,
+      settings,
+      agent,
+      run,
+      ref,
+      detail,
+      signal,
+      emit,
+    );
     await persist(result);
     await addSpend(result.costUsd ?? 0);
-    if (run.status === 'ready') await maybeAutoApprove(cfg, settings, run, detail);
-    emit({ type: 'done', run });
+    if (run.status === "ready")
+      await maybeAutoApprove(cfg, settings, run, detail);
+    emit({ type: "done", run });
   } catch (e) {
-    const message = signal.aborted ? 'cancelled' : e instanceof Error ? e.message : String(e);
-    await persist({ status: 'failed', error: message, finishedAt: new Date().toISOString() });
-    emit({ type: 'error', message });
-    emit({ type: 'done', run });
+    const message = signal.aborted
+      ? "cancelled"
+      : e instanceof Error
+        ? e.message
+        : String(e);
+    await persist({
+      status: "failed",
+      error: message,
+      finishedAt: new Date().toISOString(),
+    });
+    emit({ type: "error", message });
+    emit({ type: "done", run });
   } finally {
     finishLive(run.id);
   }
@@ -110,13 +167,13 @@ async function executePipeline(
   ref: PrRef,
   detail: PrDetail,
   signal: AbortSignal,
-  emit: (event: RunEvent) => void
+  emit: (event: RunEvent) => void,
 ): Promise<Partial<AgentRun>> {
   const { pr, threads } = detail;
   const now = () => new Date().toISOString();
 
-  emit({ type: 'status', status: 'fetching', detail: 'reading changed files' });
-  run.status = 'fetching';
+  emit({ type: "status", status: "fetching", detail: "reading changed files" });
+  run.status = "fetching";
   await upsertRun(run);
 
   const files = await fetchPrFiles(cfg, ref, signal);
@@ -131,15 +188,15 @@ async function executePipeline(
       agentEnabled: agentEnabledFor(settings, `${ref.owner}/${ref.repo}`),
       spentTodayUsd: await spendToday(),
     },
-    settings
+    settings,
   );
   if (skip.skip) {
-    emit({ type: 'status', status: 'skipped', detail: skip.reason });
-    return { status: 'skipped', skipReason: skip.reason, finishedAt: now() };
+    emit({ type: "status", status: "skipped", detail: skip.reason });
+    return { status: "skipped", skipReason: skip.reason, finishedAt: now() };
   }
 
-  emit({ type: 'status', status: 'analyzing' });
-  run.status = 'analyzing';
+  emit({ type: "status", status: "analyzing" });
+  run.status = "analyzing";
   await upsertRun(run);
 
   const conventions = await fetchConventions(cfg, ref, pr.headSha);
@@ -150,75 +207,128 @@ async function executePipeline(
   const track = (r: Extract<ClaudePassResult, { ok: true }>) => {
     tokens += r.tokens;
     cost += r.costUsd;
-    emit({ type: 'usage', tokens, costUsd: cost });
+    emit({ type: "usage", tokens, costUsd: cost });
   };
 
   // --- Pass 1: orient (cheap model) ---
-  emit({ type: 'pass', pass: 1, label: 'orienting' });
+  emit({ type: "pass", pass: 1, label: "orienting" });
   const planResult = await validatedPass(
-    buildOrientPrompt({ prompts: agent.prompts, pr, files, conventions, commitSubjects }),
+    buildOrientPrompt({
+      prompts: agent.prompts,
+      pr,
+      files,
+      conventions,
+      commitSubjects,
+    }),
     agent.models.orient,
     Pass1PlanSchema,
     signal,
-    track
+    track,
   );
   // A failed orient degrades to a generic plan rather than failing the run —
   // pass 2 carries the real weight.
   const plan: Pass1Plan = planResult.ok
     ? planResult.value
-    : { checks: ['correctness of the changed logic', 'error handling and edge cases', 'API/contract changes', 'test coverage of new behavior'] };
+    : {
+        checks: [
+          "correctness of the changed logic",
+          "error handling and edge cases",
+          "API/contract changes",
+          "test coverage of new behavior",
+        ],
+      };
 
   // --- Pass 2: analyze, per cluster (respects model-authored clusters when sane) ---
-  const clusters = clustersFromPlan(plan, analyzable) ?? clusterFiles(analyzable);
+  const clusters =
+    clustersFromPlan(plan, analyzable) ?? clusterFiles(analyzable);
   const candidates: FindingJson[] = [];
   for (let i = 0; i < clusters.length; i++) {
-    if (signal.aborted) throw new Error('cancelled');
-    emit({ type: 'pass', pass: 2, label: `analyzing ${i + 1}/${clusters.length}` });
+    if (signal.aborted) throw new Error("cancelled");
+    emit({
+      type: "pass",
+      pass: 2,
+      label: `analyzing ${i + 1}/${clusters.length}`,
+    });
     const passResult = await validatedPass(
-      buildAnalyzePrompt({ prompts: agent.prompts, pr, plan, files: clusters[i], conventions }),
+      buildAnalyzePrompt({
+        prompts: agent.prompts,
+        pr,
+        plan,
+        files: clusters[i],
+        conventions,
+      }),
       agent.models.analyze,
       Pass2OutputSchema,
       signal,
-      track
+      track,
     );
     if (passResult.ok) candidates.push(...passResult.value.findings);
-    else console.error(`[pipeline] pass 2 cluster ${i} unusable after repair: ${passResult.errors}`);
+    else
+      console.error(
+        `[pipeline] pass 2 cluster ${i} unusable after repair: ${passResult.errors}`,
+      );
   }
 
-  const lineIndex = new Map<string, DiffLineIndex>(analyzable.map((f) => [f.path, diffLineIndex(f.patch!)]));
+  const lineIndex = new Map<string, DiffLineIndex>(
+    analyzable.map((f) => [f.path, diffLineIndex(f.patch!)]),
+  );
   const sanitized = sanitizeFindings(candidates, lineIndex, threads);
 
   // --- Pass 3: reconcile — the pass that keeps output signal-dense. Do not skip. ---
-  emit({ type: 'pass', pass: 3, label: 'reconciling' });
+  emit({ type: "pass", pass: 3, label: "reconciling" });
   const reconcileResult = await validatedPass(
-    buildReconcilePrompt({ prompts: agent.prompts, pr, candidates: sanitized.kept, threads, findingCap: settings.findingCap, nitCap: settings.nitCap }),
+    buildReconcilePrompt({
+      prompts: agent.prompts,
+      pr,
+      candidates: sanitized.kept,
+      threads,
+      findingCap: settings.findingCap,
+      nitCap: settings.nitCap,
+    }),
     agent.models.reconcile,
     Pass3OutputSchema,
     signal,
-    track
+    track,
   );
   if (!reconcileResult.ok) {
     // Fail visibly rather than showing degraded output (spec §4).
-    return { status: 'failed', error: `reconcile output invalid: ${reconcileResult.errors}`, tokensUsed: tokens, costUsd: cost, finishedAt: now() };
+    return {
+      status: "failed",
+      error: `reconcile output invalid: ${reconcileResult.errors}`,
+      tokensUsed: tokens,
+      costUsd: cost,
+      finishedAt: now(),
+    };
   }
 
   // The model was told the rules; the code enforces them anyway.
-  const finalSanitized = sanitizeFindings(reconcileResult.value.findings, lineIndex, threads);
-  const capped = capFindings(finalSanitized.kept, settings.findingCap, settings.nitCap);
+  const finalSanitized = sanitizeFindings(
+    reconcileResult.value.findings,
+    lineIndex,
+    threads,
+  );
+  const capped = capFindings(
+    finalSanitized.kept,
+    settings.findingCap,
+    settings.nitCap,
+  );
   const findings: Finding[] = capped.map((f) => ({
     ...f,
     id: randomUUID(),
     runId: run.id,
     prId: run.prId,
     headSha: run.headSha,
-    state: 'proposed',
+    state: "proposed",
   }));
 
   const discardedTotal = sanitized.discarded + finalSanitized.discarded;
-  if (discardedTotal > 0) console.error(`[pipeline] run ${run.id}: discarded ${discardedTotal} unanchored/duplicate findings`);
+  if (discardedTotal > 0)
+    console.error(
+      `[pipeline] run ${run.id}: discarded ${discardedTotal} unanchored/duplicate findings`,
+    );
 
   return {
-    status: 'ready',
+    status: "ready",
     summary: reconcileResult.value.summary,
     score: reconcileResult.value.score,
     findings,
@@ -237,15 +347,24 @@ async function executePipeline(
  *   in progress for this PR (never preempt a review someone started).
  * GitHub itself refuses self-approval (422) — logged, not surfaced.
  */
-async function maybeAutoApprove(cfg: Config, settings: TandemSettings, run: AgentRun, detail: PrDetail): Promise<void> {
+async function maybeAutoApprove(
+  cfg: Config,
+  settings: TandemSettings,
+  run: AgentRun,
+  detail: PrDetail,
+): Promise<void> {
   const gate = settings.autoApprove;
   if (!gate.enabled) return;
   const pr = detail.pr;
   if (pr.isDraft) return;
   if (run.score === undefined || run.score < gate.minScore) return;
-  const blocking = run.findings.some((f) => (f.severity === 'blocker' || f.severity === 'risk') && f.state !== 'dismissed');
+  const blocking = run.findings.some(
+    (f) =>
+      (f.severity === "blocker" || f.severity === "risk") &&
+      f.state !== "dismissed",
+  );
   if (blocking) return;
-  if (gate.requireChecksPassing && pr.checkRollup !== 'SUCCESS') return;
+  if (gate.requireChecksPassing && pr.checkRollup !== "SUCCESS") return;
   const draft = await loadReview(run.prId);
   if (draft && (draft.comments.length > 0 || draft.verdict)) return;
 
@@ -255,9 +374,13 @@ async function maybeAutoApprove(cfg: Config, settings: TandemSettings, run: Agen
     await quickApprove(cfg.github, ref);
     run.autoApproved = true;
     await upsertRun(run);
-    console.error(`[pipeline] auto-approved ${run.prId} (score ${run.score} ≥ ${gate.minScore})`);
+    console.error(
+      `[pipeline] auto-approved ${run.prId} (score ${run.score} ≥ ${gate.minScore})`,
+    );
   } catch (e) {
-    console.error(`[pipeline] auto-approve failed for ${run.prId}: ${e instanceof Error ? e.message : e}`);
+    console.error(
+      `[pipeline] auto-approve failed for ${run.prId}: ${e instanceof Error ? e.message : e}`,
+    );
   }
 }
 
@@ -267,7 +390,7 @@ async function validatedPass<T>(
   model: string,
   schema: ZodType<T>,
   signal: AbortSignal,
-  track: (r: Extract<ClaudePassResult, { ok: true }>) => void
+  track: (r: Extract<ClaudePassResult, { ok: true }>) => void,
 ): Promise<ParseResult<T>> {
   const first = await runClaudePass({ prompt, model, signal });
   if (!first.ok) return { ok: false, errors: first.error };
@@ -275,14 +398,25 @@ async function validatedPass<T>(
   const parsed = parseWithSchema(first.text, schema);
   if (parsed.ok) return parsed;
 
-  const repair = await runClaudePass({ prompt: buildRepairPrompt(first.text, parsed.errors), model, signal });
-  if (!repair.ok) return { ok: false, errors: `${parsed.errors} (repair failed: ${repair.error})` };
+  const repair = await runClaudePass({
+    prompt: buildRepairPrompt(first.text, parsed.errors),
+    model,
+    signal,
+  });
+  if (!repair.ok)
+    return {
+      ok: false,
+      errors: `${parsed.errors} (repair failed: ${repair.error})`,
+    };
   track(repair);
   return parseWithSchema(repair.text, schema);
 }
 
 /** Pass-1 clusters, kept only when every named path is actually analyzable. */
-function clustersFromPlan(plan: Pass1Plan, analyzable: FileChange[]): FileChange[][] | null {
+function clustersFromPlan(
+  plan: Pass1Plan,
+  analyzable: FileChange[],
+): FileChange[][] | null {
   if (!plan.clusters || plan.clusters.length === 0) return null;
   const byPath = new Map(analyzable.map((f) => [f.path, f]));
   const clusters: FileChange[][] = [];
@@ -304,6 +438,9 @@ function clustersFromPlan(plan: Pass1Plan, analyzable: FileChange[]): FileChange
 }
 
 /** Staleness sweep, called when a PR's head moves (spec §2). */
-export async function sweepStaleRun(prId: PrId, oldHeadSha: string): Promise<void> {
+export async function sweepStaleRun(
+  prId: PrId,
+  oldHeadSha: string,
+): Promise<void> {
   await markRunStale(prId, oldHeadSha);
 }

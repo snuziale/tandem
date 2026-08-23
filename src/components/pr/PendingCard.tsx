@@ -1,8 +1,8 @@
-import { useState } from 'react';
-import { Button, Textarea, cn } from '@uipath/apollo-wind';
-import { Pencil, Trash2 } from 'lucide-react';
-import type { PendingComment } from '../../shared/review-types';
-import { Markdown } from '../common/Markdown';
+import { useState } from "react";
+import { Button, Textarea, cn } from "@uipath/apollo-wind";
+import { Pencil, Trash2 } from "lucide-react";
+import type { PendingComment } from "../../shared/review-types";
+import { Markdown } from "../common/Markdown";
 
 type Props = {
   comment: PendingComment;
@@ -19,20 +19,45 @@ export function PendingCard({ comment, onUpdate, onRemove }: Props) {
 
   return (
     <div
-      className={cn('my-1 mx-2 rounded border border-border bg-background border-l-2', comment.anchorMoved && 'border-yellow-400/60')}
-      style={{ borderLeftColor: agentAuthored ? 'var(--tandem-agent)' : 'var(--color-primary)' }}
+      className={cn(
+        "my-1 mx-2 rounded border border-border bg-background border-l-2",
+        comment.anchorMoved && "border-yellow-400/60",
+      )}
+      style={{
+        borderLeftColor: agentAuthored
+          ? "var(--tandem-agent)"
+          : "var(--color-primary)",
+      }}
     >
       <div className="px-3 py-2">
         <div className="flex items-center gap-2 text-[10px] uppercase tracking-wider font-mono text-muted-foreground">
-          <span style={agentAuthored ? { color: 'var(--tandem-agent)' } : undefined}>
-            {agentAuthored ? 'agent · staged' : 'your comment · staged'}
+          <span
+            style={agentAuthored ? { color: "var(--tandem-agent)" } : undefined}
+          >
+            {agentAuthored ? "agent · staged" : "your comment · staged"}
           </span>
-          {comment.anchorMoved ? <span className="text-yellow-400">anchor moved — fix before submit</span> : null}
+          {comment.anchorMoved ? (
+            <span className="text-yellow-400">
+              anchor moved — fix before submit
+            </span>
+          ) : null}
           <span className="flex-1" />
-          <Button size="3xs" icon variant="ghost" aria-label="Edit" onClick={() => setEditing((v) => !v)}>
+          <Button
+            size="3xs"
+            icon
+            variant="ghost"
+            aria-label="Edit"
+            onClick={() => setEditing((v) => !v)}
+          >
             <Pencil />
           </Button>
-          <Button size="3xs" icon variant="ghost" aria-label="Remove from review" onClick={onRemove}>
+          <Button
+            size="3xs"
+            icon
+            variant="ghost"
+            aria-label="Remove from review"
+            onClick={onRemove}
+          >
             <Trash2 />
           </Button>
         </div>
@@ -42,12 +67,12 @@ export function PendingCard({ comment, onUpdate, onRemove }: Props) {
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+              if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
                 e.preventDefault();
                 onUpdate({ body: draft });
                 setEditing(false);
               }
-              if (e.key === 'Escape') {
+              if (e.key === "Escape") {
                 e.stopPropagation();
                 setDraft(comment.body);
                 setEditing(false);
@@ -64,7 +89,9 @@ export function PendingCard({ comment, onUpdate, onRemove }: Props) {
         )}
         {comment.suggestion !== undefined ? (
           <pre className="mt-2 text-xs font-mono border border-border rounded p-2 overflow-x-auto bg-accent/30">
-            <div className="text-[9px] uppercase tracking-wider text-muted-foreground mb-1">suggested change</div>
+            <div className="text-[9px] uppercase tracking-wider text-muted-foreground mb-1">
+              suggested change
+            </div>
             {comment.suggestion}
           </pre>
         ) : null}

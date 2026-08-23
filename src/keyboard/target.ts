@@ -2,7 +2,7 @@
 // that bind their own keys, so "skip while typing" has one definition — a second
 // copy drifts the moment one of them learns about a new editable element.
 
-const EDITABLE_TAGS = new Set(['INPUT', 'TEXTAREA', 'SELECT']);
+const EDITABLE_TAGS = new Set(["INPUT", "TEXTAREA", "SELECT"]);
 
 const OPEN_DIALOG = '[role="dialog"][data-state="open"]';
 export const OPEN_ALERT_DIALOG = '[role="alertdialog"][data-state="open"]';

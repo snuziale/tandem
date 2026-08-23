@@ -1,17 +1,21 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { toast } from '@uipath/apollo-wind';
-import { fetchReview, putReview } from '../api/reviews';
-import type { PendingComment, PendingReview, PrId } from '../shared/review-types';
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { toast } from "@uipath/apollo-wind";
+import { fetchReview, putReview } from "../api/reviews";
+import type {
+  PendingComment,
+  PendingReview,
+  PrId,
+} from "../shared/review-types";
 
 export function emptyReview(prId: PrId, headSha: string): PendingReview {
-  return { prId, headSha, comments: [], viewedFiles: [], updatedAt: '' };
+  return { prId, headSha, comments: [], viewedFiles: [], updatedAt: "" };
 }
 
 /** The local pending-review draft: server-persisted, optimistically updated.
  * Callers mutate through `update(next)` with a complete PendingReview. */
 export function usePendingReview(prId: PrId, headSha: string | undefined) {
   const queryClient = useQueryClient();
-  const key = ['review', prId];
+  const key = ["review", prId];
 
   const query = useQuery({
     queryKey: key,
@@ -30,7 +34,9 @@ export function usePendingReview(prId: PrId, headSha: string | undefined) {
     },
     onError: (e, _next, ctx) => {
       queryClient.setQueryData(key, ctx?.prev ?? null);
-      toast.error('Draft could not be saved', { description: e instanceof Error ? e.message : undefined });
+      toast.error("Draft could not be saved", {
+        description: e instanceof Error ? e.message : undefined,
+      });
     },
     onSettled: () => queryClient.invalidateQueries({ queryKey: key }),
   });
@@ -45,25 +51,36 @@ export function usePendingReview(prId: PrId, headSha: string | undefined) {
     mutation.mutate({ ...review, viewedFiles });
   };
 
-  const addComment = (comment: Omit<PendingComment, 'localId'>) => {
+  const addComment = (comment: Omit<PendingComment, "localId">) => {
     if (!review) return;
-    mutation.mutate({ ...review, comments: [...review.comments, { ...comment, localId: crypto.randomUUID() }] });
+    mutation.mutate({
+      ...review,
+      comments: [
+        ...review.comments,
+        { ...comment, localId: crypto.randomUUID() },
+      ],
+    });
   };
 
   const updateComment = (localId: string, patch: Partial<PendingComment>) => {
     if (!review) return;
     mutation.mutate({
       ...review,
-      comments: review.comments.map((c) => (c.localId === localId ? { ...c, ...patch } : c)),
+      comments: review.comments.map((c) =>
+        c.localId === localId ? { ...c, ...patch } : c,
+      ),
     });
   };
 
   const removeComment = (localId: string) => {
     if (!review) return;
-    mutation.mutate({ ...review, comments: review.comments.filter((c) => c.localId !== localId) });
+    mutation.mutate({
+      ...review,
+      comments: review.comments.filter((c) => c.localId !== localId),
+    });
   };
 
-  const setVerdict = (verdict: PendingReview['verdict']) => {
+  const setVerdict = (verdict: PendingReview["verdict"]) => {
     if (!review) return;
     mutation.mutate({ ...review, verdict });
   };

@@ -1,22 +1,28 @@
-import { StrictMode } from 'react';
-import { createRoot } from 'react-dom/client';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { Toaster, TooltipProvider } from '@uipath/apollo-wind';
-import { ApiError } from './api/http';
-import './index.css';
-import { Bootstrap } from './components/setup/Bootstrap';
-import { ErrorBoundary } from './components/ErrorBoundary';
-import { applyThemeClass, resolveTheme, useThemeStore } from './state/themeStore';
+import { StrictMode } from "react";
+import { createRoot } from "react-dom/client";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { Toaster, TooltipProvider } from "@uipath/apollo-wind";
+import { ApiError } from "./api/http";
+import "./index.css";
+import { Bootstrap } from "./components/setup/Bootstrap";
+import { ErrorBoundary } from "./components/ErrorBoundary";
+import {
+  applyThemeClass,
+  resolveTheme,
+  useThemeStore,
+} from "./state/themeStore";
 
 applyThemeClass(resolveTheme(useThemeStore.getState().preference));
 useThemeStore.subscribe((s) => applyThemeClass(resolveTheme(s.preference)));
 
-if (typeof window !== 'undefined' && window.matchMedia) {
-  window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
-    if (useThemeStore.getState().preference === 'system') {
-      applyThemeClass(resolveTheme('system'));
-    }
-  });
+if (typeof window !== "undefined" && window.matchMedia) {
+  window
+    .matchMedia("(prefers-color-scheme: dark)")
+    .addEventListener("change", () => {
+      if (useThemeStore.getState().preference === "system") {
+        applyThemeClass(resolveTheme("system"));
+      }
+    });
 }
 
 const queryClient = new QueryClient({
@@ -30,7 +36,12 @@ const queryClient = new QueryClient({
       // into a multi-second "stuck loading". Retry fast instead so recovery is
       // invisible, but DON'T retry 4xx (bad query, auth) — those aren't transient.
       retry: (failureCount, error) => {
-        if (error instanceof ApiError && error.status >= 400 && error.status < 500 && error.status !== 429) {
+        if (
+          error instanceof ApiError &&
+          error.status >= 400 &&
+          error.status < 500 &&
+          error.status !== 429
+        ) {
           return false;
         }
         return failureCount < 3;
@@ -43,7 +54,7 @@ const queryClient = new QueryClient({
   },
 });
 
-createRoot(document.getElementById('root')!).render(
+createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
       <TooltipProvider delayDuration={150}>
@@ -53,5 +64,5 @@ createRoot(document.getElementById('root')!).render(
         </ErrorBoundary>
       </TooltipProvider>
     </QueryClientProvider>
-  </StrictMode>
+  </StrictMode>,
 );

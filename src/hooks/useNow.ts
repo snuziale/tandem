@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState } from "react";
 
 /** A clock that ticks on an interval — for relative ages that must not call
  * Date.now() during render (react-hooks/purity). */

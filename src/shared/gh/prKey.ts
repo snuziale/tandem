@@ -1,6 +1,6 @@
 // Canonical PR identity helpers. `prId` is `"owner/repo#number"` everywhere —
 // stores, query keys, routes (URL-encoded as one path segment).
-import type { PrId } from '../review-types';
+import type { PrId } from "../review-types";
 
 export type PrRef = { owner: string; repo: string; number: number };
 

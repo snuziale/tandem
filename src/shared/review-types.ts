@@ -5,15 +5,16 @@
 /** Canonical PR identity: `"owner/repo#123"`. Build/parse via shared/gh/prKey.ts. */
 export type PrId = string;
 
-export type ReviewDecision = 'APPROVED' | 'CHANGES_REQUESTED' | 'REVIEW_REQUIRED' | null;
-export type CheckRollup = 'SUCCESS' | 'FAILURE' | 'PENDING' | 'NONE';
+export type ReviewDecision =
+  "APPROVED" | "CHANGES_REQUESTED" | "REVIEW_REQUIRED" | null;
+export type CheckRollup = "SUCCESS" | "FAILURE" | "PENDING" | "NONE";
 /** Diff side, GitHub's naming: LEFT = old file (deletions), RIGHT = new file (additions). */
-export type DiffSide = 'LEFT' | 'RIGHT';
-export type ReviewVerdict = 'APPROVE' | 'REQUEST_CHANGES' | 'COMMENT';
+export type DiffSide = "LEFT" | "RIGHT";
+export type ReviewVerdict = "APPROVE" | "REQUEST_CHANGES" | "COMMENT";
 
 export type CheckRun = {
   name: string;
-  status: 'success' | 'failure' | 'pending' | 'neutral' | 'skipped';
+  status: "success" | "failure" | "pending" | "neutral" | "skipped";
   url?: string;
 };
 
@@ -47,7 +48,14 @@ export type PullRequest = {
  * drives the queue's "unseen changes" marker. */
 export type SeenRecord = { prId: PrId; updatedAt: string; seenAt: string };
 
-export type FileChangeStatus = 'added' | 'removed' | 'modified' | 'renamed' | 'copied' | 'changed' | 'unchanged';
+export type FileChangeStatus =
+  | "added"
+  | "removed"
+  | "modified"
+  | "renamed"
+  | "copied"
+  | "changed"
+  | "unchanged";
 
 export type FileChange = {
   path: string;
@@ -130,7 +138,11 @@ export type SavedView = {
   position: number;
 };
 
-export type RateLimitInfo = { remaining: number; limit: number; resetAt: string };
+export type RateLimitInfo = {
+  remaining: number;
+  limit: number;
+  resetAt: string;
+};
 
 /** Response of POST /api/queue. */
 export type QueueResult = {

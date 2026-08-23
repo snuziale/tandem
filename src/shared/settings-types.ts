@@ -1,7 +1,7 @@
 // User-tunable settings served by /api/settings and persisted server-side in
 // ~/.tandem/settings.json. Defaults here are the spec's defaults.
-import type { Severity } from './agent-types';
-import { DEFAULT_PROMPTS, type PromptTexts } from './prompt-defaults';
+import type { Severity } from "./agent-types";
+import { DEFAULT_PROMPTS, type PromptTexts } from "./prompt-defaults";
 
 export type PassModels = {
   orient: string;
@@ -21,13 +21,13 @@ export type AgentProfile = {
 };
 
 export const DEFAULT_AGENT: AgentProfile = {
-  id: 'general',
-  name: 'General reviewer',
-  description: 'Balanced correctness-first review of the whole diff.',
+  id: "general",
+  name: "General reviewer",
+  description: "Balanced correctness-first review of the whole diff.",
   models: {
-    orient: 'haiku',
-    analyze: 'sonnet',
-    reconcile: 'sonnet',
+    orient: "haiku",
+    analyze: "sonnet",
+    reconcile: "sonnet",
   },
   prompts: DEFAULT_PROMPTS,
 };
@@ -47,7 +47,7 @@ export type TandemSettings = {
    * user explicitly opts in. */
   autoRunEnabled: boolean;
   /** Findings below this severity collapse into the Nits group in the agent pane. */
-  severityThreshold: Extract<Severity, 'blocker' | 'risk' | 'nit'>;
+  severityThreshold: Extract<Severity, "blocker" | "risk" | "nit">;
   /** Skip the run entirely above these sizes (spec §4 cost caps). */
   maxChangedFiles: number;
   maxDiffLines: number;
@@ -70,7 +70,7 @@ export type TandemSettings = {
 
 export const DEFAULT_SETTINGS: TandemSettings = {
   autoRunEnabled: false,
-  severityThreshold: 'risk',
+  severityThreshold: "risk",
   maxChangedFiles: 40,
   maxDiffLines: 3000,
   skipDrafts: true,
@@ -88,6 +88,14 @@ export const DEFAULT_SETTINGS: TandemSettings = {
   },
 };
 
-export function agentById(settings: TandemSettings, agentId: string | undefined): AgentProfile {
-  return settings.agents.find((a) => a.id === agentId) ?? settings.agents.find((a) => a.id === settings.defaultAgentId) ?? settings.agents[0] ?? DEFAULT_AGENT;
+export function agentById(
+  settings: TandemSettings,
+  agentId: string | undefined,
+): AgentProfile {
+  return (
+    settings.agents.find((a) => a.id === agentId) ??
+    settings.agents.find((a) => a.id === settings.defaultAgentId) ??
+    settings.agents[0] ??
+    DEFAULT_AGENT
+  );
 }

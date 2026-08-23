@@ -1,10 +1,10 @@
-import { PrDetailView } from './components/pr/PrDetailView';
-import { QueueView } from './components/queue/QueueView';
-import { SettingsView } from './components/settings/SettingsView';
-import { ShortcutsHelp } from './components/ShortcutsHelp';
-import { useKeyboardNav } from './hooks/useKeyboardNav';
-import { useRouteSync } from './routes';
-import { useUiStore } from './state/uiStore';
+import { PrDetailView } from "./components/pr/PrDetailView";
+import { QueueView } from "./components/queue/QueueView";
+import { SettingsView } from "./components/settings/SettingsView";
+import { ShortcutsHelp } from "./components/ShortcutsHelp";
+import { useKeyboardNav } from "./hooks/useKeyboardNav";
+import { useRouteSync } from "./routes";
+import { useUiStore } from "./state/uiStore";
 
 export default function App() {
   useRouteSync();
@@ -20,14 +20,18 @@ export default function App() {
   );
 }
 
-function Screen({ route }: { route: ReturnType<typeof useUiStore.getState>['route'] }) {
+function Screen({
+  route,
+}: {
+  route: ReturnType<typeof useUiStore.getState>["route"];
+}) {
   switch (route.name) {
-    case 'pr':
+    case "pr":
       // Keyed so switching PRs remounts local state (selected file, keys).
       return <PrDetailView key={route.prId} prId={route.prId} />;
-    case 'settings':
+    case "settings":
       return <SettingsView />;
-    case 'queue':
+    case "queue":
       return <QueueView />;
   }
 }

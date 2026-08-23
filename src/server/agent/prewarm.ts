@@ -12,18 +12,24 @@
 // Staleness (spec §2): a moved headSha marks the old run + findings stale and
 // flags draft comments whose anchors vanished. Nothing is ever silently
 // deleted; the new sha is auto-enqueued only when auto-run is on.
-import type { AgentRun, SkipReason } from '../../shared/agent-types';
-import { diffLineIndex, type DiffLineIndex } from '../../shared/gh/patch';
-import { parsePrId } from '../../shared/gh/prKey';
-import type { PrId, PullRequest } from '../../shared/review-types';
-import type { Config } from '../config/store';
-import { fetchPrFiles } from '../github/files';
-import { loadReview, saveReview } from '../reviews/store';
-import { agentEnabledFor, loadSettings } from '../settings/store';
-import { startRun } from './pipeline/run';
-import { skipDecision } from './pipeline/decide';
-import { liveCount } from './live';
-import { getRun, listRuns, markRunStale, spendToday, upsertRun } from './runsIndex';
+import type { AgentRun, SkipReason } from "../../shared/agent-types";
+import { diffLineIndex, type DiffLineIndex } from "../../shared/gh/patch";
+import { parsePrId } from "../../shared/gh/prKey";
+import type { PrId, PullRequest } from "../../shared/review-types";
+import type { Config } from "../config/store";
+import { fetchPrFiles } from "../github/files";
+import { loadReview, saveReview } from "../reviews/store";
+import { agentEnabledFor, loadSettings } from "../settings/store";
+import { startRun } from "./pipeline/run";
+import { skipDecision } from "./pipeline/decide";
+import { liveCount } from "./live";
+import {
+  getRun,
+  listRuns,
+  markRunStale,
+  spendToday,
+  upsertRun,
+} from "./runsIndex";
 
 const MAX_CONCURRENT_PREWARM = 2;
 
@@ -33,7 +39,9 @@ let draining = false;
 
 /** Fire-and-forget from handleQueue. Never throws into the request path. */
 export function prewarmSweep(cfg: Config, prs: PullRequest[]): void {
-  void sweep(cfg, prs).catch((e) => console.error('[prewarm] sweep failed:', e));
+  void sweep(cfg, prs).catch((e) =>
+    console.error("[prewarm] sweep failed:", e),
+  );
 }
 
 async function sweep(cfg: Config, prs: PullRequest[]): Promise<void> {
@@ -53,7 +61,7 @@ async function sweep(cfg: Config, prs: PullRequest[]): Promise<void> {
 
     // Staleness: any non-stale run for this PR on a superseded sha.
     for (const run of runsByPr.get(pr.prId) ?? []) {
-      if (run.headSha !== pr.headSha && run.status !== 'stale') {
+      if (run.headSha !== pr.headSha && run.status !== "stale") {
         await markRunStale(pr.prId, run.headSha);
         await flagMovedAnchors(cfg, pr);
       }
@@ -78,7 +86,7 @@ async function sweep(cfg: Config, prs: PullRequest[]): Promise<void> {
         agentEnabled: agentEnabledFor(settings, `${ref.owner}/${ref.repo}`),
         spentTodayUsd: await spendToday(),
       },
-      settings
+      settings,
     );
     if (skip.skip) {
       await recordSkip(pr, skip.reason);
@@ -108,7 +116,10 @@ async function drain(cfg: Config): Promise<void> {
       try {
         await startRun(cfg, prId);
       } catch (e) {
-        console.error(`[prewarm] start failed for ${prId}:`, e instanceof Error ? e.message : e);
+        console.error(
+          `[prewarm] start failed for ${prId}:`,
+          e instanceof Error ? e.message : e,
+        );
       }
     }
   } finally {
@@ -122,7 +133,7 @@ async function recordSkip(pr: PullRequest, reason: SkipReason): Promise<void> {
     id: crypto.randomUUID(),
     prId: pr.prId,
     headSha: pr.headSha,
-    status: 'skipped',
+    status: "skipped",
     skipReason: reason,
     findings: [],
     tokensUsed: 0,
@@ -145,15 +156,22 @@ async function flagMovedAnchors(cfg: Config, pr: PullRequest): Promise<void> {
   let indexByPath: Map<string, DiffLineIndex>;
   try {
     const files = await fetchPrFiles(cfg, ref);
-    indexByPath = new Map(files.filter((f) => f.patch !== undefined).map((f) => [f.path, diffLineIndex(f.patch!)]));
+    indexByPath = new Map(
+      files
+        .filter((f) => f.patch !== undefined)
+        .map((f) => [f.path, diffLineIndex(f.patch!)]),
+    );
   } catch (e) {
-    console.error(`[prewarm] anchor check failed for ${pr.prId}:`, e instanceof Error ? e.message : e);
+    console.error(
+      `[prewarm] anchor check failed for ${pr.prId}:`,
+      e instanceof Error ? e.message : e,
+    );
     return;
   }
 
   const comments = draft.comments.map((comment) => {
     const index = indexByPath.get(comment.path);
-    const side = comment.side === 'LEFT' ? index?.left : index?.right;
+    const side = comment.side === "LEFT" ? index?.left : index?.right;
     const anchored = !!side && side.has(comment.line);
     return { ...comment, anchorMoved: anchored ? undefined : true };
   });

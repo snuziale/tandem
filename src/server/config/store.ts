@@ -1,17 +1,17 @@
-import { homedir } from 'node:os';
-import { join } from 'node:path';
-import { mkdir, chmod } from 'node:fs/promises';
-import type { GitHubCreds } from '../../shared/github-schema';
-import { validateConfig } from './validate';
+import { homedir } from "node:os";
+import { join } from "node:path";
+import { mkdir, chmod } from "node:fs/promises";
+import type { GitHubCreds } from "../../shared/github-schema";
+import { validateConfig } from "./validate";
 
 export type Config = { github: GitHubCreds };
 
 function dir(): string {
-  return Bun.env.TANDEM_HOME ?? join(homedir(), '.tandem');
+  return Bun.env.TANDEM_HOME ?? join(homedir(), ".tandem");
 }
 
 function file(): string {
-  return join(dir(), 'config.json');
+  return join(dir(), "config.json");
 }
 
 let cached: Config | null = null;
@@ -31,7 +31,9 @@ async function readConfigFromDisk(): Promise<Config | null> {
     const raw = JSON.parse(text);
     const result = validateConfig(raw);
     if (!result.ok) {
-      console.error(`[config] ${file()} is invalid (${result.reason}); treating as unconfigured`);
+      console.error(
+        `[config] ${file()} is invalid (${result.reason}); treating as unconfigured`,
+      );
       return null;
     }
     return result.value;
@@ -66,8 +68,12 @@ export function configPath(): string {
 async function seedFromEnv(): Promise<Config | null> {
   const { GITHUB_TOKEN, GITHUB_ORG } = Bun.env;
   if (!GITHUB_TOKEN) return null;
-  const next: Config = { github: { token: GITHUB_TOKEN, defaultOrg: GITHUB_ORG ?? '' } };
-  console.error(`[config] seeded ${file()} from GITHUB_TOKEN env; future runs read this file directly`);
+  const next: Config = {
+    github: { token: GITHUB_TOKEN, defaultOrg: GITHUB_ORG ?? "" },
+  };
+  console.error(
+    `[config] seeded ${file()} from GITHUB_TOKEN env; future runs read this file directly`,
+  );
   await saveConfig(next);
   return next;
 }

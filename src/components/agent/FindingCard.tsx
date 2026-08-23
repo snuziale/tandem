@@ -1,15 +1,19 @@
-import { useState } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
-import { Button, Textarea, cn } from '@uipath/apollo-wind';
-import { acceptFinding, commentBodyOf, dismissFinding } from '../../hooks/findingActions';
-import type { Finding } from '../../shared/agent-types';
-import type { PendingComment } from '../../shared/review-types';
-import { useUiStore } from '../../state/uiStore';
-import { Markdown } from '../common/Markdown';
+import { useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { Button, Textarea, cn } from "@uipath/apollo-wind";
+import {
+  acceptFinding,
+  commentBodyOf,
+  dismissFinding,
+} from "../../hooks/findingActions";
+import type { Finding } from "../../shared/agent-types";
+import type { PendingComment } from "../../shared/review-types";
+import { useUiStore } from "../../state/uiStore";
+import { Markdown } from "../common/Markdown";
 
 type Props = {
   finding: Finding;
-  addComment: (comment: Omit<PendingComment, 'localId'>) => void;
+  addComment: (comment: Omit<PendingComment, "localId">) => void;
 };
 
 // A proposed agent finding, inline in the diff. Violet rail + AGENT label =
@@ -27,18 +31,22 @@ export function FindingCard({ finding, addComment }: Props) {
   return (
     <div
       data-finding-card={finding.id}
-      className={cn('my-1 mx-2 rounded border bg-background', focused ? 'border-[var(--tandem-agent)]' : 'border-border')}
-      style={{ borderLeft: '2px solid var(--tandem-agent)' }}
+      className={cn(
+        "my-1 mx-2 rounded border bg-background",
+        focused ? "border-[var(--tandem-agent)]" : "border-border",
+      )}
+      style={{ borderLeft: "2px solid var(--tandem-agent)" }}
     >
       <div className="px-3 py-2">
         <div className="flex items-center gap-2 text-[10px] uppercase tracking-wider font-mono">
-          <span style={{ color: 'var(--tandem-agent)' }}>● agent</span>
+          <span style={{ color: "var(--tandem-agent)" }}>● agent</span>
           <span className="text-muted-foreground">
             {finding.severity} · {finding.category}
           </span>
           <span className="flex-1" />
           <span className="text-muted-foreground">
-            confidence {finding.confidence.toFixed(2)} · {finding.evidence.length} evidence
+            confidence {finding.confidence.toFixed(2)} ·{" "}
+            {finding.evidence.length} evidence
           </span>
         </div>
 
@@ -48,13 +56,15 @@ export function FindingCard({ finding, addComment }: Props) {
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === 'Escape') {
+              if (e.key === "Escape") {
                 e.stopPropagation();
                 setEditingFinding(null);
               }
-              if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+              if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
                 e.preventDefault();
-                void acceptFinding(queryClient, finding, addComment, { editedBody: draft });
+                void acceptFinding(queryClient, finding, addComment, {
+                  editedBody: draft,
+                });
                 setEditingFinding(null);
               }
             }}
@@ -70,7 +80,8 @@ export function FindingCard({ finding, addComment }: Props) {
         {finding.suggestion !== undefined && !editing ? (
           <pre className="mt-2 text-xs font-mono border border-border rounded p-2 overflow-x-auto bg-accent/30">
             <div className="text-[9px] uppercase tracking-wider text-muted-foreground mb-1">
-              suggested change · lines {finding.startLine !== undefined ? `${finding.startLine}–` : ''}
+              suggested change · lines{" "}
+              {finding.startLine !== undefined ? `${finding.startLine}–` : ""}
               {finding.endLine}
             </div>
             {finding.suggestion}
@@ -83,13 +94,19 @@ export function FindingCard({ finding, addComment }: Props) {
               <Button
                 size="2xs"
                 onClick={() => {
-                  void acceptFinding(queryClient, finding, addComment, { editedBody: draft });
+                  void acceptFinding(queryClient, finding, addComment, {
+                    editedBody: draft,
+                  });
                   setEditingFinding(null);
                 }}
               >
                 Add edited to review
               </Button>
-              <Button size="2xs" variant="ghost" onClick={() => setEditingFinding(null)}>
+              <Button
+                size="2xs"
+                variant="ghost"
+                onClick={() => setEditingFinding(null)}
+              >
                 Cancel
               </Button>
             </>
@@ -98,19 +115,34 @@ export function FindingCard({ finding, addComment }: Props) {
               <Button
                 size="2xs"
                 variant="outline"
-                style={{ borderColor: 'var(--tandem-agent-dim)', color: 'var(--tandem-agent)' }}
-                onClick={() => void acceptFinding(queryClient, finding, addComment)}
+                style={{
+                  borderColor: "var(--tandem-agent-dim)",
+                  color: "var(--tandem-agent)",
+                }}
+                onClick={() =>
+                  void acceptFinding(queryClient, finding, addComment)
+                }
               >
                 Add to review
               </Button>
-              <Button size="2xs" variant="ghost" onClick={() => setEditingFinding(finding.id)}>
+              <Button
+                size="2xs"
+                variant="ghost"
+                onClick={() => setEditingFinding(finding.id)}
+              >
                 Edit
               </Button>
-              <Button size="2xs" variant="ghost" onClick={() => void dismissFinding(queryClient, finding)}>
+              <Button
+                size="2xs"
+                variant="ghost"
+                onClick={() => void dismissFinding(queryClient, finding)}
+              >
                 Dismiss
               </Button>
               <span className="flex-1" />
-              <span className="text-[10px] text-muted-foreground font-mono">y add · e edit · x dismiss</span>
+              <span className="text-[10px] text-muted-foreground font-mono">
+                y add · e edit · x dismiss
+              </span>
             </>
           )}
         </div>

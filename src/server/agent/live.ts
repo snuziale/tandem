@@ -2,7 +2,7 @@
 // the HTTP connection (Sift's runStore invariant): closing the pane or
 // reloading detaches; POST /api/runs/:id/cancel is the only kill switch.
 // Completed runs live in runsIndex.ts; this holds only the live ones.
-import type { RunEvent } from '../../shared/agent-types';
+import type { RunEvent } from "../../shared/agent-types";
 
 export type Subscriber = (event: RunEvent, serialized: string) => void;
 
@@ -18,7 +18,14 @@ type LiveRun = {
 const live = new Map<string, LiveRun>();
 
 export function createLive(runId: string, prId: string): AbortSignal {
-  const run: LiveRun = { runId, prId, events: [], serialized: [], subscribers: new Set(), abort: new AbortController() };
+  const run: LiveRun = {
+    runId,
+    prId,
+    events: [],
+    serialized: [],
+    subscribers: new Set(),
+    abort: new AbortController(),
+  };
   live.set(runId, run);
   return run.abort.signal;
 }
@@ -53,7 +60,10 @@ export function publish(runId: string, event: RunEvent): void {
   }
 }
 
-export function subscribe(runId: string, notify: Subscriber): (() => void) | null {
+export function subscribe(
+  runId: string,
+  notify: Subscriber,
+): (() => void) | null {
   const run = live.get(runId);
   if (!run) return null;
   run.subscribers.add(notify);

@@ -2,11 +2,16 @@
 // PR and how fresh it was then. The queue compares a PR's updatedAt against
 // this to show the "unseen changes" marker. Pruned so PRs that left every
 // view don't accumulate forever.
-import { isPlainObject } from '../../shared/isPlainObject';
-import type { SeenRecord } from '../../shared/review-types';
-import { enqueueMutation, readTextFile, storagePath, writeTextFile } from '../storage/jsonFile';
+import { isPlainObject } from "../../shared/isPlainObject";
+import type { SeenRecord } from "../../shared/review-types";
+import {
+  enqueueMutation,
+  readTextFile,
+  storagePath,
+  writeTextFile,
+} from "../storage/jsonFile";
 
-const FILE = 'seen.json';
+const FILE = "seen.json";
 const MAX_RECORDS = 2000;
 
 function file(): string {
@@ -18,7 +23,8 @@ async function readAll(): Promise<Record<string, SeenRecord>> {
   if (text === null) return {};
   try {
     const raw = JSON.parse(text) as unknown;
-    if (isPlainObject(raw) && isPlainObject(raw.seen)) return raw.seen as Record<string, SeenRecord>;
+    if (isPlainObject(raw) && isPlainObject(raw.seen))
+      return raw.seen as Record<string, SeenRecord>;
   } catch {
     console.error(`[seen] ${file()} is malformed; starting empty`);
   }
@@ -37,7 +43,8 @@ export async function markSeen(prId: string, updatedAt: string): Promise<void> {
     const entries = Object.entries(seen);
     if (entries.length > MAX_RECORDS) {
       entries.sort((a, b) => a[1].seenAt.localeCompare(b[1].seenAt));
-      for (const [key] of entries.slice(0, entries.length - MAX_RECORDS)) delete seen[key];
+      for (const [key] of entries.slice(0, entries.length - MAX_RECORDS))
+        delete seen[key];
     }
     await writeTextFile(file(), JSON.stringify({ seen }, null, 2));
   });

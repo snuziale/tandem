@@ -5,13 +5,27 @@
 // --- GraphQL: queue search + PR detail ---
 
 export type GqlCheckContext =
-  | { __typename: 'CheckRun'; name: string; status: string; conclusion: string | null; detailsUrl?: string | null }
-  | { __typename: 'StatusContext'; context: string; state: string; targetUrl?: string | null };
+  | {
+      __typename: "CheckRun";
+      name: string;
+      status: string;
+      conclusion: string | null;
+      detailsUrl?: string | null;
+    }
+  | {
+      __typename: "StatusContext";
+      context: string;
+      state: string;
+      targetUrl?: string | null;
+    };
 
 export type GqlCommitWithChecks = {
   commit: {
     oid: string;
-    statusCheckRollup: { state: string; contexts: { nodes: GqlCheckContext[] } } | null;
+    statusCheckRollup: {
+      state: string;
+      contexts: { nodes: GqlCheckContext[] };
+    } | null;
   };
 };
 
@@ -30,7 +44,7 @@ export type GqlPrNode = {
   additions: number;
   deletions: number;
   changedFiles: number;
-  reviewDecision: 'APPROVED' | 'CHANGES_REQUESTED' | 'REVIEW_REQUIRED' | null;
+  reviewDecision: "APPROVED" | "CHANGES_REQUESTED" | "REVIEW_REQUIRED" | null;
   createdAt: string;
   updatedAt: string;
   reviewThreads: { totalCount: number; nodes?: GqlReviewThread[] };
@@ -42,7 +56,7 @@ export type GqlReviewThread = {
   path: string;
   line: number | null;
   startLine: number | null;
-  diffSide: 'LEFT' | 'RIGHT';
+  diffSide: "LEFT" | "RIGHT";
   isResolved: boolean;
   isOutdated: boolean;
   comments: {
@@ -55,15 +69,29 @@ export type GqlReviewThread = {
   };
 };
 
-export type GqlSearchResult = { issueCount: number; nodes: Array<GqlPrNode | null> };
-export type GqlRateLimit = { remaining: number; limit: number; resetAt: string };
+export type GqlSearchResult = {
+  issueCount: number;
+  nodes: Array<GqlPrNode | null>;
+};
+export type GqlRateLimit = {
+  remaining: number;
+  limit: number;
+  resetAt: string;
+};
 
 // --- REST: pull-request files ---
 
 export type RestPullFile = {
   filename: string;
   previous_filename?: string;
-  status: 'added' | 'removed' | 'modified' | 'renamed' | 'copied' | 'changed' | 'unchanged';
+  status:
+    | "added"
+    | "removed"
+    | "modified"
+    | "renamed"
+    | "copied"
+    | "changed"
+    | "unchanged";
   additions: number;
   deletions: number;
   changes: number;
