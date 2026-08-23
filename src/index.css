@@ -25,6 +25,35 @@ body.future-dark {
 }
 
 /*
+ * Queue-stats ordinal ramp (components/queue/charts.tsx). Four steps of ONE
+ * hue — Apollo's chart cyan — so an ordered dimension (idle time, PR size)
+ * reads its order in the color. Increasing prominence with the bucket: darker
+ * on light, brighter on dark. Do not reuse for nominal categories (author,
+ * repo) — those are one series and take a single flat `--chart-1`.
+ *
+ * Both ramps are validated: monotone lightness, adjacent OKLCH ΔL >= 0.06,
+ * light-end contrast >= 2:1 against their own surface. Re-validate if edited.
+ */
+body.future-light {
+  /* Nominal bars (author, repo): ONE flat step, since those are one series
+     each. Deliberately not the ramp's top step — six bars of the brightest
+     cyan is the loudest thing on the panel, and nothing there is urgent. */
+  --tandem-bar: #0092b8;
+  --tandem-ramp-1: #00b8db;
+  --tandem-ramp-2: #0092b8;
+  --tandem-ramp-3: #007595;
+  --tandem-ramp-4: #104e64;
+}
+
+body.future-dark {
+  --tandem-bar: #02adc6;
+  --tandem-ramp-1: #055e6c;
+  --tandem-ramp-2: #03869a;
+  --tandem-ramp-3: #02adc6;
+  --tandem-ramp-4: #00d3f2;
+}
+
+/*
  * Compact markdown typography for review content (components/common/Markdown).
  * Deliberately denser than document prose — these render inside diff
  * annotations and side panes.

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import {
   Button,
   Tooltip,
@@ -7,15 +7,24 @@ import {
   TooltipTrigger,
   cn,
 } from "@uipath/apollo-wind";
-import { Braces } from "lucide-react";
+import { Braces, ChartNoAxesColumn } from "lucide-react";
 import { useActiveView } from "../../hooks/useActiveView";
+import { useNow } from "../../hooks/useNow";
 import { useQueue } from "../../hooks/useQueue";
 import { useSavedViews, useViewActions } from "../../hooks/useSavedViews";
+import { navigate } from "../../routes";
 import type { SavedView } from "../../shared/review-types";
 import { useUiStore } from "../../state/uiStore";
+import {
+  filterByFacet,
+  formatFacet,
+  parseFacet,
+  type Facet,
+} from "../../utils/queueStats";
 import { AppHeader } from "../layout/AppHeader";
 import { QueryBar } from "./QueryBar";
 import { QueueTable } from "./QueueTable";
+import { StatsDrawer } from "./StatsDrawer";
 import {
   DeleteViewDialog,
   ViewEditorDialog,
@@ -36,13 +45,36 @@ export function QueueView() {
 
   const queryBarOpen = useUiStore((s) => s.queryBarOpen);
   const setQueryBarOpen = useUiStore((s) => s.setQueryBarOpen);
+  const statsOpen = useUiStore((s) => s.statsOpen);
+  const setStatsOpen = useUiStore((s) => s.setStatsOpen);
+  const route = useUiStore((s) => s.route);
+  const now = useNow();
 
   // Selection is URL state; every list write goes through one action set.
   const { activeViewId, activeView } = useActiveView(views);
   const actions = useViewActions(views, activeViewId);
 
   const queue = useQueue(views);
-  const rows = activeViewId ? queue.data?.views[activeViewId] : undefined;
+  // The view's whole result set — the stats drawer's denominator, and what the
+  // facet narrows for the table.
+  const allRows = activeViewId ? queue.data?.views[activeViewId] : undefined;
+
+  // A facet only makes sense with the breakdown that produced it on screen, so
+  // a facet in the URL implies an open drawer (and closing the drawer clears
+  // it) — the table is never mysteriously short.
+  const facetRaw = route.name === "queue" ? route.facet : null;
+  const facet = useMemo(() => parseFacet(facetRaw), [facetRaw]);
+  const statsShown = statsOpen || facet !== null;
+  const setFacet = (next: Facet | null) =>
+    navigate({
+      name: "queue",
+      viewId: activeViewId,
+      facet: formatFacet(next),
+    });
+  const rows = useMemo(
+    () => (allRows ? filterByFacet(allRows, facet, now) : undefined),
+    [allRows, facet, now],
+  );
 
   return (
     <div className="h-dvh flex flex-col bg-background text-foreground">
@@ -79,6 +111,31 @@ export function QueueView() {
           onEdit={(view) => setEditor({ mode: "edit", view })}
           onAddView={() => setEditor({ mode: "new" })}
         />
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              size="xs"
+              icon
+              variant="ghost"
+              aria-label="Queue breakdown"
+              aria-pressed={statsShown}
+              className={cn(statsShown && "text-foreground bg-accent")}
+              onClick={() => {
+                if (statsShown) {
+                  setStatsOpen(false);
+                  if (facet) setFacet(null);
+                } else setStatsOpen(true);
+              }}
+            >
+              <ChartNoAxesColumn />
+            </Button>
+          </TooltipTrigger>
+          <TooltipPortal>
+            <TooltipContent>
+              {statsShown ? "Hide" : "Show"} the breakdown of this view (s)
+            </TooltipContent>
+          </TooltipPortal>
+        </Tooltip>
         <Tooltip>
           <TooltipTrigger asChild>
             {/* Named, not iconified: no glyph says "the raw GitHub search string"
@@ -120,6 +177,16 @@ export function QueueView() {
           onEditView={() => setEditor({ mode: "edit", view: activeView })}
           rateLimit={queue.data?.rateLimit ?? null}
           dataUpdatedAt={queue.dataUpdatedAt}
+        />
+      ) : null}
+
+      {statsShown ? (
+        <StatsDrawer
+          rows={allRows}
+          shownCount={rows?.length ?? 0}
+          now={now}
+          facet={facet}
+          onFacet={setFacet}
         />
       ) : null}
 

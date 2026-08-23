@@ -48,7 +48,10 @@ export function useViewActions(
 ) {
   const save = useSaveViews();
   const list = views ?? [];
-  const select = (id: string | null) => navigate({ name: "queue", viewId: id });
+  // Switching views drops the stats facet: a slice of view A ("author:alice")
+  // is a different, usually empty, slice of view B.
+  const select = (id: string | null) =>
+    navigate({ name: "queue", viewId: id, facet: null });
 
   return {
     select,

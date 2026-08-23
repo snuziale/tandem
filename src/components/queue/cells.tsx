@@ -70,16 +70,53 @@ export function ReviewCell({
   }
 }
 
-export function SizeCell({ pr }: { pr: PullRequest }) {
+/**
+ * The numbers, plus a churn bar underneath. The bar is scaled LINEARLY against
+ * the largest churn among the rows on screen — one shared scale, so "this PR
+ * is four times that one" reads down the column — and split by the
+ * additions:deletions ratio. The exact counts sit directly above it, so the
+ * mark never has to carry a value on its own.
+ */
+export function SizeCell({
+  pr,
+  maxChurn,
+}: {
+  pr: PullRequest;
+  maxChurn: number;
+}) {
+  const churn = pr.additions + pr.deletions;
+  const share = maxChurn > 0 ? churn / maxChurn : 0;
+  const addPct = churn > 0 ? (pr.additions / churn) * 100 : 0;
   return (
-    <span className="text-xs font-mono whitespace-nowrap">
-      <span className="text-emerald-600 dark:text-emerald-400">
-        +{compact(pr.additions)}
-      </span>{" "}
-      <span className="text-red-500 dark:text-red-400">
-        −{compact(pr.deletions)}
-      </span>{" "}
-      <span className="text-muted-foreground">· {pr.changedFiles}f</span>
+    <span className="flex flex-col gap-1 whitespace-nowrap">
+      <span className="text-xs font-mono">
+        <span className="text-emerald-600 dark:text-emerald-400">
+          +{compact(pr.additions)}
+        </span>{" "}
+        <span className="text-red-500 dark:text-red-400">
+          −{compact(pr.deletions)}
+        </span>{" "}
+        <span className="text-muted-foreground">· {pr.changedFiles}f</span>
+      </span>
+      {/* 2px surface gap between the two fills — never a border. */}
+      <span
+        className="flex gap-[2px] h-1 w-14 rounded-[1px] bg-foreground/[0.06] overflow-hidden"
+        aria-hidden
+        title={`${churn} lines changed`}
+      >
+        <span
+          className="flex gap-[2px] h-full"
+          // Floored at 3px: a 12-line PR beside a 4,000-line one is still a
+          // row, and an invisible mark reads as missing data.
+          style={{ width: `max(3px, ${share * 100}%)` }}
+        >
+          <span
+            className="bg-emerald-600 dark:bg-emerald-400 rounded-[1px]"
+            style={{ width: `${addPct}%` }}
+          />
+          <span className="bg-red-500 dark:bg-red-400 rounded-[1px] flex-1" />
+        </span>
+      </span>
     </span>
   );
 }
@@ -168,14 +205,22 @@ export function AgentCell({ run }: { run: AgentRun | undefined }) {
     );
   }
 
-  const score = run.score !== undefined ? ` · ${run.score}/100` : "";
+  // The number and its meter are ONE unit — they must never wrap apart, or the
+  // bar reads as belonging to whatever text lands beside it.
+  const score =
+    run.score !== undefined ? (
+      <span className="text-muted-foreground font-normal whitespace-nowrap">
+        {" · "}
+        {run.score}/100 <ScoreMeter score={run.score} />
+      </span>
+    ) : null;
   const triage = run.findings.filter((f) => f.state !== "dismissed");
   if (triage.length === 0) {
     return (
       <span className="text-xs">
         <span className="font-medium">Nothing to flag</span>
+        {score}
         <span className="text-muted-foreground">
-          {score}
           {run.autoApproved ? " · " : " · safe to review fast"}
         </span>
         {run.autoApproved ? (
@@ -193,7 +238,7 @@ export function AgentCell({ run }: { run: AgentRun | undefined }) {
         style={{ color: "var(--tandem-agent)" }}
       >
         {triage.length} finding{triage.length === 1 ? "" : "s"} ready
-        <span className="text-muted-foreground font-normal">{score}</span>
+        {score}
         {run.autoApproved ? (
           <span className="text-emerald-600 dark:text-emerald-400">
             {" "}
@@ -210,6 +255,28 @@ export function AgentCell({ run }: { run: AgentRun | undefined }) {
           />
         ))}
       </span>
+    </span>
+  );
+}
+
+/** Merge-readiness as a meter beside its number. Violet because the score is
+ * machine-authored (spec §1 principle 3); the track is the same hue's wash, so
+ * the whole bar reads as one scale. Null when the pass didn't emit a score. */
+function ScoreMeter({ score }: { score: number | undefined }) {
+  if (score === undefined) return null;
+  const pct = Math.max(0, Math.min(100, score));
+  return (
+    <span
+      className="inline-block align-middle w-5 h-1 rounded-[1px] shrink-0 overflow-hidden"
+      style={{
+        background: "color-mix(in srgb, var(--tandem-agent) 22%, transparent)",
+      }}
+      aria-hidden
+    >
+      <span
+        className="block h-full rounded-[1px]"
+        style={{ width: `${pct}%`, background: "var(--tandem-agent)" }}
+      />
     </span>
   );
 }

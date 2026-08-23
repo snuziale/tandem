@@ -12,12 +12,23 @@ import type { PrId } from "./shared/review-types";
 import { useUiStore } from "./state/uiStore";
 
 export type Route =
-  | { name: "queue"; viewId: string | null }
+  | {
+      name: "queue";
+      viewId: string | null;
+      /**
+       * The stats drawer's active slice, as `dim:value` (see
+       * utils/queueStats.ts). URL state for the same reason the view is: a
+       * filtered queue is linkable, and back undoes the filter rather than
+       * leaving the reader on a subset they can't see the cause of.
+       */
+      facet: string | null;
+    }
   | { name: "pr"; owner: string; repo: string; number: number; prId: PrId }
   | { name: "settings" };
 
-/** Query param carrying the queue's selected view id. */
+/** Query params carrying the queue's selected view and its stats facet. */
 const VIEW_PARAM = "view";
+const FACET_PARAM = "by";
 
 export function routeOfLocation(pathname: string, search = ""): Route {
   if (pathname === "/settings") return { name: "settings" };
@@ -34,15 +45,23 @@ export function routeOfLocation(pathname: string, search = ""): Route {
       prId: prIdOf(owner, repo, number),
     };
   }
-  return { name: "queue", viewId: new URLSearchParams(search).get(VIEW_PARAM) };
+  const params = new URLSearchParams(search);
+  return {
+    name: "queue",
+    viewId: params.get(VIEW_PARAM),
+    facet: params.get(FACET_PARAM),
+  };
 }
 
 export function pathOfRoute(route: Route): string {
   switch (route.name) {
-    case "queue":
-      return route.viewId
-        ? `/?${VIEW_PARAM}=${encodeURIComponent(route.viewId)}`
-        : "/";
+    case "queue": {
+      const params = new URLSearchParams();
+      if (route.viewId) params.set(VIEW_PARAM, route.viewId);
+      if (route.facet) params.set(FACET_PARAM, route.facet);
+      const search = params.toString();
+      return search ? `/?${search}` : "/";
+    }
     case "settings":
       return "/settings";
     case "pr":
@@ -63,7 +82,11 @@ export function navigate(route: Route, options?: { replace?: boolean }): void {
  * so a cold launch also restores it). Every "← Queue" affordance uses this.
  */
 export function navigateToQueue(): void {
-  navigate({ name: "queue", viewId: useUiStore.getState().lastViewId });
+  navigate({
+    name: "queue",
+    viewId: useUiStore.getState().lastViewId,
+    facet: null,
+  });
 }
 
 /** Resolve the initial route and follow back/forward. Mount once (App). */

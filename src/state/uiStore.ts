@@ -65,12 +65,17 @@ type UiState = {
   // The queue's query row is hidden until its toggle latches on (or `/`).
   queryBarOpen: boolean;
   setQueryBarOpen: (open: boolean | ((current: boolean) => boolean)) => void;
+
+  /** The queue's stats drawer. Persisted — whether you review with the
+   * breakdown on screen is a working preference, not per-session state. */
+  statsOpen: boolean;
+  setStatsOpen: (open: boolean | ((current: boolean) => boolean)) => void;
 };
 
 export const useUiStore = create<UiState>()(
   persist(
     (set) => ({
-      route: { name: "queue", viewId: null },
+      route: { name: "queue", viewId: null, facet: null },
       setRoute: (route) => set({ route }),
 
       lastViewId: null,
@@ -105,6 +110,12 @@ export const useUiStore = create<UiState>()(
           queryBarOpen:
             typeof open === "function" ? open(s.queryBarOpen) : open,
         })),
+
+      statsOpen: false,
+      setStatsOpen: (open) =>
+        set((s) => ({
+          statsOpen: typeof open === "function" ? open(s.statsOpen) : open,
+        })),
     }),
     {
       name: "tandem:ui:v1",
@@ -112,6 +123,7 @@ export const useUiStore = create<UiState>()(
       partialize: (s) => ({
         diffStyle: s.diffStyle,
         lastViewId: s.lastViewId,
+        statsOpen: s.statsOpen,
         prPaneLayout: s.prPaneLayout,
       }),
     },

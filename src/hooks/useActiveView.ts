@@ -15,6 +15,7 @@ export function useActiveView(views: SavedView[] | undefined) {
   const route = useUiStore((s) => s.route);
   const setLastViewId = useUiStore((s) => s.setLastViewId);
   const routeViewId = route.name === "queue" ? route.viewId : null;
+  const routeFacet = route.name === "queue" ? route.facet : null;
   const activeView = views?.find((v) => v.id === routeViewId) ?? null;
 
   useEffect(() => {
@@ -27,8 +28,13 @@ export function useActiveView(views: SavedView[] | undefined) {
     }
     const remembered = useUiStore.getState().lastViewId;
     const fallback = views.find((v) => v.id === remembered) ?? views[0];
-    navigate({ name: "queue", viewId: fallback.id }, { replace: true });
-  }, [views, activeView, savePending, setLastViewId]);
+    // Keep any stats facet: a shared `/?by=author:alice` link that omits the
+    // view should still land filtered, on the remembered view.
+    navigate(
+      { name: "queue", viewId: fallback.id, facet: routeFacet },
+      { replace: true },
+    );
+  }, [views, activeView, savePending, setLastViewId, routeFacet]);
 
   return { activeViewId: activeView?.id ?? null, activeView };
 }

@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { Skeleton, cn } from "@uipath/apollo-wind";
 import { useUiStore } from "../../state/uiStore";
 import type { PullRequest } from "../../shared/review-types";
@@ -32,6 +32,16 @@ export function QueueTable({ rows, isLoading, error, viewError }: Props) {
   const runs = useAgentRuns();
   const seen = useSeen();
   const now = useNow();
+  // One shared scale for the size column's churn bars: the biggest PR on
+  // screen fills its track and every other bar is read against it.
+  const maxChurn = useMemo(
+    () =>
+      (rows ?? []).reduce(
+        (max, pr) => Math.max(max, pr.additions + pr.deletions),
+        0,
+      ),
+    [rows],
+  );
 
   // Publish the visible rows for the keyboard handlers (including whether the
   // agent found a blocker — the 'a' guard reads it); clamp a focus that no
@@ -100,6 +110,7 @@ export function QueueTable({ rows, isLoading, error, viewError }: Props) {
               pr={pr}
               run={runFor(runs.data, pr.prId, pr.headSha)}
               unseen={hasUnseenChanges(seen.data, pr)}
+              maxChurn={maxChurn}
               now={now}
               focused={pr.prId === focusedPrId}
               onFocus={() => setFocusedPr(pr.prId)}

@@ -187,12 +187,15 @@ src/
                      useSavedViews (+ useViewActions: every view write + its navigation)
                      useActiveView (URL ↔ view list reconciliation)
                      useKeyboardNav (global dispatcher)  queueActions  findingActions
-  state/             themeStore (persist)  uiStore (route, focus, composer target, lastViewId;
-                     persist partialize: diffStyle + lastViewId)
+  state/             themeStore (persist)  uiStore (route, focus, composer target, lastViewId,
+                     statsOpen; persist partialize: diffStyle + lastViewId + statsOpen)
   keyboard/          target.ts (isTypingTarget/hasOpenDialog)  shortcuts.ts (? sheet registry —
                      manually synced with the dispatchers)
-  routes.ts          History-API routing: /?view=<id> · /:owner/:repo/pull/:n · /settings
-                     (navigateToQueue() = back to the last-selected view)
+  routes.ts          History-API routing: /?view=<id>[&by=<dim>:<value>] ·
+                     /:owner/:repo/pull/:n · /settings
+                     (navigateToQueue() = back to the last-selected view, facet dropped)
+  utils/queueStats.ts  TESTED pure stats + facets over the active view's rows
+                     (buckets, top-N folding, parse/format/match facet)
   components/        layout/AppHeader (the ONE header: chrome + brand + agent pill + settings
                      + theme; screens fill `children`/`actions`) queue/ pr/ agent/
                      review(tray in pr/)/ settings/ setup/
@@ -205,7 +208,8 @@ config.json    PAT (+defaultOrg)          settings.json  caps/threshold/models/r
 views.json     saved queue views          reviews.json   pending-review drafts by prId
 runs.json      AgentRun by prId@headSha + spendByDay     claude.log  harness stderr
 sandbox/       cwd for the read-only claude passes
-localStorage   tandem:theme:v1 · tandem:ui:v1 (diffStyle, lastViewId) — display prefs ONLY
+localStorage   tandem:theme:v1 · tandem:ui:v1 (diffStyle, lastViewId, statsOpen) —
+               display prefs ONLY
 ```
 
 ## Keyboard
@@ -213,10 +217,41 @@ localStorage   tandem:theme:v1 · tandem:ui:v1 (diffStyle, lastViewId) — displ
 Two dispatchers, one guard module (`keyboard/target.ts`), one display registry
 (`keyboard/shortcuts.ts` — update it when touching either dispatcher):
 
-- `useKeyboardNav` (mounted in App): `?` everywhere; queue keys j/k/Enter/o/a/A(override)/r//.
-  Reads state via `getState()` snapshots — the listener never re-binds.
+- `useKeyboardNav` (mounted in App): `?` everywhere; queue keys
+  j/k/Enter/o/a/A(override)/r/s/esc//. Reads state via `getState()` snapshots — the listener
+  never re-binds.
 - `PrDetailView` binds its own detail keys (esc, [ ], j/k findings, y/e/x, v, r, a, o) — same
   snapshot pattern via a ref updated in an effect. Composer/tray own ⌘↵ (stage vs submit).
+
+## Queue stats drawer (`components/queue/StatsDrawer.tsx` + `charts.tsx`)
+
+A breakdown of the ACTIVE VIEW, toggled from the header (`s`), where every mark is also a
+filter. Snapshot only — the queue payload is the currently-open PRs, so these are
+distributions, never trends. Real trends would need a queue journal on disk; that's a
+separate feature, not a tweak to this one.
+
+- **All logic is pure and tested** (`utils/queueStats.ts`): idle/size/checks/review bucketing,
+  top-6 nominal folding, and facet parse/format/match. The components only lay it out.
+- **The facet is URL state** (`?by=author:alice`) for the same reasons the view is. A facet
+  implies an OPEN drawer (`QueueView.statsShown`) — closing the drawer or hitting `s` clears
+  it, `esc` clears the facet alone. Switching views drops it (`useViewActions.select`).
+- **Charts read the UNFILTERED rows; only the table narrows.** A chart that collapsed onto its
+  own selection couldn't be used to pick the next slice. `QueueView` passes `allRows` to the
+  drawer and `filterByFacet(...)` to the table.
+- **Color is by JOB, not by taste.** Nominal dimensions (author, repo) are ONE series → one
+  flat `--tandem-bar`; ordered ones (idle, size) take the 4-step single-hue `--tandem-ramp-*`
+  ramp; checks/review wear the design system's reserved STATUS tokens and always ship a
+  written label + count. Selection is EMPHASIS (others drop to 40%), never a recolor — a hue
+  must never come to mean "selected". Both ramps are validated (monotone L, adjacent ΔL ≥
+  0.06, light-end ≥ 2:1 on their own surface); re-validate if the hexes in `index.css` change.
+- **Bar length scale differs by kind**: ordinal bars scale to the view total (their buckets
+  partition it), nominal top-N bars to their own largest slice, or six authors out of fifty
+  render as six empty tracks. A zero value gets NO mark; non-zero is floored at 3px.
+- Every value is printed as text beside its mark, so the charts are their own table view and
+  nothing is hover-gated.
+- The queue rows carry the same idea inline: the size cell's churn bar shares ONE scale (the
+  largest churn on screen, computed in `QueueTable`), and the agent cell's score meter is
+  violet because the score is machine-authored — it and its number never wrap apart.
 
 ## Design decisions (settled — surface a tradeoff before changing)
 
@@ -229,6 +264,9 @@ Two dispatchers, one guard module (`keyboard/target.ts`), one display registry
   `uiStore.lastViewId` is only a persisted memory for cold launches and "← Queue".
 - **One header component** (`layout/AppHeader`) owns the chrome for every screen — a screen
   passes slots, never its own `<header>`.
+- **The stats facet is URL state too** (`/?view=<id>&by=<dim>:<value>`), client-side only: it
+  never rewrites the GitHub search, so it costs no rate limit and stays honest about being a
+  slice of what the view already returned.
 - **View management lives on the tab** (⋯ menu / right-click / double-click to rename):
   rename · edit query · duplicate · delete (delete always confirms, then slides to the
   neighbour). Every write goes through `useViewActions`, which also owns the navigation.

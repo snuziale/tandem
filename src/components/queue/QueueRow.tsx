@@ -21,6 +21,8 @@ type Props = {
   run: AgentRun | undefined;
   /** The PR changed since the reviewer last opened it here (or never opened). */
   unseen: boolean;
+  /** Largest churn among the rows on screen — the churn bar's shared scale. */
+  maxChurn: number;
   now: number;
   focused: boolean;
   onFocus: () => void;
@@ -31,6 +33,7 @@ export function QueueRow({
   pr,
   run,
   unseen,
+  maxChurn,
   now,
   focused,
   onFocus,
@@ -94,7 +97,7 @@ export function QueueRow({
       </div>
       <ChecksCell pr={pr} />
       <ReviewCell pr={pr} />
-      <SizeCell pr={pr} />
+      <SizeCell pr={pr} maxChurn={maxChurn} />
       <AgeCell pr={pr} now={now} />
       <div className="flex items-center justify-between gap-2 min-w-0">
         <AgentCell run={run} />

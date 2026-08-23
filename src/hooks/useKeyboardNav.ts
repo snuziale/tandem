@@ -91,6 +91,31 @@ const QUEUE_HANDLERS: Record<string, (ctx: NavCtx) => void> = {
     ctx.e.preventDefault();
     void ctx.queryClient.invalidateQueries({ queryKey: ["queue"] });
   },
+  // The breakdown drawer. A facet in the URL forces it open (QueueView), so
+  // closing it has to clear the facet too — otherwise the table stays short
+  // with nothing on screen saying why.
+  s: (ctx) => {
+    ctx.e.preventDefault();
+    const { route, statsOpen, setStatsOpen } = useUiStore.getState();
+    const facet = route.name === "queue" ? route.facet : null;
+    if (statsOpen || facet) {
+      setStatsOpen(false);
+      if (facet)
+        navigate({
+          name: "queue",
+          viewId: route.name === "queue" ? route.viewId : null,
+          facet: null,
+        });
+    } else setStatsOpen(true);
+  },
+  // Esc drops the facet without closing the breakdown — the common "show me
+  // everything again" move.
+  Escape: (ctx) => {
+    const { route } = useUiStore.getState();
+    if (route.name !== "queue" || !route.facet) return;
+    ctx.e.preventDefault();
+    navigate({ name: "queue", viewId: route.viewId, facet: null });
+  },
   "/": (ctx) => {
     ctx.e.preventDefault();
     // The query row hides until latched — `/` latches it, then focuses.
