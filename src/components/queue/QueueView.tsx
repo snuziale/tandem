@@ -184,6 +184,7 @@ export function QueueView() {
         <StatsDrawer
           rows={allRows}
           shownCount={rows?.length ?? 0}
+          matching={activeViewId ? queue.data?.counts[activeViewId] : undefined}
           now={now}
           facet={facet}
           onFacet={setFacet}

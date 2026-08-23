@@ -10,7 +10,7 @@
 //    rather than recolor, so a hue never means "currently selected".
 import { useMemo } from "react";
 import { Button, cn } from "@uipath/apollo-wind";
-import { X } from "lucide-react";
+import { Info, X } from "lucide-react";
 import type { PullRequest } from "../../shared/review-types";
 import {
   computeQueueStats,
@@ -67,12 +67,26 @@ type Props = {
   rows: PullRequest[] | undefined;
   /** How many rows survive the active facet (what the table below shows). */
   shownCount: number;
+  /**
+   * GitHub's `issueCount` for the view — the TRUE total, which can exceed the
+   * page we loaded. The drawer only ever describes the rows it has, so when
+   * these differ it has to say so; a breakdown reads as a claim about the whole
+   * view, and silently describing a slice of it is the lie this guards against.
+   */
+  matching: number | undefined;
   now: number;
   facet: Facet | null;
   onFacet: (facet: Facet | null) => void;
 };
 
-export function StatsDrawer({ rows, shownCount, now, facet, onFacet }: Props) {
+export function StatsDrawer({
+  rows,
+  shownCount,
+  matching,
+  now,
+  facet,
+  onFacet,
+}: Props) {
   const stats = useMemo(() => computeQueueStats(rows ?? [], now), [rows, now]);
 
   /** Clicking the selected mark again clears the filter. */
@@ -84,6 +98,7 @@ export function StatsDrawer({ rows, shownCount, now, facet, onFacet }: Props) {
     onFacet(sameFacet(facet, next) ? null : next);
   const keyFor = (dim: FacetDim) => (facet?.dim === dim ? facet.value : null);
   const dimmed = facet !== null;
+  const truncated = matching !== undefined && matching > stats.total;
 
   if (!rows) {
     return (
@@ -109,7 +124,11 @@ export function StatsDrawer({ rows, shownCount, now, facet, onFacet }: Props) {
           <StatTile
             label="open PRs"
             value={stats.total}
-            sub={`${compact(stats.totalChurn)} lines waiting`}
+            sub={
+              truncated
+                ? `of ${matching} matching`
+                : `${compact(stats.totalChurn)} lines waiting`
+            }
           />
           <StatTile
             label="awaiting you"
@@ -157,6 +176,15 @@ export function StatsDrawer({ rows, shownCount, now, facet, onFacet }: Props) {
           </div>
         ) : null}
       </div>
+
+      {truncated ? (
+        <p className="flex items-center gap-1.5 text-[11px] text-muted-foreground -mt-1">
+          <Info className="size-3 shrink-0" />
+          This view matches {matching} PRs; GitHub returns one page. Everything
+          below describes the {stats.total} most recently updated — not the
+          whole view.
+        </p>
+      ) : null}
 
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-x-6 gap-y-3">
         <ChartCard

@@ -52,6 +52,12 @@ export type BuiltQueueQuery = {
 
 export function buildQueueQuery(
   views: QueueQueryInput[],
+  // MEASURED, not chosen: a 518-match `review-requested:@me` search already
+  // runs 6.5-6.8s at 50 against GitHub's ~10s GraphQL budget, and 504s/502s
+  // start at 60. Trimming the node fields doesn't buy it back — the same
+  // search with no check contexts and no threads still took 7.5-9.3s at 100,
+  // so the cost is the search, not the payload. Raising this makes the queue
+  // flaky; the stats drawer says out loud when a view is bigger than one page.
   pageSize = 50,
 ): BuiltQueueQuery {
   const aliasToViewId: Record<string, string> = {};

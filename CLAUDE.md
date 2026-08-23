@@ -285,6 +285,12 @@ filter. Snapshot only — the queue payload is the currently-open PRs, so these 
 distributions, never trends. Real trends would need a queue journal on disk; that's a
 separate feature, not a tweak to this one.
 
+**It describes the PAGE, not the view.** The queue fetches ONE page (`first: 50`) while the
+tab badge shows GitHub's `issueCount` — so a 521-match view yields 50 rows. The table has
+always been a top-50 list and that's fine; a *breakdown* is not, because it reads as a claim
+about the whole view. `StatsDrawer` takes `matching` (the view's issueCount) and, when it
+exceeds the loaded rows, says so above the charts. Never drop that caveat.
+
 - **All logic is pure and tested** (`utils/queueStats.ts`): idle/size/checks/review bucketing,
   top-6 nominal folding, and facet parse/format/match. The components only lay it out.
 - **The facet is URL state** (`?by=author:alice`) for the same reasons the view is. A facet
@@ -354,6 +360,12 @@ separate feature, not a tweak to this one.
 - **CodeView doesn't scroll / scrollTo dead**: container lost `overflow-y-auto` or bounded height.
 - **Annotations don't move/appear**: item `version` didn't change — check `versionOf` inputs.
 - **GraphQL 502s**: that's GitHub's ~10s budget. Never batch searches; keep the single retry.
+- **Don't raise the queue page size.** MEASURED 2026-08-23: a 521-match `review-requested:@me`
+  search already runs 6.5-6.8s at `first: 50`, and 504/502s start at 60. Trimming node fields
+  doesn't buy it back — the same search with no check contexts and no threads still took
+  7.5-9.3s at 100, so the cost is the SEARCH, not the payload. Removing the org-wide view
+  didn't change this. More coverage needs a different mechanism (cursor paging on demand),
+  not a bigger `first`.
 - **`useQuery` detail-vs-queue thread counts differ**: queue fetches `reviewThreads(first:1)`
   totalCount only; `unresolvedThreadCount` is accurate only on detail. Same field with different
   args in one query is a GraphQL conflict — that's why detailQuery.ts doesn't reuse the fragment.
