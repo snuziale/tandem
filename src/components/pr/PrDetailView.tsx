@@ -20,6 +20,7 @@ import {
   PanelRightOpen,
 } from "lucide-react";
 import { startRun } from "../../api/runs";
+import { openChatFor } from "../../hooks/chatActions";
 import {
   acceptFinding,
   dismissFinding,
@@ -227,8 +228,8 @@ export function PrDetailView({ prId }: { prId: PrId }) {
   };
 
   // Detail-scoped keys (the global handler only runs on the queue route):
-  // esc back · [ ] files · j/k findings · y/e/x triage · v viewed · r rerun ·
-  // a verdict approve · o open on GitHub.
+  // esc back · [ ] files · j/k findings · y/e/x triage · c chat · v viewed ·
+  // r rerun · a verdict approve · o open on GitHub.
   const keyState = useRef({
     files,
     selectedPath,
@@ -336,6 +337,11 @@ export function PrDetailView({ prId }: { prId: PrId }) {
           }
           return;
         }
+        case "c":
+          // Chat about the focused finding, or the PR when nothing is focused.
+          e.preventDefault();
+          openChatFor(useUiStore.getState().focusedFindingId);
+          return;
         case "r":
           e.preventDefault();
           void startRun(prId, true).then(() =>
@@ -540,6 +546,7 @@ export function PrDetailView({ prId }: { prId: PrId }) {
                 >
                   <AgentPane
                     prId={prId}
+                    headSha={pr.headSha}
                     run={run}
                     progress={progress}
                     settings={settings.data}

@@ -81,6 +81,10 @@ type UiState = {
   setPrFilesOpen: (open: boolean | ((current: boolean) => boolean)) => void;
   setPrAgentOpen: (open: boolean | ((current: boolean) => boolean)) => void;
 
+  /** The chat section at the foot of the agent pane. Persisted like the panes. */
+  prChatOpen: boolean;
+  setPrChatOpen: (open: boolean | ((current: boolean) => boolean)) => void;
+
   shortcutsOpen: boolean;
   setShortcutsOpen: (open: boolean) => void;
 
@@ -140,6 +144,12 @@ export const useUiStore = create<UiState>()(
           prAgentOpen: typeof open === "function" ? open(s.prAgentOpen) : open,
         })),
 
+      prChatOpen: true,
+      setPrChatOpen: (open) =>
+        set((s) => ({
+          prChatOpen: typeof open === "function" ? open(s.prChatOpen) : open,
+        })),
+
       shortcutsOpen: false,
       setShortcutsOpen: (open) => set({ shortcutsOpen: open }),
 
@@ -165,6 +175,7 @@ export const useUiStore = create<UiState>()(
         prPaneLayout: s.prPaneLayout,
         prFilesOpen: s.prFilesOpen,
         prAgentOpen: s.prAgentOpen,
+        prChatOpen: s.prChatOpen,
         statsOpen: s.statsOpen,
       }),
     },

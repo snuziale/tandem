@@ -1,4 +1,5 @@
 import { handleAgent, handleRuns } from "./agent/routes";
+import { handleChats } from "./agent/chat/routes";
 import { handleConfig } from "./config/routes";
 import { handleQueue } from "./github/queue";
 import { handlePrs } from "./github/routes";
@@ -39,6 +40,8 @@ function listen(port: number): ReturnType<typeof Bun.serve> {
           res = await handleViews(req);
         } else if (url.pathname.startsWith(API_PATHS.RUNS)) {
           res = await handleRuns(req);
+        } else if (url.pathname.startsWith(API_PATHS.CHATS)) {
+          res = await handleChats(req);
         } else if (url.pathname.startsWith(API_PATHS.AGENT)) {
           res = await handleAgent(req);
         } else if (url.pathname.startsWith(API_PATHS.SEEN)) {

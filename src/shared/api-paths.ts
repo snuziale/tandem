@@ -11,6 +11,7 @@ export const API_PATHS = {
   PRS: "/api/prs",
   REVIEWS: "/api/reviews",
   RUNS: "/api/runs",
+  CHATS: "/api/chats",
   AGENT: "/api/agent",
   AGENT_HEALTH: "/api/agent/health",
   SETTINGS: "/api/settings",

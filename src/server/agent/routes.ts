@@ -7,7 +7,8 @@ import { loadConfig } from "../config/store";
 import { matchIdPath } from "../pathMatch";
 import { parseJsonBody } from "../requestJson";
 import { checkClaudeAvailable } from "./claude";
-import { cancelLive, isLive, liveCount, replay, subscribe } from "./live";
+import { cancelLive, liveCount } from "./live";
+import { streamLive } from "./sse";
 import { startRun } from "./pipeline/run";
 import {
   getRunById,
@@ -123,68 +124,15 @@ async function handleFindingState(
   }
 }
 
-// SSE: replay the live buffer then tail (Sift's replay-then-tail in one
-// synchronous block, so no event slips between). A finished run answers with
-// its final state immediately.
-async function streamRun(runId: string): Promise<Response> {
-  if (!isLive(runId)) {
-    const run = await getRunById(runId);
-    if (!run) return new Response("Not Found", { status: 404 });
-    const finalEvent: RunEvent = { type: "done", run };
-    return new Response(`data: ${JSON.stringify(finalEvent)}\n\n`, {
-      headers: sseHeaders(),
-    });
-  }
-
-  let unsubscribe: (() => void) | null = null;
-  let heartbeat: ReturnType<typeof setInterval> | null = null;
-  const stream = new ReadableStream<Uint8Array>({
-    start(controller) {
-      const encoder = new TextEncoder();
-      let closed = false;
-      const write = (chunk: string) => {
-        if (closed) return;
-        try {
-          controller.enqueue(encoder.encode(chunk));
-        } catch {
-          close();
-        }
-      };
-      const close = () => {
-        if (closed) return;
-        closed = true;
-        unsubscribe?.();
-        if (heartbeat !== null) clearInterval(heartbeat);
-        try {
-          controller.close();
-        } catch {
-          // already closed by cancel()
-        }
-      };
-      heartbeat = setInterval(
-        () => write(`: heartbeat ${Date.now()}\n\n`),
-        5_000,
-      );
-
-      for (const serialized of replay(runId)) write(`data: ${serialized}\n\n`);
-      unsubscribe = subscribe(runId, (event, serialized) => {
-        write(`data: ${serialized}\n\n`);
-        if (event.type === "done") close();
-      });
-      if (!unsubscribe) close(); // finished between the isLive check and here
+// SSE: replay-then-tail lives in sse.ts (chat turns stream the same way). A
+// finished run answers with its final state immediately.
+function streamRun(runId: string): Promise<Response> {
+  return streamLive(
+    runId,
+    (event) => event.type === "done",
+    async () => {
+      const run = await getRunById(runId);
+      return run ? ({ type: "done", run } satisfies RunEvent) : null;
     },
-    cancel() {
-      unsubscribe?.();
-      if (heartbeat !== null) clearInterval(heartbeat);
-    },
-  });
-  return new Response(stream, { headers: sseHeaders() });
-}
-
-function sseHeaders(): Record<string, string> {
-  return {
-    "content-type": "text/event-stream; charset=utf-8",
-    "cache-control": "no-cache, no-transform",
-    connection: "keep-alive",
-  };
+  );
 }

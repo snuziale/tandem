@@ -20,7 +20,10 @@ export type ClaudePassResult =
 const PASS_TIMEOUT_MS = 10 * 60_000;
 const MAX_STDERR_LINES = 50;
 
-export function buildClaudeArgs(model?: string): string[] {
+export function buildClaudeArgs(
+  model?: string,
+  opts: { partialMessages?: boolean } = {},
+): string[] {
   const args = [
     "claude",
     "-p",
@@ -34,6 +37,9 @@ export function buildClaudeArgs(model?: string): string[] {
     "dontAsk",
     "--no-session-persistence",
   ];
+  // Token-level deltas, for the chat pass only: the pipeline passes emit one
+  // strict-JSON blob nobody watches arrive, so they skip the extra frames.
+  if (opts.partialMessages) args.push("--include-partial-messages");
   // Discrete argv entry, no shell — no flag injection.
   if (model) args.push("--model", model);
   return args;
@@ -43,17 +49,23 @@ export async function runClaudePass(opts: {
   prompt: string;
   model?: string;
   signal?: AbortSignal;
+  /** Provide to stream assistant text as it arrives (chat). Omit for the
+   * pipeline passes — it turns on the CLI's partial-message frames. */
+  onDelta?: (text: string) => void;
 }): Promise<ClaudePassResult> {
   const sandbox = join(tandemHome(), "sandbox");
   await mkdir(sandbox, { recursive: true, mode: 0o700 });
 
-  const proc = Bun.spawn(buildClaudeArgs(opts.model), {
-    cwd: sandbox,
-    stdin: new Blob([opts.prompt]),
-    stdout: "pipe",
-    stderr: "pipe",
-    env: { ...process.env },
-  });
+  const proc = Bun.spawn(
+    buildClaudeArgs(opts.model, { partialMessages: !!opts.onDelta }),
+    {
+      cwd: sandbox,
+      stdin: new Blob([opts.prompt]),
+      stdout: "pipe",
+      stderr: "pipe",
+      env: { ...process.env },
+    },
+  );
 
   const killTimer = setTimeout(() => proc.kill(), PASS_TIMEOUT_MS);
   const onAbort = () => proc.kill();
@@ -71,7 +83,9 @@ export async function runClaudePass(opts: {
     for await (const line of readLines(proc.stdout)) {
       const frame = parseFrame(line);
       if (!frame) continue;
-      if (frame.kind === "result") {
+      if (frame.kind === "delta") {
+        opts.onDelta?.(frame.text);
+      } else if (frame.kind === "result") {
         result = {
           ok: true,
           text: frame.text,
@@ -99,6 +113,7 @@ export async function runClaudePass(opts: {
 
 type Frame =
   | { kind: "result"; text: string; tokens: number; costUsd: number }
+  | { kind: "delta"; text: string }
   | { kind: "error"; message: string };
 
 function parseFrame(line: string): Frame | null {
@@ -108,7 +123,13 @@ function parseFrame(line: string): Frame | null {
   } catch {
     return null;
   }
-  if (!isPlainObject(obj) || obj.type !== "result") return null;
+  if (!isPlainObject(obj)) return null;
+  // Partial-message frames (chat only): content_block_delta carries the text.
+  if (obj.type === "stream_event") {
+    const text = textDeltaOf(obj.event);
+    return text === null ? null : { kind: "delta", text };
+  }
+  if (obj.type !== "result") return null;
   if (typeof obj.subtype === "string" && obj.subtype.startsWith("error_")) {
     return {
       kind: "error",
@@ -125,6 +146,15 @@ function parseFrame(line: string): Frame | null {
   const costUsd =
     typeof obj.total_cost_usd === "number" ? obj.total_cost_usd : 0;
   return { kind: "result", text, tokens, costUsd };
+}
+
+/** `{event: {type: "content_block_delta", delta: {type: "text_delta", text}}}`. */
+function textDeltaOf(event: unknown): string | null {
+  if (!isPlainObject(event) || event.type !== "content_block_delta")
+    return null;
+  const delta = event.delta;
+  if (!isPlainObject(delta) || delta.type !== "text_delta") return null;
+  return typeof delta.text === "string" ? delta.text : null;
 }
 
 function isPlainObjectRecord(v: unknown): v is Record<string, unknown> {

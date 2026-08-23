@@ -1,15 +1,25 @@
-// In-memory registry of RUNNING pipelines. Runs are owned by the server, not
-// the HTTP connection (Sift's runStore invariant): closing the pane or
-// reloading detaches; POST /api/runs/:id/cancel is the only kill switch.
-// Completed runs live in runsIndex.ts; this holds only the live ones.
+// In-memory registry of RUNNING work — pipeline runs AND chat turns. Both are
+// owned by the server, not the HTTP connection (Sift's runStore invariant):
+// closing the pane or reloading detaches; the cancel route is the only kill
+// switch. Completed runs live in runsIndex.ts, transcripts in chat/store.ts;
+// this holds only what is in flight.
+//
+// One registry, two kinds: `kind` keeps chat turns out of the run accounting
+// (prewarm's in-flight cap, the header's live count) while sharing one
+// implementation of replay-then-tail.
 import type { RunEvent } from "../../shared/agent-types";
+import type { ChatEvent } from "../../shared/chat-types";
 
-export type Subscriber = (event: RunEvent, serialized: string) => void;
+export type LiveKind = "run" | "chat";
+export type LiveEvent = RunEvent | ChatEvent;
+
+export type Subscriber = (event: LiveEvent, serialized: string) => void;
 
 type LiveRun = {
   runId: string;
   prId: string;
-  events: RunEvent[];
+  kind: LiveKind;
+  events: LiveEvent[];
   serialized: string[];
   subscribers: Set<Subscriber>;
   abort: AbortController;
@@ -17,10 +27,15 @@ type LiveRun = {
 
 const live = new Map<string, LiveRun>();
 
-export function createLive(runId: string, prId: string): AbortSignal {
+export function createLive(
+  runId: string,
+  prId: string,
+  kind: LiveKind = "run",
+): AbortSignal {
   const run: LiveRun = {
     runId,
     prId,
+    kind,
     events: [],
     serialized: [],
     subscribers: new Set(),
@@ -35,14 +50,14 @@ export function isLive(runId: string): boolean {
 }
 
 export function livePrIds(): string[] {
-  return [...live.values()].map((r) => r.prId);
+  return [...live.values()].filter((r) => r.kind === "run").map((r) => r.prId);
 }
 
 export function liveCount(): number {
-  return live.size;
+  return [...live.values()].filter((r) => r.kind === "run").length;
 }
 
-export function publish(runId: string, event: RunEvent): void {
+export function publish(runId: string, event: LiveEvent): void {
   const run = live.get(runId);
   if (!run) return;
   // Stringify ONCE — reused for the replay buffer and every subscriber.

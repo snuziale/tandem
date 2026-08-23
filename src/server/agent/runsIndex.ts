@@ -7,6 +7,7 @@ import {
   canTransitionFinding,
   canTransitionRun,
   type AgentRun,
+  type Finding,
   type FindingState,
 } from "../../shared/agent-types";
 import { runKeyOf } from "../../shared/gh/prKey";
@@ -98,6 +99,70 @@ export async function transitionFinding(
       throw new Error(`illegal finding transition ${finding.state} → ${to}`);
     }
     finding.state = to;
+    all.runs[key] = run;
+    await writeAll(all);
+    return run;
+  });
+}
+
+/**
+ * Rewrite a finding's text in place — the apply half of a chat revision.
+ * Only findings still in triage can be revised: `staged` text belongs to the
+ * draft comment, so chat proposes a comment revision for those instead.
+ * Advances proposed → edited (a human asked for the change; the finding is no
+ * longer purely machine-authored).
+ */
+export async function reviseFinding(
+  runId: string,
+  findingId: string,
+  patch: {
+    title?: string;
+    body?: string;
+    severity?: Finding["severity"];
+    suggestion?: string | null;
+  },
+): Promise<AgentRun> {
+  return enqueueMutation(file(), async () => {
+    const all = await readAll();
+    const entry = Object.entries(all.runs).find(([, r]) => r.id === runId);
+    if (!entry) throw new Error(`no run ${runId}`);
+    const [key, run] = entry;
+    const finding = run.findings.find((f) => f.id === findingId);
+    if (!finding) throw new Error(`no finding ${findingId} in run ${runId}`);
+    if (finding.state !== "proposed" && finding.state !== "edited") {
+      throw new Error(
+        `finding is ${finding.state} — revise the staged comment instead`,
+      );
+    }
+    if (patch.title !== undefined) finding.title = patch.title;
+    if (patch.body !== undefined) finding.body = patch.body;
+    if (patch.severity !== undefined) finding.severity = patch.severity;
+    if (patch.suggestion !== undefined)
+      finding.suggestion = patch.suggestion ?? undefined;
+    if (finding.state === "proposed") finding.state = "edited";
+    all.runs[key] = run;
+    await writeAll(all);
+    return run;
+  });
+}
+
+/**
+ * Add a finding the conversation surfaced to an existing run. Anchoring and
+ * schema checks happen in chat/actions.ts before this is ever called; the caps
+ * do NOT apply — a human explicitly asked for this one.
+ */
+export async function appendFinding(
+  runId: string,
+  finding: Finding,
+): Promise<AgentRun> {
+  return enqueueMutation(file(), async () => {
+    const all = await readAll();
+    const entry = Object.entries(all.runs).find(([, r]) => r.id === runId);
+    if (!entry) throw new Error(`no run ${runId}`);
+    const [key, run] = entry;
+    if (run.status !== "ready")
+      throw new Error(`run ${runId} is ${run.status} — cannot add findings`);
+    run.findings.push(finding);
     all.runs[key] = run;
     await writeAll(all);
     return run;

@@ -88,6 +88,7 @@ function sanitizeModels(raw: unknown): AgentProfile["models"] {
     orient: pick("orient"),
     analyze: pick("analyze"),
     reconcile: pick("reconcile"),
+    chat: pick("chat"),
   };
 }
 

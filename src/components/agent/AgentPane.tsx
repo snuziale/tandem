@@ -10,7 +10,7 @@ import {
   cn,
   toast,
 } from "@uipath/apollo-wind";
-import { ChevronDown } from "lucide-react";
+import { ChevronDown, MessageSquare } from "lucide-react";
 import { startRun } from "../../api/runs";
 import {
   SKIP_REASON_LABEL,
@@ -22,10 +22,13 @@ import {
 import type { TandemSettings } from "../../shared/settings-types";
 import { useUiStore } from "../../state/uiStore";
 import { Markdown } from "../common/Markdown";
+import { ChatPanel } from "./ChatPanel";
 import { SeverityBadge } from "./SeverityBadge";
 
 type Props = {
   prId: string;
+  /** The sha the pane is showing — chat is scoped to it, run or no run. */
+  headSha: string;
   run: AgentRun | undefined;
   progress: RunEvent | null;
   settings: TandemSettings | undefined;
@@ -44,6 +47,7 @@ const SEVERITY_ORDER: Severity[] = [
 // tally, findings grouped Must resolve / Worth raising / Nits.
 export function AgentPane({
   prId,
+  headSha,
   run,
   progress,
   settings,
@@ -51,6 +55,8 @@ export function AgentPane({
 }: Props) {
   const queryClient = useQueryClient();
   const focusedFindingId = useUiStore((s) => s.focusedFindingId);
+  const chatOpen = useUiStore((s) => s.prChatOpen);
+  const setChatOpen = useUiStore((s) => s.setPrChatOpen);
   const [showNits, setShowNits] = useState(false);
 
   const rerun = useMutation({
@@ -71,6 +77,9 @@ export function AgentPane({
   const visible = triage.filter((f) => !belowThreshold(f.severity, threshold));
   const mustResolve = visible.filter((f) => f.severity === "blocker");
   const worthRaising = visible.filter((f) => f.severity !== "blocker");
+  // The conversation follows the pane's focus: a focused finding narrows it.
+  const chatFinding =
+    run?.findings.find((f) => f.id === focusedFindingId) ?? null;
 
   return (
     <div className="h-full flex flex-col min-h-0">
@@ -82,6 +91,16 @@ export function AgentPane({
           ● agent
         </span>
         <span className="flex-1" />
+        <Button
+          size="2xs"
+          icon
+          variant="ghost"
+          aria-label={chatOpen ? "Hide chat" : "Show chat"}
+          aria-pressed={chatOpen}
+          onClick={() => setChatOpen((open) => !open)}
+        >
+          <MessageSquare />
+        </Button>
         <Button
           size="2xs"
           variant="ghost"
@@ -120,7 +139,7 @@ export function AgentPane({
         ) : null}
       </div>
 
-      <div className="flex-1 overflow-y-auto">
+      <div className="flex-1 min-h-0 overflow-y-auto">
         <StatusCard
           run={run}
           progress={progress}
@@ -201,6 +220,29 @@ export function AgentPane({
           </>
         ) : null}
       </div>
+
+      {chatOpen ? (
+        // Sized by its own content up to half the pane: an empty conversation
+        // must not steal height from the findings it is about.
+        <div className="flex flex-col min-h-0 max-h-[50%] border-t border-border shrink-0">
+          <ChatPanel
+            key={chatFinding?.id ?? "pr"}
+            prId={prId}
+            headSha={headSha}
+            finding={chatFinding}
+            onClearScope={() => useUiStore.getState().setFocusedFinding(null)}
+          />
+        </div>
+      ) : (
+        <button
+          type="button"
+          className="border-t border-border px-3 py-1.5 text-left text-[10px] uppercase tracking-wider font-mono text-muted-foreground hover:text-foreground shrink-0"
+          onClick={() => setChatOpen(true)}
+        >
+          ● chat{chatFinding ? " about this finding" : ""}{" "}
+          <span className="opacity-60">c</span>
+        </button>
+      )}
     </div>
   );
 }

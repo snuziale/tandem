@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button, Textarea, cn } from "@uipath/apollo-wind";
+import { openChatFor } from "../../hooks/chatActions";
 import {
   acceptFinding,
   commentBodyOf,
@@ -139,9 +140,18 @@ export function FindingCard({ finding, addComment }: Props) {
               >
                 Dismiss
               </Button>
+              {/* Push back, ask why, or have it reword this — the conversation
+                  scopes itself to this finding. */}
+              <Button
+                size="2xs"
+                variant="ghost"
+                onClick={() => openChatFor(finding.id)}
+              >
+                Ask
+              </Button>
               <span className="flex-1" />
               <span className="text-[10px] text-muted-foreground font-mono">
-                y add · e edit · x dismiss
+                y add · e edit · x dismiss · c ask
               </span>
             </>
           )}

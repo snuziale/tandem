@@ -57,6 +57,8 @@ browser → /api/* → Vite proxy (dev) → Bun server (src/server/worker.ts)
   /api/settings    settings/routes.ts    caps, threshold, models, per-repo agent toggle,
                                          prompts (see below)
   /api/runs[...]   agent/routes.ts       run records · SSE stream · cancel · finding state
+  /api/chats[...]  agent/chat/routes.ts  chat turns · SSE token stream · cancel · apply/reject
+                                         one proposed action (the only state-changing chat call)
   /api/agent/health                      claude CLI availability
   /*               assets.ts             SPA (embedded via asset-manifest in the binary)
 ```
@@ -84,7 +86,7 @@ profile carries its own per-pass models and prompt instruction blocks, so agents
 run any profile; prewarm/plain reruns use the default. Legacy top-level `models`/`prompts`
 migrate into the default profile on load (settings/store.ts sanitizeAgents). Defaults live in
 `shared/prompt-defaults.ts` (per-field reset in Settings); `{findingCap}`/`{nitCap}` interpolate
-in reconcile. The data blocks and JSON output contracts in `pipeline/prompts.ts` stay code-owned —
+in reconcile. A profile carries a fourth model + prompt for the chat pass (see below). The data blocks and JSON output contracts in `pipeline/prompts.ts` stay code-owned —
 they must match the zod schemas, and parse.ts re-enforces the rules regardless of prompt edits.
 Pass 3 also emits a 0-100 merge-readiness `score` (stored on the run, shown in queue + pane) —
 the auto-approve gate reads it.
@@ -108,6 +110,37 @@ duplicates drop, severity×confidence ranking under the caps (default 8 findings
   `runsIndex.ts` — illegal transitions throw.
 - Spend: per-run cost lands in `runs.json` `spendByDay`; `decide.ts` stops runs at the daily
   ceiling. Subscription-billed CLI reports $0 — UI falls back to token counts.
+
+## Chat — the fourth pass (server/agent/chat/)
+
+Ask the agent about the PR, or about ONE finding: why it flagged something, whether it still
+believes it, how to reword the comment. Interactive, but the same read-only pass as the pipeline
+(`--safe-mode --tools ''`), and it changes nothing on its own.
+
+- **Scope is the identity.** `chatKeyOf(prId, headSha[, findingId])` is the session id, the storage
+  key, and the URL segment — so opening a finding's thread is a plain GET with no create call, and
+  a new head sha is a new conversation. The pane's focused finding IS the scope (`ChatPanel` is
+  mounted keyed by it).
+- **Stateless multi-turn, not CLI session resume.** Each turn rebuilds
+  `[immutable context] + [transcript] + [question]` (`chat/prompt.ts`) — stable prefix first, so
+  prompt caching pays for the diff instead of us re-paying per message. Transcripts live in
+  `chats.json`; `--no-session-persistence` stays.
+- **Prose first, actions in an OPTIONAL trailing ```json fence** (`chat/prose.ts`): strict JSON is
+  not the product here, so an unparseable tail degrades to prose-only instead of failing the turn.
+  `createFenceGate` hides the fence while it streams (only ```json — a ```ts snippet still
+  streams); `splitTrailingJson` walks fences line by line and is authoritative for what persists.
+- **Actions are PROPOSALS, gated twice** (`chat/actions.ts`): `sanitizeChatActions` before the chip
+  is shown (ids exist, transitions legal, `new-finding` anchored via `diffLineIndex` and dropped
+  where a human already commented — the pass-2 gate), then re-validated on click, because the
+  finding may have been staged or dismissed since. Kinds: revise-finding (proposed/edited only —
+  a STAGED finding's text belongs to the draft, so that's `revise-comment` on its localId),
+  dismiss-finding, new-finding, revise-comment. Apply is human-triggered only; invariant §1 holds.
+- **`needContext` is a SERVER hop, not a tool.** The turn may ask for files it cannot see; the
+  server fetches them read-only at the PR's head sha (`chat/context.ts`, ≤2 hops, owner/repo from
+  the session, never from the model) and re-asks. No write tool exists at any point.
+- Turns are server-owned (`live.ts`, `kind: "chat"` so they stay out of the run accounting) and
+  stream real token deltas (`--include-partial-messages`, chat only). Chat spends from the SAME
+  daily ceiling as runs.
 
 ## The review flow (the human half)
 
@@ -193,12 +226,15 @@ src/
     storage/jsonFile.ts   atomic temp+rename, 0600, PER-PATH mutation queue — the only
                           JSON persistence path; don't hand-roll another
     config/  github/{client,queue,pr,files,submit,routes}  reviews/  views/  settings/
-    agent/   claude.ts (CLI harness)  procStream  live.ts  runsIndex.ts  prewarm.ts  routes.ts
+    agent/   claude.ts (CLI harness)  procStream  live.ts (runs + chat)  sse.ts (replay-then-
+             tail, shared)  runsIndex.ts  prewarm.ts  routes.ts
              pipeline/{run,prompts,cluster,parse,context,decide}
+             chat/{turn,prompt,prose,actions,context,store,routes}
   api/               plain-fetch clients (http.ts wrapper + per-family files)
   hooks/             useQueue (60s poll + focus refetch)  usePrDetail/usePrFiles (files:
                      staleTime Infinity per sha)  usePendingReview (optimistic)  useAgentRuns
-                     (30s poll, byKey index)  useRunStream (SSE)  useSettings
+                     (30s poll, byKey index)  useRunStream (SSE)  useChat (transcript + turn
+                     stream + apply)  useSettings
                      useSavedViews (+ useViewActions: every view write + its navigation)
                      useActiveView (URL ↔ view list reconciliation)
                      useKeyboardNav (global dispatcher)  queueActions  findingActions
@@ -222,6 +258,7 @@ src/
 config.json    PAT (+defaultOrg)          settings.json  caps/threshold/models/repos
 views.json     saved queue views          reviews.json   pending-review drafts by prId
 runs.json      AgentRun by prId@headSha + spendByDay     claude.log  harness stderr
+chats.json     ChatSession by prId@headSha[#findingId], LRU-capped at 100
 sandbox/       cwd for the read-only claude passes
 localStorage   tandem:theme:v1 · tandem:ui:v1 (diffStyle, lastViewId, pane + stats toggles) —
                display prefs ONLY
@@ -235,8 +272,11 @@ Two dispatchers, one guard module (`keyboard/target.ts`), one display registry
 - `useKeyboardNav` (mounted in App): `?` everywhere; queue keys
   j/k/Enter/o/a/A(override)/r/s/esc//. Reads state via `getState()` snapshots — the listener
   never re-binds.
-- `PrDetailView` binds its own detail keys (esc, [ ], j/k findings, y/e/x, v, r, a, o) — same
-  snapshot pattern via a ref updated in an effect. Composer/tray own ⌘↵ (stage vs submit).
+- `PrDetailView` binds its own detail keys (esc, [ ], j/k findings, y/e/x, c chat, v, r, a, o) — same
+  snapshot pattern via a ref updated in an effect. Composer/tray own ⌘↵ (stage vs submit) — the
+  tray's is a WINDOW listener that bails on `isTypingTarget`, which is why a text box can claim
+  ⌘↵ for itself. The chat composer is the one box that sends on plain ↵ (⇧↵ = newline, ⌘↵ still
+  works): it is a chat box, and overloading ⌘↵ a third time reads as ambiguous.
 
 ## Queue stats drawer (`components/queue/StatsDrawer.tsx` + `charts.tsx`)
 
@@ -301,6 +341,11 @@ separate feature, not a tweak to this one.
 - **Tests cover pure logic only** (shared/gh, pipeline parse/cluster/decide, stores' validators);
   UI components are not tested. New pure utils ship with tests.
 - **No unattended GitHub writes, ever.** The agent proposes; a human submits.
+- **Chat proposes, the human applies** — the same rule one level down. A turn's edits to findings
+  and staged comments arrive as chips; nothing is written until the click. That is what lets chat
+  be conversational without touching invariant §1.
+- **Chat is keyed by scope, not by thread list**: one conversation per (PR, sha[, finding]), no
+  thread picker, no naming. The pane's focus decides what you are talking about.
 
 ## Pitfalls
 
@@ -317,5 +362,13 @@ separate feature, not a tweak to this one.
 - **bun-types must stay ~1.3.x** until webview-bun handles bun 1.4's `bigint` FFI Pointer type.
 - **Zustand multi-key selectors need `useShallow`** (React 19 getSnapshot loop) — single-key
   selectors used everywhere so far.
-- **`claude` CLI flags** (`--safe-mode --tools '' --permission-mode dontAsk`) verified against
-  2.1.239; `checkClaudeAvailable` only probes existence — re-verify flags on CLI major bumps.
+- **`claude` CLI flags** (`--safe-mode --tools '' --permission-mode dontAsk`, plus
+  `--include-partial-messages` for chat) verified against 2.1.239; `checkClaudeAvailable` only
+  probes existence — re-verify flags on CLI major bumps.
+- **A chat chip refuses to apply**: the finding moved state since the answer (staged, dismissed,
+  rerun) — the message lands on the chip, that's the re-validation working, not a bug.
+- **`ChatPanel` must stay mounted KEYED BY SCOPE**: the remount is what clears the composer draft
+  and the streaming buffer. Resetting them in an effect is exactly what the React Compiler lint
+  rejects (`react-hooks/set-state-in-effect`).
+- **Chat's fence gate only hides ```json**: a reply whose LAST fence is a bare ``` block streams
+  visibly and is then peeled off at turn-end — the persisted text is always the authoritative one.

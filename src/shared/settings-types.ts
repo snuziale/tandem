@@ -7,6 +7,9 @@ export type PassModels = {
   orient: string;
   analyze: string;
   reconcile: string;
+  /** The interactive chat pass — the reviewer is waiting on it, so it wants a
+   * model that is fast AND good at prose, not just at strict JSON. */
+  chat: string;
 };
 
 /** A configured reviewer: its own models and prompt blocks, so different
@@ -28,6 +31,7 @@ export const DEFAULT_AGENT: AgentProfile = {
     orient: "haiku",
     analyze: "sonnet",
     reconcile: "sonnet",
+    chat: "sonnet",
   },
   prompts: DEFAULT_PROMPTS,
 };

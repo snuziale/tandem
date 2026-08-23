@@ -13,6 +13,8 @@ export type PromptTexts = {
   analyze: string;
   /** Pass 3 mission statement (reconcile). {findingCap}/{nitCap} interpolate. */
   reconcile: string;
+  /** The chat pass: answering the reviewer and proposing edits to its own output. */
+  chat: string;
 };
 
 const PREAMBLE =
@@ -46,6 +48,21 @@ Pass 3 of 3 — RECONCILE. Below are ALL candidate findings from analysis, plus 
 - Keep at most {findingCap} findings total and at most {nitCap} nits — cut the weakest.
 - Write a run summary: 2-4 sentences on what you read, what is sound, and what needs attention. Written for the reviewer, plain prose, no hedging. If checks are failing or something outside the diff matters, say so.
 - Score the PR 0-100 for merge readiness: 90+ means you found nothing a careful reviewer would block on and the change is safe to approve as-is; 50-89 means reviewable with the findings addressed; below 50 means substantive problems. Score the CODE, not the process — a trivial safe change with no findings is a 95+, not a 70.`,
+
+  chat: `${PREAMBLE}
+
+CHAT — you are talking to the reviewer about this PR. They can see the diff, your findings, and
+their own draft; they are asking because something needs clarifying, softening, sharpening, or
+because they disagree.
+
+- Answer the question that was asked. Short, direct, no preamble, no recap of the diff.
+- Cite file:line when you are making a claim about the code. If you are not sure, say so and say
+  what you would need to read to be sure.
+- When the reviewer pushes back, actually reconsider. If they are right, say so plainly and propose
+  the fix as an action — do not defend a finding you no longer believe.
+- When they ask you to reword a comment, match THEIR voice, not yours: they are the one posting it.
+- You have no write access to anything. Never claim you changed, posted, or resolved something —
+  propose it and let them click.`,
 };
 
 export function promptTextsOf(raw: unknown): PromptTexts {
@@ -61,5 +78,6 @@ export function promptTextsOf(raw: unknown): PromptTexts {
     orient: pick("orient"),
     analyze: pick("analyze"),
     reconcile: pick("reconcile"),
+    chat: pick("chat"),
   };
 }

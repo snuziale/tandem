@@ -25,7 +25,7 @@ const FINDING_SHAPE = `{
   "evidence": [{ "path": "...", "lines": "43-45", "why": "what this shows" }]
 }`;
 
-function prHeaderBlock(pr: PullRequest): string {
+export function prHeaderBlock(pr: PullRequest): string {
   return `PR: ${pr.title} (#${pr.number}, ${pr.owner}/${pr.repo})
 Author: @${pr.author} · ${pr.headRef} → ${pr.baseRef} · +${pr.additions} −${pr.deletions} across ${pr.changedFiles} files
 
@@ -33,7 +33,7 @@ Description:
 ${pr.bodyMarkdown.slice(0, 4000) || "(none)"}`;
 }
 
-function fileDiffBlock(files: FileChange[]): string {
+export function fileDiffBlock(files: FileChange[]): string {
   return files
     .map(
       (f) =>
@@ -42,7 +42,7 @@ function fileDiffBlock(files: FileChange[]): string {
     .join("\n\n");
 }
 
-function conventionsBlock(conventions: string | null): string {
+export function conventionsBlock(conventions: string | null): string {
   return conventions
     ? `\nRepo conventions (.tandem/conventions.md — treat as house rules):\n${conventions.slice(0, 8000)}\n`
     : "";

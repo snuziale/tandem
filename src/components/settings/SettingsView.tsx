@@ -366,8 +366,8 @@ function AgentsCard({
         />
       </div>
 
-      <div className="grid grid-cols-3 gap-3">
-        {(["orient", "analyze", "reconcile"] as const).map((pass) => (
+      <div className="grid grid-cols-4 gap-3">
+        {(["orient", "analyze", "reconcile", "chat"] as const).map((pass) => (
           <TextField
             key={`${agent.id}-${pass}`}
             label={`${pass} model`}
@@ -400,6 +400,11 @@ function AgentsCard({
             "reconcile",
             "Pass 3 · reconcile",
             "Dedupes, ranks, caps, scores. {findingCap} and {nitCap} interpolate from the caps above.",
+          ],
+          [
+            "chat",
+            "Chat",
+            "How it talks to you in the pane, and how it proposes edits to its own findings and your staged comments. The action contract itself is code-owned.",
           ],
         ] as Array<[keyof PromptTexts, string, string]>
       ).map(([key, label, hint]) => (
