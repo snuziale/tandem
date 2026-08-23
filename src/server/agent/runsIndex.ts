@@ -169,6 +169,58 @@ export async function appendFinding(
   });
 }
 
+/**
+ * A run left in an active status by a process that is gone. Age-gated on
+ * purpose: TWO servers can share `$TANDEM_HOME` (the native app on 5274 and a
+ * dev server next to it), and one must never declare the other's genuinely
+ * live run dead. Nothing legitimate outlives this window — a pass is capped at
+ * 10 minutes and a run is a handful of passes.
+ */
+export const INTERRUPTED_AFTER_MS = 45 * 60_000;
+
+export function isInterrupted(
+  run: Pick<AgentRun, "status" | "startedAt">,
+  now: number,
+  maxAgeMs: number = INTERRUPTED_AFTER_MS,
+): boolean {
+  if (
+    run.status !== "queued" &&
+    run.status !== "fetching" &&
+    run.status !== "analyzing"
+  )
+    return false;
+  const started = run.startedAt ? Date.parse(run.startedAt) : NaN;
+  // No usable timestamp: it cannot be young, so treat it as interrupted.
+  if (Number.isNaN(started)) return true;
+  return now - started > maxAgeMs;
+}
+
+/**
+ * Startup sweep: an interrupted run is FAILED, not "analyzing" forever. Without
+ * this the queue cell reads analyzing for good (the header's live count, which
+ * comes from the in-memory registry, correctly says idle) and prewarm skips the
+ * PR, because only stale/failed records are re-runnable.
+ */
+export async function reconcileInterruptedRuns(
+  now: number = Date.now(),
+): Promise<number> {
+  return enqueueMutation(file(), async () => {
+    const all = await readAll();
+    let swept = 0;
+    for (const [key, run] of Object.entries(all.runs)) {
+      if (!isInterrupted(run, now)) continue;
+      if (!canTransitionRun(run.status, "failed")) continue;
+      run.status = "failed";
+      run.error = "interrupted — the server that started this run is gone";
+      run.finishedAt = new Date(now).toISOString();
+      all.runs[key] = run;
+      swept++;
+    }
+    if (swept > 0) await writeAll(all);
+    return swept;
+  });
+}
+
 /** Staleness sweep: mark a superseded sha's run + findings stale (spec §2). */
 export async function markRunStale(
   prId: string,

@@ -128,7 +128,9 @@ export type RunEvent =
 export const RUN_EDGES: Readonly<
   Record<AgentRunStatus, readonly AgentRunStatus[]>
 > = {
-  queued: ["fetching", "skipped", "stale"],
+  // `failed` from queued: the process that owned the run died before it got
+  // going (see reconcileInterruptedRuns).
+  queued: ["fetching", "failed", "skipped", "stale"],
   fetching: ["analyzing", "failed", "stale"],
   analyzing: ["ready", "failed", "stale"],
   ready: ["stale"],

@@ -1,4 +1,5 @@
 import { handleAgent, handleRuns } from "./agent/routes";
+import { reconcileInterruptedRuns } from "./agent/runsIndex";
 import { handleChats } from "./agent/chat/routes";
 import { handleConfig } from "./config/routes";
 import { handleQueue } from "./github/queue";
@@ -97,6 +98,14 @@ function tryListen(): ReturnType<typeof Bun.serve> {
 
 const server = tryListen();
 console.log(`tandem server → http://${HOST}:${server.port}`);
+
+// Runs are owned by a PROCESS: anything still marked active long after the
+// process that started it vanished is interrupted, not running.
+void reconcileInterruptedRuns()
+  .then((swept) => {
+    if (swept > 0) console.error(`[runs] ${swept} interrupted run(s) → failed`);
+  })
+  .catch((e) => console.error("[runs] interrupted-run sweep failed:", e));
 
 // When loaded as a Worker by src/server/app.ts, postMessage is defined and the
 // main thread is waiting for the bound port before opening the webview. When
