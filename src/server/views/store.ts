@@ -1,10 +1,10 @@
-// Saved queue views, persisted to ~/.tandem/views.json. Seeded with the
-// spec's defaults on first load — the Team view only when a default org is
-// configured, since its query needs one.
+// Saved queue views, persisted to ~/.tandem/views.json. Seeded on first load
+// with the two views that are about YOU. Deliberately no org-wide view: an
+// org's open PRs is thousands of rows nobody reads, and that one search costs
+// ~9s of the queue's budget on every poll. Add one by hand if you want it.
 import { randomUUID } from "node:crypto";
 import type { SavedView } from "../../shared/review-types";
 import { isPlainObject } from "../../shared/isPlainObject";
-import { loadConfig } from "../config/store";
 import {
   enqueueMutation,
   readTextFile,
@@ -18,8 +18,8 @@ function file(): string {
   return storagePath(FILE);
 }
 
-function defaultViews(org: string | undefined): SavedView[] {
-  const views: SavedView[] = [
+function defaultViews(): SavedView[] {
+  return [
     {
       id: randomUUID(),
       name: "Needs my review",
@@ -36,16 +36,6 @@ function defaultViews(org: string | undefined): SavedView[] {
       position: 1,
     },
   ];
-  if (org) {
-    views.push({
-      id: randomUUID(),
-      name: "Team",
-      query: `is:pr is:open org:${org} -author:@me archived:false sort:updated-desc`,
-      agentEnabled: false,
-      position: 2,
-    });
-  }
-  return views;
 }
 
 export function validateView(raw: unknown): SavedView | null {
@@ -75,12 +65,10 @@ export async function loadViews(): Promise<SavedView[]> {
       console.error(
         `[views] ${file()} is malformed; serving defaults without overwriting it`,
       );
-      return defaultViews((await loadConfig())?.github.defaultOrg || undefined);
+      return defaultViews();
     }
   }
-  const seeded = defaultViews(
-    (await loadConfig())?.github.defaultOrg || undefined,
-  );
+  const seeded = defaultViews();
   await saveViews(seeded);
   return seeded;
 }
