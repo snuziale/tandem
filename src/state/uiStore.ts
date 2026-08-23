@@ -28,6 +28,18 @@ type UiState = {
   lastViewId: string | null;
   setLastViewId: (id: string | null) => void;
 
+  /**
+   * Companion memory for the stats facet, so "← Queue" and `esc` land on the
+   * exact queue you left — filter included. Mirrored off every queue route in
+   * `setRoute` below, which is the ONE funnel every navigation goes through
+   * (navigate(), popstate, and the initial resolve alike).
+   *
+   * Deliberately NOT persisted, unlike lastViewId: a saved view is a named
+   * thing you chose and is fine to relaunch into, a drill-down is transient
+   * and would just make a cold launch look mysteriously short.
+   */
+  lastFacet: string | null;
+
   focusedPrId: PrId | null;
   setFocusedPr: (id: PrId | null) => void;
 
@@ -86,10 +98,16 @@ export const useUiStore = create<UiState>()(
   persist(
     (set) => ({
       route: { name: "queue", viewId: null, facet: null },
-      setRoute: (route) => set({ route }),
+      setRoute: (route) =>
+        set(
+          route.name === "queue"
+            ? { route, lastFacet: route.facet }
+            : { route },
+        ),
 
       lastViewId: null,
       setLastViewId: (id) => set({ lastViewId: id }),
+      lastFacet: null,
 
       focusedPrId: null,
       setFocusedPr: (id) => set({ focusedPrId: id }),

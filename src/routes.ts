@@ -79,14 +79,13 @@ export function navigate(route: Route, options?: { replace?: boolean }): void {
 
 /**
  * Back to the queue, landing on the view the user last had selected (persisted,
- * so a cold launch also restores it). Every "← Queue" affordance uses this.
+ * so a cold launch also restores it) AND the stats facet they left it on — a
+ * drill-down survives a round trip into a PR. Every "← Queue" affordance and
+ * the detail screen's `esc` use this.
  */
 export function navigateToQueue(): void {
-  navigate({
-    name: "queue",
-    viewId: useUiStore.getState().lastViewId,
-    facet: null,
-  });
+  const { lastViewId, lastFacet } = useUiStore.getState();
+  navigate({ name: "queue", viewId: lastViewId, facet: lastFacet });
 }
 
 /** Resolve the initial route and follow back/forward. Mount once (App). */

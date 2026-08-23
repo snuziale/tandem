@@ -203,12 +203,12 @@ src/
                      useActiveView (URL ↔ view list reconciliation)
                      useKeyboardNav (global dispatcher)  queueActions  findingActions
   state/             themeStore (persist)  uiStore (route, focus, composer target, lastViewId,
-                     statsOpen; persist partialize: diffStyle + lastViewId + pane/stats toggles)
+                     lastFacet, statsOpen; persist partialize: diffStyle + lastViewId + pane/stats toggles)
   keyboard/          target.ts (isTypingTarget/hasOpenDialog)  shortcuts.ts (? sheet registry —
                      manually synced with the dispatchers)
   routes.ts          History-API routing: /?view=<id>[&by=<dim>:<value>] ·
                      /:owner/:repo/pull/:n · /settings
-                     (navigateToQueue() = back to the last-selected view, facet dropped)
+                     (navigateToQueue() = back to the last-selected view AND facet)
   utils/queueStats.ts  TESTED pure stats + facets over the active view's rows
                      (buckets, top-N folding, parse/format/match facet)
   components/        layout/AppHeader (the ONE header: chrome + brand + agent pill + settings
@@ -249,7 +249,11 @@ separate feature, not a tweak to this one.
   top-6 nominal folding, and facet parse/format/match. The components only lay it out.
 - **The facet is URL state** (`?by=author:alice`) for the same reasons the view is. A facet
   implies an OPEN drawer (`QueueView.statsShown`) — closing the drawer or hitting `s` clears
-  it, `esc` clears the facet alone. Switching views drops it (`useViewActions.select`).
+  it, `esc` clears the facet alone. Switching views drops it (`useViewActions.select`), but a
+  round trip into a PR does NOT: `uiStore.setRoute` mirrors every queue route's facet into
+  `lastFacet` (the one funnel navigate/popstate/initial-resolve all pass through) and
+  `navigateToQueue()` restores it, so "← Queue" and the detail screen's `esc` land back on the
+  filtered queue. Session-only, unlike `lastViewId` — a cold launch starts unfiltered.
 - **Charts read the UNFILTERED rows; only the table narrows.** A chart that collapsed onto its
   own selection couldn't be used to pick the next slice. `QueueView` passes `allRows` to the
   drawer and `filterByFacet(...)` to the table.
