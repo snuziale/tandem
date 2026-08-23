@@ -8,7 +8,17 @@ import {
   Spinner,
   ToggleGroup,
   ToggleGroupItem,
+  Tooltip,
+  TooltipContent,
+  TooltipPortal,
+  TooltipTrigger,
 } from "@uipath/apollo-wind";
+import {
+  PanelLeftClose,
+  PanelLeftOpen,
+  PanelRightClose,
+  PanelRightOpen,
+} from "lucide-react";
 import { startRun } from "../../api/runs";
 import {
   acceptFinding,
@@ -40,6 +50,48 @@ import { PrBreadcrumb, PrHeader } from "./PrHeader";
 import { ReviewTray } from "./ReviewTray";
 
 const NO_FILES: string[] = [];
+
+/** Show/hide one side pane, so the diff can take the whole width. */
+function PaneToggle({
+  side,
+  open,
+  label,
+  onToggle,
+}: {
+  side: "left" | "right";
+  open: boolean;
+  label: string;
+  onToggle: () => void;
+}) {
+  // Open-arrow icon while hidden (what the click will do), close while shown.
+  const Icon = open
+    ? side === "left"
+      ? PanelLeftClose
+      : PanelRightClose
+    : side === "left"
+      ? PanelLeftOpen
+      : PanelRightOpen;
+  const text = `${open ? "Hide" : "Show"} ${label}`;
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button
+          size="2xs"
+          icon
+          variant="ghost"
+          aria-label={text}
+          aria-pressed={open}
+          onClick={onToggle}
+        >
+          <Icon />
+        </Button>
+      </TooltipTrigger>
+      <TooltipPortal>
+        <TooltipContent>{text}</TooltipContent>
+      </TooltipPortal>
+    </Tooltip>
+  );
+}
 
 export function PrDetailView({ prId }: { prId: PrId }) {
   const queryClient = useQueryClient();
@@ -130,25 +182,40 @@ export function PrDetailView({ prId }: { prId: PrId }) {
     // measured — the first scroll gets close, the second (post-measurement)
     // lands exactly. Same trick @pierre's own viewer uses. The file tree
     // follows `selectedPath` on its own.
-    const target = { type: "item", id: path, align: "start" } as const;
-    codeViewRef.current?.scrollTo(target);
-    window.setTimeout(() => codeViewRef.current?.scrollTo(target), 350);
+    scrollToTwice({ type: "item", id: path, align: "start" });
   };
+
+  // Holding ] steps files faster than the follow-up scroll lands, and each
+  // stale timer yanks the pane to a file the reader has already left — that's
+  // the flicker. Only the newest follow-up survives.
+  const followUpScroll = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const scrollToTwice = (target: Parameters<DiffPaneHandle["scrollTo"]>[0]) => {
+    codeViewRef.current?.scrollTo(target);
+    if (followUpScroll.current) clearTimeout(followUpScroll.current);
+    followUpScroll.current = window.setTimeout(() => {
+      followUpScroll.current = null;
+      codeViewRef.current?.scrollTo(target);
+    }, 350) as unknown as ReturnType<typeof setTimeout>;
+  };
+  useEffect(
+    () => () => {
+      if (followUpScroll.current) clearTimeout(followUpScroll.current);
+    },
+    [],
+  );
 
   const focusFinding = (finding: Finding) => {
     useUiStore.getState().setFocusedFinding(finding.id);
     setSelectedPath(finding.path);
     // Scrolling to a line inside a folded file would land on its header.
     expandPath(finding.path);
-    const target = {
+    scrollToTwice({
       type: "line",
       id: finding.path,
       lineNumber: finding.endLine,
       side: finding.side === "LEFT" ? "deletions" : "additions",
       align: "center",
-    } as const;
-    codeViewRef.current?.scrollTo(target);
-    window.setTimeout(() => codeViewRef.current?.scrollTo(target), 350);
+    });
   };
 
   // Removing an agent-authored staged comment returns its finding to triage.
@@ -305,6 +372,15 @@ export function PrDetailView({ prId }: { prId: PrId }) {
   // layout is read from / written back to the persisted store, not local state.
   const paneLayout = useUiStore((s) => s.prPaneLayout);
   const setPaneLayout = useUiStore((s) => s.setPrPaneLayout);
+  // Hiding a side pane UNMOUNTS its panel rather than using the library's
+  // `collapsible`: a collapsible panel that lands at zero width during the
+  // group's first (zero-width) solve stays collapsed, which cost the agent
+  // pane its whole width on load. Unmounting also means a drag can never
+  // collapse a pane behind the toggle's back — minSize still bounds it.
+  const filesOpen = useUiStore((s) => s.prFilesOpen);
+  const agentOpen = useUiStore((s) => s.prAgentOpen);
+  const setFilesOpen = useUiStore((s) => s.setPrFilesOpen);
+  const setAgentOpen = useUiStore((s) => s.setPrAgentOpen);
 
   if (detail.isPending) {
     return (
@@ -357,29 +433,43 @@ export function PrDetailView({ prId }: { prId: PrId }) {
             className="flex-1 min-h-0"
             defaultLayout={paneLayout ?? undefined}
             // Only a real drag/keyboard resize is a preference; constraint
-            // recomputes and window resizes must not overwrite it.
+            // recomputes and window resizes must not overwrite it. MERGED, not
+            // replaced: while a pane is hidden the layout carries only the
+            // visible ids, and the hidden one's remembered width has to
+            // survive for when it comes back.
             onLayoutChanged={(layout, meta) => {
-              if (meta.isUserInteraction) setPaneLayout(layout);
+              if (meta.isUserInteraction)
+                setPaneLayout({ ...(paneLayout ?? {}), ...layout });
             }}
           >
-            <ResizablePanel
-              id="files"
-              defaultSize="15"
-              minSize={150}
-              maxSize="35"
-            >
-              <FileTree
-                files={files}
-                viewedFiles={viewedFiles}
-                selectedPath={selectedPath}
-                onSelect={selectFile}
-                agentPaths={agentPaths}
-              />
-            </ResizablePanel>
-            <ResizableHandle />
+            {filesOpen ? (
+              <>
+                <ResizablePanel
+                  id="files"
+                  defaultSize="15"
+                  minSize={150}
+                  maxSize="35"
+                >
+                  <FileTree
+                    files={files}
+                    viewedFiles={viewedFiles}
+                    selectedPath={selectedPath}
+                    onSelect={selectFile}
+                    agentPaths={agentPaths}
+                  />
+                </ResizablePanel>
+                <ResizableHandle />
+              </>
+            ) : null}
             <ResizablePanel id="diff" defaultSize="62" minSize="30">
               <div className="h-full min-w-0 flex flex-col">
                 <div className="flex items-center gap-2 px-3 h-9 border-b border-border shrink-0">
+                  <PaneToggle
+                    side="left"
+                    open={filesOpen}
+                    label="files"
+                    onToggle={() => setFilesOpen((open) => !open)}
+                  />
                   {/* No path here: every file header carries its own, and this
                       one only ever echoed the selection. */}
                   <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-mono flex-1">
@@ -412,6 +502,12 @@ export function PrDetailView({ prId }: { prId: PrId }) {
                       split
                     </ToggleGroupItem>
                   </ToggleGroup>
+                  <PaneToggle
+                    side="right"
+                    open={agentOpen}
+                    label="agent"
+                    onToggle={() => setAgentOpen((open) => !open)}
+                  />
                 </div>
                 <DiffPane
                   headSha={pr.headSha}
@@ -433,21 +529,25 @@ export function PrDetailView({ prId }: { prId: PrId }) {
                 />
               </div>
             </ResizablePanel>
-            <ResizableHandle />
-            <ResizablePanel
-              id="agent"
-              defaultSize="23"
-              minSize={240}
-              maxSize="45"
-            >
-              <AgentPane
-                prId={prId}
-                run={run}
-                progress={progress}
-                settings={settings.data}
-                onSelectFinding={focusFinding}
-              />
-            </ResizablePanel>
+            {agentOpen ? (
+              <>
+                <ResizableHandle />
+                <ResizablePanel
+                  id="agent"
+                  defaultSize="23"
+                  minSize={240}
+                  maxSize="45"
+                >
+                  <AgentPane
+                    prId={prId}
+                    run={run}
+                    progress={progress}
+                    settings={settings.data}
+                    onSelectFinding={focusFinding}
+                  />
+                </ResizablePanel>
+              </>
+            ) : null}
           </ResizablePanelGroup>
         )}
       </div>

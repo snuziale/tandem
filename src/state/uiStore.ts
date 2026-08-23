@@ -59,6 +59,16 @@ type UiState = {
   prPaneLayout: PaneLayout | null;
   setPrPaneLayout: (layout: PaneLayout) => void;
 
+  /**
+   * PR-detail side panes. Hiding one hands the whole width to the diff — the
+   * review itself is the reason the screen exists. Persisted for the same
+   * reason the widths are: it's a working preference, not per-PR state.
+   */
+  prFilesOpen: boolean;
+  prAgentOpen: boolean;
+  setPrFilesOpen: (open: boolean | ((current: boolean) => boolean)) => void;
+  setPrAgentOpen: (open: boolean | ((current: boolean) => boolean)) => void;
+
   shortcutsOpen: boolean;
   setShortcutsOpen: (open: boolean) => void;
 
@@ -101,6 +111,17 @@ export const useUiStore = create<UiState>()(
       prPaneLayout: null,
       setPrPaneLayout: (layout) => set({ prPaneLayout: layout }),
 
+      prFilesOpen: true,
+      prAgentOpen: true,
+      setPrFilesOpen: (open) =>
+        set((s) => ({
+          prFilesOpen: typeof open === "function" ? open(s.prFilesOpen) : open,
+        })),
+      setPrAgentOpen: (open) =>
+        set((s) => ({
+          prAgentOpen: typeof open === "function" ? open(s.prAgentOpen) : open,
+        })),
+
       shortcutsOpen: false,
       setShortcutsOpen: (open) => set({ shortcutsOpen: open }),
 
@@ -123,8 +144,10 @@ export const useUiStore = create<UiState>()(
       partialize: (s) => ({
         diffStyle: s.diffStyle,
         lastViewId: s.lastViewId,
-        statsOpen: s.statsOpen,
         prPaneLayout: s.prPaneLayout,
+        prFilesOpen: s.prFilesOpen,
+        prAgentOpen: s.prAgentOpen,
+        statsOpen: s.statsOpen,
       }),
     },
   ),

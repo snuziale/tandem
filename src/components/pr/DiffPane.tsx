@@ -169,6 +169,12 @@ export function DiffPane({
       themeType:
         resolveTheme(themePreference) === "future-dark" ? "dark" : "light",
       stickyHeaders: true,
+      // Our renderCustomHeader is h-9 (36px), the library reserves 44 by
+      // default. Left unsaid, every item's layout height runs 8px ahead of
+      // what it renders — with all files folded that added up to ~150px of
+      // padding above the first row, since the view centres its render window
+      // in the leftover space when the layout total exceeds the real content.
+      itemMetrics: { diffHeaderHeight: 36 },
       lineHoverHighlight: "line",
       // Clicking any line opens the composer there (spec §3.2).
       onLineClick: (props, context) => {

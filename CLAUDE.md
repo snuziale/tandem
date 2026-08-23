@@ -148,8 +148,15 @@ One controlled `CodeView` hosts every file (`components/pr/DiffPane.tsx`):
   override, and toggling viewed DROPS that override so the checkbox folds and unfolds again.
   Selecting a file in the tree or focusing a finding force-expands — a `scrollTo` into a folded
   file lands on its header.
+- **`options.itemMetrics.diffHeaderHeight` MUST match our header's real height** (36px = `h-9`).
+  The library reserves 44 by default, so every item's layout height silently ran 8px ahead of what
+  it renders; when the layout total exceeds the real content, CodeView centres its render window in
+  the slack — with all files folded that showed up as ~90px of blank space above the first row.
+  Re-check this if `DiffFileHeader`'s height ever changes.
 - The CodeView container MUST be the overflow parent (`overflow-y-auto` + bounded height) or
   nothing scrolls and `scrollTo` no-ops silently.
+- `scrollToTwice` (PrDetailView) keeps ONE pending follow-up scroll: holding `]` steps files faster
+  than the 350ms re-scroll lands, and stale timers yank the pane back to files already left.
 - `scrollTo` against virtualized estimates lands short — scroll twice (immediately + ~350ms).
 - Split/unified via `options.diffStyle`; theming via `options.theme {dark, light}` +
   `options.themeType` (shadow DOM — Tailwind classes don't reach inside).
@@ -159,8 +166,16 @@ model ONCE — later state reaches rows through model methods, so `renderRowDeco
 ref (`stateRef`) and a `setGitStatus(freshArray)` call after viewed/agent changes re-renders the
 visible rows. Git-status badges come from the PR's change types; decorations carry `+a −d`,
 viewed ✓, and the violet agent dot. External selection follows the `selectedPath` prop
-(select + scrollToPath). The tree owns its keyboard (arrows, a-z type-ahead, search) — the detail
-key handler bails when the event target is inside `[data-tandem-filetree]`.
+(select + scrollToPath) — and selection is SINGLE: `item.select()` is additive, so both the
+external-selection effect and `onSelectionChange` deselect everything else. One file is open in the
+diff, so more than one highlighted row is a lie. The tree owns its keyboard (arrows, a-z
+type-ahead, search) — the detail key handler bails when the event target is inside
+`[data-tandem-filetree]`.
+
+Its shadow-DOM palette is OUR tokens, set as `--trees-theme-*` on the host (custom properties
+inherit through the shadow boundary). Do NOT go back to `themeToTreeStyles(shikiTheme)`: it paints
+GitHub's sidebar surface, which is near the app's but not it, and it resolves asynchronously — the
+first paint fell back to the library's light defaults and flashed white in dark mode.
 
 ## Layout
 
@@ -188,7 +203,7 @@ src/
                      useActiveView (URL ↔ view list reconciliation)
                      useKeyboardNav (global dispatcher)  queueActions  findingActions
   state/             themeStore (persist)  uiStore (route, focus, composer target, lastViewId,
-                     statsOpen; persist partialize: diffStyle + lastViewId + statsOpen)
+                     statsOpen; persist partialize: diffStyle + lastViewId + pane/stats toggles)
   keyboard/          target.ts (isTypingTarget/hasOpenDialog)  shortcuts.ts (? sheet registry —
                      manually synced with the dispatchers)
   routes.ts          History-API routing: /?view=<id>[&by=<dim>:<value>] ·
@@ -208,7 +223,7 @@ config.json    PAT (+defaultOrg)          settings.json  caps/threshold/models/r
 views.json     saved queue views          reviews.json   pending-review drafts by prId
 runs.json      AgentRun by prId@headSha + spendByDay     claude.log  harness stderr
 sandbox/       cwd for the read-only claude passes
-localStorage   tandem:theme:v1 · tandem:ui:v1 (diffStyle, lastViewId, statsOpen) —
+localStorage   tandem:theme:v1 · tandem:ui:v1 (diffStyle, lastViewId, pane + stats toggles) —
                display prefs ONLY
 ```
 
@@ -264,6 +279,11 @@ separate feature, not a tweak to this one.
   `uiStore.lastViewId` is only a persisted memory for cold launches and "← Queue".
 - **One header component** (`layout/AppHeader`) owns the chrome for every screen — a screen
   passes slots, never its own `<header>`.
+- **The PR detail side panes hide by UNMOUNTING** (`uiStore.prFilesOpen` / `prAgentOpen`, both
+  persisted, toggled from the diff toolbar's panel icons): react-resizable-panels' `collapsible`
+  lets a pane that lands at zero width during the group's first solve stay collapsed, which cost
+  the agent pane its whole width on load. `onLayoutChanged` MERGES into the stored layout so a
+  hidden pane's remembered width survives.
 - **The stats facet is URL state too** (`/?view=<id>&by=<dim>:<value>`), client-side only: it
   never rewrites the GitHub search, so it costs no rate limit and stays honest about being a
   slice of what the view already returned.

@@ -1,11 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { resolveTheme as resolveShikiTheme } from "@pierre/diffs";
 import { FileTree as TreesFileTree, useFileTree } from "@pierre/trees/react";
-import {
-  themeToTreeStyles,
-  type FileTree as FileTreeModel,
-  type GitStatusEntry,
-} from "@pierre/trees";
+import type { FileTree as FileTreeModel, GitStatusEntry } from "@pierre/trees";
 import {
   Button,
   Input,
@@ -69,8 +64,13 @@ export function FileTree({
     fileTreeSearchMode: "hide-non-matches",
     gitStatus: gitStatusOf(files),
     onSelectionChange: (selected) => {
-      const path = selected[0];
+      const path = selected[selected.length - 1];
       if (!path) return;
+      // Single selection, whoever asked: a modifier-click or range select
+      // collapses to the row the reader landed on.
+      if (selected.length > 1)
+        for (const other of selected)
+          if (other !== path) model.getItem(other)?.deselect();
       const item = model.getItem(path);
       if (item && !item.isDirectory()) onSelect(path);
     },
@@ -129,22 +129,37 @@ export function FileTree({
     model.setSearch(null);
   };
 
-  // Match the tree's shadow-DOM styling to the app theme via the same shiki
-  // themes the diff pane uses (themeToTreeStyles → --trees-theme-* vars).
+  // The tree's shadow-DOM styling comes from OUR tokens, not from a shiki
+  // theme. themeToTreeStyles() would hand it GitHub's sidebar palette — close
+  // to the app but not the same surface — and it resolves asynchronously, so
+  // the first paint used the library's light defaults and flashed white in
+  // dark mode. Custom properties inherit through the shadow boundary, so
+  // setting them on the host is enough, and it's synchronous.
   const themePreference = useThemeStore((s) => s.preference);
   const isDark = resolveTheme(themePreference) === "future-dark";
-  const [treeStyles, setTreeStyles] = useState<Record<string, string>>({});
-  useEffect(() => {
-    let cancelled = false;
-    void resolveShikiTheme(isDark ? "github-dark" : "github-light").then(
-      (theme) => {
-        if (!cancelled) setTreeStyles(themeToTreeStyles(theme));
-      },
-    );
-    return () => {
-      cancelled = true;
-    };
-  }, [isDark]);
+  const treeStyles = useMemo(
+    () => ({
+      colorScheme: isDark ? "dark" : "light",
+      backgroundColor: "var(--background)",
+      color: "var(--foreground)",
+      "--trees-theme-sidebar-bg": "var(--background)",
+      "--trees-theme-sidebar-fg": "var(--foreground)",
+      "--trees-theme-sidebar-header-fg": "var(--muted-foreground)",
+      "--trees-theme-sidebar-border": "var(--border)",
+      "--trees-theme-list-hover-bg": "var(--accent)",
+      "--trees-theme-list-active-selection-bg": "var(--accent)",
+      "--trees-theme-list-active-selection-fg": "var(--accent-foreground)",
+      "--trees-theme-focus-ring": "var(--ring)",
+      "--trees-theme-input-bg": "var(--input)",
+      "--trees-theme-input-border": "var(--border)",
+      "--trees-theme-scrollbar-thumb": "var(--muted-foreground)",
+      // Git decorations, same greens/reds the row decorations and diff use.
+      "--trees-theme-git-added-fg": "var(--color-emerald-500, #10b981)",
+      "--trees-theme-git-modified-fg": "var(--muted-foreground)",
+      "--trees-theme-git-deleted-fg": "var(--color-red-400, #f87171)",
+    }),
+    [isDark],
+  );
 
   useEffect(() => {
     onModelReady?.(model);
@@ -158,10 +173,17 @@ export function FileTree({
   }, [model, files, viewedFiles, agentPaths]);
 
   // External selection (keyboard [ ] / finding clicks) → tree follows.
+  //
+  // ONE file is selected at a time: the diff shows one file, so a tree with
+  // three rows highlighted is just lying. `item.select()` is ADDITIVE, so
+  // without clearing first every [ / ] step left the previous file
+  // highlighted too.
   const lastExternal = useRef<string | null>(null);
   useEffect(() => {
     if (!selectedPath || selectedPath === lastExternal.current) return;
     lastExternal.current = selectedPath;
+    for (const path of model.getSelectedPaths())
+      if (path !== selectedPath) model.getItem(path)?.deselect();
     const item = model.getItem(selectedPath);
     if (item && !item.isSelected()) item.select();
     model.scrollToPath(selectedPath, { offset: "nearest" });
