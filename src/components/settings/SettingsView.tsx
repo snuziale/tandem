@@ -1,34 +1,54 @@
-import { useEffect, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { Button, Card, Input, Label, Switch, Textarea, ToggleGroup, ToggleGroupItem } from '@uipath/apollo-wind';
-import { ArrowLeft } from 'lucide-react';
-import { fetchAgentHealth } from '../../api/runs';
-import { useAgentRuns } from '../../hooks/useAgentRuns';
-import { useConfigStatus } from '../../hooks/useConfigStatus';
-import { useSaveSettings, useSettings } from '../../hooks/useSettings';
-import { hasOpenDialog, isTypingTarget } from '../../keyboard/target';
-import { navigate } from '../../routes';
-import { DEFAULT_PROMPTS, type PromptTexts } from '../../shared/prompt-defaults';
-import { DEFAULT_AGENT, type AgentProfile, type TandemSettings } from '../../shared/settings-types';
-import { TopBar } from '../layout/TopBar';
-import { CredentialsForm } from '../setup/CredentialsForm';
+import { useEffect, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import {
+  Button,
+  Card,
+  Input,
+  Label,
+  Switch,
+  Textarea,
+  ToggleGroup,
+  ToggleGroupItem,
+} from "@uipath/apollo-wind";
+import { ArrowLeft } from "lucide-react";
+import { fetchAgentHealth } from "../../api/runs";
+import { useAgentRuns } from "../../hooks/useAgentRuns";
+import { useConfigStatus } from "../../hooks/useConfigStatus";
+import { useSaveSettings, useSettings } from "../../hooks/useSettings";
+import { hasOpenDialog, isTypingTarget } from "../../keyboard/target";
+import { navigateToQueue } from "../../routes";
+import {
+  DEFAULT_PROMPTS,
+  type PromptTexts,
+} from "../../shared/prompt-defaults";
+import {
+  DEFAULT_AGENT,
+  type AgentProfile,
+  type TandemSettings,
+} from "../../shared/settings-types";
+import { AppHeader } from "../layout/AppHeader";
+import { CredentialsForm } from "../setup/CredentialsForm";
 
 export function SettingsView() {
   const status = useConfigStatus();
   const settingsQuery = useSettings();
   const save = useSaveSettings();
   const runs = useAgentRuns();
-  const health = useQuery({ queryKey: ['agent', 'health'], queryFn: fetchAgentHealth, staleTime: 60_000 });
+  const health = useQuery({
+    queryKey: ["agent", "health"],
+    queryFn: fetchAgentHealth,
+    staleTime: 60_000,
+  });
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && !hasOpenDialog() && !isTypingTarget(e.target)) {
+      if (e.key === "Escape" && !hasOpenDialog() && !isTypingTarget(e.target)) {
         e.preventDefault();
-        navigate({ name: 'queue' });
+        navigateToQueue();
       }
     };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
   }, []);
 
   const settings = settingsQuery.data;
@@ -36,11 +56,15 @@ export function SettingsView() {
 
   return (
     <div className="h-dvh flex flex-col bg-background text-foreground">
-      <TopBar />
+      <AppHeader />
       <div className="flex-1 overflow-y-auto">
         <div className="max-w-2xl mx-auto px-6 py-6 space-y-6">
           <div className="flex items-center gap-2 text-xs text-muted-foreground font-mono">
-            <button type="button" className="flex items-center gap-1 hover:text-foreground" onClick={() => navigate({ name: 'queue' })}>
+            <button
+              type="button"
+              className="flex items-center gap-1 hover:text-foreground"
+              onClick={navigateToQueue}
+            >
               <ArrowLeft className="w-3 h-3" /> Queue
             </button>
             <span>/</span>
@@ -54,10 +78,17 @@ export function SettingsView() {
                 <p className="text-xs text-muted-foreground">
                   {status.data.login ? (
                     <>
-                      Reviews post as <span className="font-mono text-foreground">@{status.data.login}</span> ·{' '}
+                      Reviews post as{" "}
+                      <span className="font-mono text-foreground">
+                        @{status.data.login}
+                      </span>{" "}
+                      ·{" "}
                     </>
                   ) : null}
-                  stored at <code className="font-mono text-[11px]">{status.data.configPath}</code>
+                  stored at{" "}
+                  <code className="font-mono text-[11px]">
+                    {status.data.configPath}
+                  </code>
                 </p>
                 <CredentialsForm
                   fields={status.data.fields}
@@ -74,7 +105,11 @@ export function SettingsView() {
             <div className="flex items-baseline justify-between">
               <h2 className="text-sm font-semibold">Agent</h2>
               <span className="text-xs text-muted-foreground font-mono">
-                {health.data?.available ? `claude ${health.data.version ?? ''}` : health.data ? 'claude CLI unavailable' : ''}
+                {health.data?.available
+                  ? `claude ${health.data.version ?? ""}`
+                  : health.data
+                    ? "claude CLI unavailable"
+                    : ""}
               </span>
             </div>
 
@@ -102,10 +137,26 @@ export function SettingsView() {
                 <RepoOverrides settings={settings} onPatch={patch} />
 
                 <div className="grid grid-cols-2 gap-3">
-                  <NumberField label="Max changed files" value={settings.maxChangedFiles} onCommit={(v) => patch({ maxChangedFiles: v })} />
-                  <NumberField label="Max diff lines" value={settings.maxDiffLines} onCommit={(v) => patch({ maxDiffLines: v })} />
-                  <NumberField label="Finding cap" value={settings.findingCap} onCommit={(v) => patch({ findingCap: v })} />
-                  <NumberField label="Nit cap" value={settings.nitCap} onCommit={(v) => patch({ nitCap: v })} />
+                  <NumberField
+                    label="Max changed files"
+                    value={settings.maxChangedFiles}
+                    onCommit={(v) => patch({ maxChangedFiles: v })}
+                  />
+                  <NumberField
+                    label="Max diff lines"
+                    value={settings.maxDiffLines}
+                    onCommit={(v) => patch({ maxDiffLines: v })}
+                  />
+                  <NumberField
+                    label="Finding cap"
+                    value={settings.findingCap}
+                    onCommit={(v) => patch({ findingCap: v })}
+                  />
+                  <NumberField
+                    label="Nit cap"
+                    value={settings.nitCap}
+                    onCommit={(v) => patch({ nitCap: v })}
+                  />
                 </div>
 
                 <div className="space-y-1.5">
@@ -116,35 +167,56 @@ export function SettingsView() {
                     variant="outline"
                     value={settings.severityThreshold}
                     onValueChange={(threshold) => {
-                      if (threshold === 'blocker' || threshold === 'risk' || threshold === 'nit') patch({ severityThreshold: threshold });
+                      if (
+                        threshold === "blocker" ||
+                        threshold === "risk" ||
+                        threshold === "nit"
+                      )
+                        patch({ severityThreshold: threshold });
                     }}
                     className="justify-start"
                     aria-label="Severity threshold"
                   >
-                    {(['blocker', 'risk', 'nit'] as const).map((threshold) => (
-                      <ToggleGroupItem key={threshold} value={threshold} className="text-xs font-mono">
-                        {threshold === 'nit' ? 'show everything' : `${threshold}+`}
+                    {(["blocker", "risk", "nit"] as const).map((threshold) => (
+                      <ToggleGroupItem
+                        key={threshold}
+                        value={threshold}
+                        className="text-xs font-mono"
+                      >
+                        {threshold === "nit"
+                          ? "show everything"
+                          : `${threshold}+`}
                       </ToggleGroupItem>
                     ))}
                   </ToggleGroup>
                 </div>
 
                 <div className="grid grid-cols-2 gap-3 items-end">
-                  <NumberField label="Daily cost ceiling (USD)" value={settings.dailyCostUsd} onCommit={(v) => patch({ dailyCostUsd: v })} />
+                  <NumberField
+                    label="Daily cost ceiling (USD)"
+                    value={settings.dailyCostUsd}
+                    onCommit={(v) => patch({ dailyCostUsd: v })}
+                  />
                   <div className="text-xs text-muted-foreground font-mono pb-2">
-                    spent today: ${runs.data?.spendTodayUsd.toFixed(2) ?? '0.00'} / ${settings.dailyCostUsd.toFixed(2)}
+                    spent today: $
+                    {runs.data?.spendTodayUsd.toFixed(2) ?? "0.00"} / $
+                    {settings.dailyCostUsd.toFixed(2)}
                   </div>
                 </div>
 
                 <p className="text-[11px] text-muted-foreground">
-                  Tip: a <code className="font-mono">.tandem/conventions.md</code> in a repo is read into every run — house rules,
-                  known deprecations, links to postmortems. It's the main quality lever per repo.
+                  Tip: a{" "}
+                  <code className="font-mono">.tandem/conventions.md</code> in a
+                  repo is read into every run — house rules, known deprecations,
+                  links to postmortems. It's the main quality lever per repo.
                 </p>
               </>
             ) : null}
           </Card>
 
-          {settings ? <AutoApproveCard settings={settings} onPatch={patch} /> : null}
+          {settings ? (
+            <AutoApproveCard settings={settings} onPatch={patch} />
+          ) : null}
           {settings ? <AgentsCard settings={settings} onPatch={patch} /> : null}
         </div>
       </div>
@@ -152,17 +224,25 @@ export function SettingsView() {
   );
 }
 
-function AutoApproveCard({ settings, onPatch }: { settings: TandemSettings; onPatch: (p: Partial<TandemSettings>) => void }) {
+function AutoApproveCard({
+  settings,
+  onPatch,
+}: {
+  settings: TandemSettings;
+  onPatch: (p: Partial<TandemSettings>) => void;
+}) {
   const aa = settings.autoApprove;
-  const set = (p: Partial<TandemSettings['autoApprove']>) => onPatch({ autoApprove: { ...aa, ...p } });
+  const set = (p: Partial<TandemSettings["autoApprove"]>) =>
+    onPatch({ autoApprove: { ...aa, ...p } });
   return (
     <Card className="p-5 space-y-4">
       <div>
         <h2 className="text-sm font-semibold">Auto-approve</h2>
         <p className="text-[11px] text-muted-foreground mt-0.5">
-          The one unattended GitHub write Tandem can make, and only with this switch on. A run auto-approves ONLY when every gate
-          holds: score at or above the threshold, zero blocker/risk findings, checks green (unless waived), not a draft, and no
-          review of yours in progress on that PR.
+          The one unattended GitHub write Tandem can make, and only with this
+          switch on. A run auto-approves ONLY when every gate holds: score at or
+          above the threshold, zero blocker/risk findings, checks green (unless
+          waived), not a draft, and no review of yours in progress on that PR.
         </p>
       </div>
       <ToggleRow
@@ -172,24 +252,48 @@ function AutoApproveCard({ settings, onPatch }: { settings: TandemSettings; onPa
         onChange={(v) => set({ enabled: v })}
       />
       <div className="grid grid-cols-2 gap-3 items-end">
-        <NumberField label="Minimum score (0-100)" value={aa.minScore} onCommit={(v) => set({ minScore: Math.min(100, v) })} />
-        <ToggleRow label="Require checks passing" checked={aa.requireChecksPassing} onChange={(v) => set({ requireChecksPassing: v })} />
+        <NumberField
+          label="Minimum score (0-100)"
+          value={aa.minScore}
+          onCommit={(v) => set({ minScore: Math.min(100, v) })}
+        />
+        <ToggleRow
+          label="Require checks passing"
+          checked={aa.requireChecksPassing}
+          onChange={(v) => set({ requireChecksPassing: v })}
+        />
       </div>
     </Card>
   );
 }
 
-function AgentsCard({ settings, onPatch }: { settings: TandemSettings; onPatch: (p: Partial<TandemSettings>) => void }) {
+function AgentsCard({
+  settings,
+  onPatch,
+}: {
+  settings: TandemSettings;
+  onPatch: (p: Partial<TandemSettings>) => void;
+}) {
   const [editingId, setEditingId] = useState(settings.defaultAgentId);
-  const agent = settings.agents.find((a) => a.id === editingId) ?? settings.agents[0];
+  const agent =
+    settings.agents.find((a) => a.id === editingId) ?? settings.agents[0];
 
   const patchAgent = (patch: Partial<AgentProfile>) => {
-    onPatch({ agents: settings.agents.map((a) => (a.id === agent.id ? { ...a, ...patch } : a)) });
+    onPatch({
+      agents: settings.agents.map((a) =>
+        a.id === agent.id ? { ...a, ...patch } : a,
+      ),
+    });
   };
 
   const addAgent = () => {
     const id = crypto.randomUUID().slice(0, 8);
-    const next: AgentProfile = { ...DEFAULT_AGENT, id, name: 'New agent', description: undefined };
+    const next: AgentProfile = {
+      ...DEFAULT_AGENT,
+      id,
+      name: "New agent",
+      description: undefined,
+    };
     onPatch({ agents: [...settings.agents, next] });
     setEditingId(id);
   };
@@ -199,7 +303,10 @@ function AgentsCard({ settings, onPatch }: { settings: TandemSettings; onPatch: 
     const remaining = settings.agents.filter((a) => a.id !== agent.id);
     onPatch({
       agents: remaining,
-      defaultAgentId: settings.defaultAgentId === agent.id ? remaining[0].id : settings.defaultAgentId,
+      defaultAgentId:
+        settings.defaultAgentId === agent.id
+          ? remaining[0].id
+          : settings.defaultAgentId,
     });
     setEditingId(remaining[0].id);
   };
@@ -211,10 +318,12 @@ function AgentsCard({ settings, onPatch }: { settings: TandemSettings; onPatch: 
       <div>
         <h2 className="text-sm font-semibold">Agents</h2>
         <p className="text-[11px] text-muted-foreground mt-0.5">
-          Reviewer profiles: each has its own models and prompt blocks, so agents can specialize (security sweep, test-coverage,
-          API-contract…). The default runs automatically; any agent can run from the PR's rerun menu. Data blocks and the
-          strict-JSON output contracts stay code-owned — findings that break the rules are dropped by validation regardless of
-          prompt edits.
+          Reviewer profiles: each has its own models and prompt blocks, so
+          agents can specialize (security sweep, test-coverage, API-contract…).
+          The default runs automatically; any agent can run from the PR's rerun
+          menu. Data blocks and the strict-JSON output contracts stay code-owned
+          — findings that break the rules are dropped by validation regardless
+          of prompt edits.
         </p>
       </div>
 
@@ -228,9 +337,13 @@ function AgentsCard({ settings, onPatch }: { settings: TandemSettings; onPatch: 
           aria-label="Agent profile"
         >
           {settings.agents.map((a) => (
-            <ToggleGroupItem key={a.id} value={a.id} className="text-xs font-mono">
+            <ToggleGroupItem
+              key={a.id}
+              value={a.id}
+              className="text-xs font-mono"
+            >
               {a.name}
-              {a.id === settings.defaultAgentId ? ' ★' : ''}
+              {a.id === settings.defaultAgentId ? " ★" : ""}
             </ToggleGroupItem>
           ))}
         </ToggleGroup>
@@ -240,27 +353,54 @@ function AgentsCard({ settings, onPatch }: { settings: TandemSettings; onPatch: 
       </div>
 
       <div className="grid grid-cols-2 gap-3">
-        <TextField label="Name" value={agent.name} onCommit={(v) => patchAgent({ name: v })} />
-        <TextField label="Description" value={agent.description ?? ''} onCommit={(v) => patchAgent({ description: v || undefined })} allowEmpty />
+        <TextField
+          label="Name"
+          value={agent.name}
+          onCommit={(v) => patchAgent({ name: v })}
+        />
+        <TextField
+          label="Description"
+          value={agent.description ?? ""}
+          onCommit={(v) => patchAgent({ description: v || undefined })}
+          allowEmpty
+        />
       </div>
 
       <div className="grid grid-cols-3 gap-3">
-        {(['orient', 'analyze', 'reconcile'] as const).map((pass) => (
+        {(["orient", "analyze", "reconcile"] as const).map((pass) => (
           <TextField
             key={`${agent.id}-${pass}`}
             label={`${pass} model`}
             value={agent.models[pass]}
-            onCommit={(v) => patchAgent({ models: { ...agent.models, [pass]: v } })}
+            onCommit={(v) =>
+              patchAgent({ models: { ...agent.models, [pass]: v } })
+            }
           />
         ))}
       </div>
 
       {(
         [
-          ['rules', 'Review rules', 'Injected into the analyze and reconcile passes.'],
-          ['orient', 'Pass 1 · orient', 'Produces the review plan from PR metadata.'],
-          ['analyze', 'Pass 2 · analyze', 'Runs once per file cluster with the diffs in context.'],
-          ['reconcile', 'Pass 3 · reconcile', 'Dedupes, ranks, caps, scores. {findingCap} and {nitCap} interpolate from the caps above.'],
+          [
+            "rules",
+            "Review rules",
+            "Injected into the analyze and reconcile passes.",
+          ],
+          [
+            "orient",
+            "Pass 1 · orient",
+            "Produces the review plan from PR metadata.",
+          ],
+          [
+            "analyze",
+            "Pass 2 · analyze",
+            "Runs once per file cluster with the diffs in context.",
+          ],
+          [
+            "reconcile",
+            "Pass 3 · reconcile",
+            "Dedupes, ranks, caps, scores. {findingCap} and {nitCap} interpolate from the caps above.",
+          ],
         ] as Array<[keyof PromptTexts, string, string]>
       ).map(([key, label, hint]) => (
         <PromptField
@@ -269,15 +409,27 @@ function AgentsCard({ settings, onPatch }: { settings: TandemSettings; onPatch: 
           hint={hint}
           value={agent.prompts[key]}
           defaultValue={DEFAULT_PROMPTS[key]}
-          onCommit={(value) => patchAgent({ prompts: { ...agent.prompts, [key]: value } })}
+          onCommit={(value) =>
+            patchAgent({ prompts: { ...agent.prompts, [key]: value } })
+          }
         />
       ))}
 
       <div className="flex items-center gap-2">
-        <Button size="xs" variant="outline" disabled={settings.defaultAgentId === agent.id} onClick={() => onPatch({ defaultAgentId: agent.id })}>
+        <Button
+          size="xs"
+          variant="outline"
+          disabled={settings.defaultAgentId === agent.id}
+          onClick={() => onPatch({ defaultAgentId: agent.id })}
+        >
           Make default
         </Button>
-        <Button size="xs" variant="ghost" disabled={settings.agents.length <= 1} onClick={deleteAgent}>
+        <Button
+          size="xs"
+          variant="ghost"
+          disabled={settings.agents.length <= 1}
+          onClick={deleteAgent}
+        >
           Delete agent
         </Button>
       </div>
@@ -319,10 +471,17 @@ function PromptField({
         <span className="flex-1" />
         {!isDefault ? (
           <>
-            <span className="text-[10px] uppercase tracking-wide" style={{ color: 'var(--tandem-agent)' }}>
+            <span
+              className="text-[10px] uppercase tracking-wide"
+              style={{ color: "var(--tandem-agent)" }}
+            >
               customized
             </span>
-            <Button size="3xs" variant="ghost" onClick={() => onCommit(defaultValue)}>
+            <Button
+              size="3xs"
+              variant="ghost"
+              onClick={() => onCommit(defaultValue)}
+            >
               reset to default
             </Button>
           </>
@@ -339,19 +498,39 @@ function PromptField({
   );
 }
 
-function ToggleRow({ label, hint, checked, onChange }: { label: string; hint?: string; checked: boolean; onChange: (v: boolean) => void }) {
+function ToggleRow({
+  label,
+  hint,
+  checked,
+  onChange,
+}: {
+  label: string;
+  hint?: string;
+  checked: boolean;
+  onChange: (v: boolean) => void;
+}) {
   return (
     <div className="flex items-center justify-between gap-4">
       <div>
         <div className="text-sm">{label}</div>
-        {hint ? <div className="text-[11px] text-muted-foreground">{hint}</div> : null}
+        {hint ? (
+          <div className="text-[11px] text-muted-foreground">{hint}</div>
+        ) : null}
       </div>
       <Switch checked={checked} onCheckedChange={onChange} />
     </div>
   );
 }
 
-function NumberField({ label, value, onCommit }: { label: string; value: number; onCommit: (v: number) => void }) {
+function NumberField({
+  label,
+  value,
+  onCommit,
+}: {
+  label: string;
+  value: number;
+  onCommit: (v: number) => void;
+}) {
   const [draft, setDraft] = useState(String(value));
   const [last, setLast] = useState(value);
   if (value !== last) {
@@ -360,7 +539,8 @@ function NumberField({ label, value, onCommit }: { label: string; value: number;
   }
   const commit = () => {
     const parsed = Number(draft);
-    if (Number.isFinite(parsed) && parsed >= 0 && parsed !== value) onCommit(parsed);
+    if (Number.isFinite(parsed) && parsed >= 0 && parsed !== value)
+      onCommit(parsed);
     else setDraft(String(value));
   };
   return (
@@ -370,7 +550,7 @@ function NumberField({ label, value, onCommit }: { label: string; value: number;
         value={draft}
         onChange={(e) => setDraft(e.target.value)}
         onBlur={commit}
-        onKeyDown={(e) => e.key === 'Enter' && commit()}
+        onKeyDown={(e) => e.key === "Enter" && commit()}
         className="h-8 text-sm font-mono"
         inputMode="numeric"
       />
@@ -396,7 +576,8 @@ function TextField({
     setDraft(value);
   }
   const commit = () => {
-    if ((draft.trim() || allowEmpty) && draft.trim() !== value) onCommit(draft.trim());
+    if ((draft.trim() || allowEmpty) && draft.trim() !== value)
+      onCommit(draft.trim());
     else setDraft(value);
   };
   return (
@@ -406,28 +587,43 @@ function TextField({
         value={draft}
         onChange={(e) => setDraft(e.target.value)}
         onBlur={commit}
-        onKeyDown={(e) => e.key === 'Enter' && commit()}
+        onKeyDown={(e) => e.key === "Enter" && commit()}
         className="h-8 text-sm font-mono"
       />
     </div>
   );
 }
 
-function RepoOverrides({ settings, onPatch }: { settings: TandemSettings; onPatch: (p: Partial<TandemSettings>) => void }) {
-  const [newRepo, setNewRepo] = useState('');
+function RepoOverrides({
+  settings,
+  onPatch,
+}: {
+  settings: TandemSettings;
+  onPatch: (p: Partial<TandemSettings>) => void;
+}) {
+  const [newRepo, setNewRepo] = useState("");
   const entries = Object.entries(settings.repos);
 
   const add = () => {
     const key = newRepo.trim();
     if (!/^[^/\s]+\/[^/\s]+$/.test(key)) return;
-    onPatch({ repos: { ...settings.repos, [key]: { agentEnabled: !settings.agentEnabledByDefault } } });
-    setNewRepo('');
+    onPatch({
+      repos: {
+        ...settings.repos,
+        [key]: { agentEnabled: !settings.agentEnabledByDefault },
+      },
+    });
+    setNewRepo("");
   };
 
   return (
     <div className="space-y-1.5">
       <Label className="text-xs">Per-repo overrides</Label>
-      {entries.length === 0 ? <div className="text-[11px] text-muted-foreground">None — every repo follows the default.</div> : null}
+      {entries.length === 0 ? (
+        <div className="text-[11px] text-muted-foreground">
+          None — every repo follows the default.
+        </div>
+      ) : null}
       {entries.map(([repo, { agentEnabled }]) => (
         <div key={repo} className="flex items-center gap-2 text-sm">
           <span className="font-mono text-xs flex-1 truncate" title={repo}>
@@ -435,7 +631,11 @@ function RepoOverrides({ settings, onPatch }: { settings: TandemSettings; onPatc
           </span>
           <Switch
             checked={agentEnabled}
-            onCheckedChange={(v) => onPatch({ repos: { ...settings.repos, [repo]: { agentEnabled: v } } })}
+            onCheckedChange={(v) =>
+              onPatch({
+                repos: { ...settings.repos, [repo]: { agentEnabled: v } },
+              })
+            }
           />
           <Button
             size="2xs"
@@ -454,7 +654,7 @@ function RepoOverrides({ settings, onPatch }: { settings: TandemSettings; onPatc
         <Input
           value={newRepo}
           onChange={(e) => setNewRepo(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && add()}
+          onKeyDown={(e) => e.key === "Enter" && add()}
           placeholder="owner/repo"
           className="h-7 text-xs font-mono flex-1"
         />

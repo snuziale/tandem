@@ -137,6 +137,12 @@ One controlled `CodeView` hosts every file (`components/pr/DiffPane.tsx`):
 - Everything inline is a `DiffLineAnnotation<TandemAnno>`: human thread (blue rail), staged comment,
   composer, agent finding (violet rail). Side mapping LEFT→`deletions`, RIGHT→`additions`
   (`components/pr/annotations.ts`).
+- **The file header is ours** (`renderCustomHeader` → `components/pr/DiffFileHeader.tsx`): the
+  library's default header can't do the two things we need. The path is a BUTTON that syncs the
+  file tree (`onSelectPath` → `selectedPath`, no diff re-scroll), and **viewed is toggled per file,
+  there** — the pane toolbar keeps only the `viewed n/m` tally. Header slots are light DOM
+  (`slot="header-*"`), so Tailwind reaches them and content re-renders through React WITHOUT a
+  `version` bump — verified for the viewed toggle.
 - The CodeView container MUST be the overflow parent (`overflow-y-auto` + bounded height) or
   nothing scrolls and `scrollTo` no-ops silently.
 - `scrollTo` against virtualized estimates lands short — scroll twice (immediately + ~350ms).
@@ -172,14 +178,19 @@ src/
   api/               plain-fetch clients (http.ts wrapper + per-family files)
   hooks/             useQueue (60s poll + focus refetch)  usePrDetail/usePrFiles (files:
                      staleTime Infinity per sha)  usePendingReview (optimistic)  useAgentRuns
-                     (30s poll, byKey index)  useRunStream (SSE)  useSettings  useSavedViews
+                     (30s poll, byKey index)  useRunStream (SSE)  useSettings
+                     useSavedViews (+ useViewActions: every view write + its navigation)
+                     useActiveView (URL ↔ view list reconciliation)
                      useKeyboardNav (global dispatcher)  queueActions  findingActions
-  state/             themeStore (persist)  uiStore (route, focus, composer target;
-                     persist partialize: diffStyle only)
+  state/             themeStore (persist)  uiStore (route, focus, composer target, lastViewId;
+                     persist partialize: diffStyle + lastViewId)
   keyboard/          target.ts (isTypingTarget/hasOpenDialog)  shortcuts.ts (? sheet registry —
                      manually synced with the dispatchers)
-  routes.ts          History-API routing: / · /:owner/:repo/pull/:n · /settings
-  components/        layout/ queue/ pr/ agent/ review(tray in pr/)/ settings/ setup/
+  routes.ts          History-API routing: /?view=<id> · /:owner/:repo/pull/:n · /settings
+                     (navigateToQueue() = back to the last-selected view)
+  components/        layout/AppHeader (the ONE header: chrome + brand + agent pill + settings
+                     + theme; screens fill `children`/`actions`) queue/ pr/ agent/
+                     review(tray in pr/)/ settings/ setup/
 ```
 
 ## Storage (`$TANDEM_HOME ?? ~/.tandem`, all via jsonFile.ts, all 0600)
@@ -189,7 +200,7 @@ config.json    PAT (+defaultOrg)          settings.json  caps/threshold/models/r
 views.json     saved queue views          reviews.json   pending-review drafts by prId
 runs.json      AgentRun by prId@headSha + spendByDay     claude.log  harness stderr
 sandbox/       cwd for the read-only claude passes
-localStorage   tandem:theme:v1 · tandem:ui:v1 (diffStyle) — display prefs ONLY
+localStorage   tandem:theme:v1 · tandem:ui:v1 (diffStyle, lastViewId) — display prefs ONLY
 ```
 
 ## Keyboard
@@ -207,6 +218,15 @@ Two dispatchers, one guard module (`keyboard/target.ts`), one display registry
 - **Typed server endpoints, not a GitHub passthrough proxy**: prewarm/pipeline need server-side
   normalized access, and "exactly two writes" stays auditable.
 - **Parallel per-view queue searches** (spec divergence, documented above).
+- **The selected queue view is URL state** (`/?view=<id>`), never component state: tab switches
+  are history entries, a view is linkable, and back-from-detail lands where you left. One place
+  reconciles URL ↔ saved list (`useActiveView`, canonicalizing with a history REPLACE);
+  `uiStore.lastViewId` is only a persisted memory for cold launches and "← Queue".
+- **One header component** (`layout/AppHeader`) owns the chrome for every screen — a screen
+  passes slots, never its own `<header>`.
+- **View management lives on the tab** (⋯ menu / right-click / double-click to rename):
+  rename · edit query · duplicate · delete (delete always confirms, then slides to the
+  neighbour). Every write goes through `useViewActions`, which also owns the navigation.
 - **Draft submit reads the server-side draft**, never a client payload.
 - **prId is `"owner/repo#number"`** everywhere; runs key on `prId@headSha`.
 - **Findings embed in their run record** (`runs.json`) — no separate findings store.

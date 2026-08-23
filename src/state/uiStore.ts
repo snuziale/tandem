@@ -1,21 +1,32 @@
 // In-memory UI state (+ a few persisted display prefs). Keyboard handlers
 // read this via getState() snapshots (the Sift dispatch pattern) so the global
 // keydown listener never re-binds.
-import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
-import type { Route } from '../routes';
-import type { PrId } from '../shared/review-types';
+import { create } from "zustand";
+import { persist } from "zustand/middleware";
+import type { Route } from "../routes";
+import type { PrId } from "../shared/review-types";
 
 export type QueueRowRef = { prId: PrId; url: string; blockerTitle?: string };
-export type DiffStyle = 'unified' | 'split';
-export type ComposerTarget = { path: string; line: number; side: 'LEFT' | 'RIGHT' };
+export type DiffStyle = "unified" | "split";
+export type ComposerTarget = {
+  path: string;
+  line: number;
+  side: "LEFT" | "RIGHT";
+};
+/** react-resizable-panels' Layout: panel id → size, in the library's own units. */
+export type PaneLayout = Record<string, number>;
 
 type UiState = {
   route: Route;
   setRoute: (route: Route) => void;
 
-  activeViewId: string | null;
-  setActiveView: (id: string | null) => void;
+  /**
+   * The queue's selected view lives in the URL (see routes.ts). This is only a
+   * MEMORY of the last one — persisted, so a cold launch and every "← Queue"
+   * lands back where the user was. Never read it to decide what's rendered.
+   */
+  lastViewId: string | null;
+  setLastViewId: (id: string | null) => void;
 
   focusedPrId: PrId | null;
   setFocusedPr: (id: PrId | null) => void;
@@ -39,6 +50,15 @@ type UiState = {
   diffStyle: DiffStyle;
   setDiffStyle: (style: DiffStyle) => void;
 
+  /**
+   * PR-detail pane widths (files / diff / agent), as react-resizable-panels'
+   * own Layout map. PrDetailView remounts per PR (keyed on prId), so the sizes
+   * have to live outside it or every navigation snaps back to the defaults.
+   * Persisted: a pane width the user dragged is a preference, not per-PR state.
+   */
+  prPaneLayout: PaneLayout | null;
+  setPrPaneLayout: (layout: PaneLayout) => void;
+
   shortcutsOpen: boolean;
   setShortcutsOpen: (open: boolean) => void;
 
@@ -50,11 +70,11 @@ type UiState = {
 export const useUiStore = create<UiState>()(
   persist(
     (set) => ({
-      route: { name: 'queue' },
+      route: { name: "queue", viewId: null },
       setRoute: (route) => set({ route }),
 
-      activeViewId: null,
-      setActiveView: (id) => set({ activeViewId: id }),
+      lastViewId: null,
+      setLastViewId: (id) => set({ lastViewId: id }),
 
       focusedPrId: null,
       setFocusedPr: (id) => set({ focusedPrId: id }),
@@ -70,19 +90,30 @@ export const useUiStore = create<UiState>()(
       editingFindingId: null,
       setEditingFinding: (id) => set({ editingFindingId: id }),
 
-      diffStyle: 'unified',
+      diffStyle: "unified",
       setDiffStyle: (style) => set({ diffStyle: style }),
+
+      prPaneLayout: null,
+      setPrPaneLayout: (layout) => set({ prPaneLayout: layout }),
 
       shortcutsOpen: false,
       setShortcutsOpen: (open) => set({ shortcutsOpen: open }),
 
       queryBarOpen: false,
-      setQueryBarOpen: (open) => set((s) => ({ queryBarOpen: typeof open === 'function' ? open(s.queryBarOpen) : open })),
+      setQueryBarOpen: (open) =>
+        set((s) => ({
+          queryBarOpen:
+            typeof open === "function" ? open(s.queryBarOpen) : open,
+        })),
     }),
     {
-      name: 'tandem:ui:v1',
+      name: "tandem:ui:v1",
       version: 1,
-      partialize: (s) => ({ diffStyle: s.diffStyle }),
-    }
-  )
+      partialize: (s) => ({
+        diffStyle: s.diffStyle,
+        lastViewId: s.lastViewId,
+        prPaneLayout: s.prPaneLayout,
+      }),
+    },
+  ),
 );

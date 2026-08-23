@@ -1,5 +1,13 @@
-import { useState } from 'react';
+import { useState } from "react";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
   Button,
   Dialog,
   DialogContent,
@@ -12,9 +20,9 @@ import {
   Switch,
   Textarea,
   toast,
-} from '@uipath/apollo-wind';
-import type { SavedView } from '../../shared/review-types';
-import { parseViewsJson } from '../../utils/viewsJson';
+} from "@uipath/apollo-wind";
+import type { SavedView } from "../../shared/review-types";
+import { parseViewsJson } from "../../utils/viewsJson";
 
 // ---------------------------------------------------------------------------
 // Create / edit one saved view.
@@ -25,12 +33,13 @@ type EditorProps = {
   open: boolean;
   onClose: () => void;
   onSave: (view: SavedView) => void;
-  onDelete?: (id: string) => void;
 };
 
-export function ViewEditorDialog({ view, open, onClose, onSave, onDelete }: EditorProps) {
-  const [name, setName] = useState(view?.name ?? '');
-  const [query, setQuery] = useState(view?.query ?? 'is:pr is:open archived:false sort:updated-desc ');
+export function ViewEditorDialog({ view, open, onClose, onSave }: EditorProps) {
+  const [name, setName] = useState(view?.name ?? "");
+  const [query, setQuery] = useState(
+    view?.query ?? "is:pr is:open archived:false sort:updated-desc ",
+  );
   const [agentEnabled, setAgentEnabled] = useState(view?.agentEnabled ?? false);
 
   const canSave = name.trim().length > 0 && query.trim().length > 0;
@@ -50,18 +59,27 @@ export function ViewEditorDialog({ view, open, onClose, onSave, onDelete }: Edit
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>{view ? 'Edit view' : 'New view'}</DialogTitle>
+          <DialogTitle>{view ? "Edit view" : "New view"}</DialogTitle>
           <DialogDescription>
-            A view is a raw GitHub search query shown as a queue tab — e.g.{' '}
-            <code className="font-mono text-[11px]">is:pr is:open repo:UiPath/flow-workbench review-requested:@me</code>
+            A view is a raw GitHub search query shown as a queue tab — e.g.{" "}
+            <code className="font-mono text-[11px]">
+              is:pr is:open repo:UiPath/flow-workbench review-requested:@me
+            </code>
           </DialogDescription>
         </DialogHeader>
-        <div className="space-y-3">
+        <div className="space-y-4 py-1">
           <div className="space-y-1.5">
             <Label htmlFor="view-name" className="text-xs">
               Name
             </Label>
-            <Input id="view-name" autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder="flow-workbench only" className="h-8 text-sm" />
+            <Input
+              id="view-name"
+              autoFocus
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="flow-workbench only"
+              className="h-8 text-sm"
+            />
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="view-query" className="text-xs">
@@ -75,34 +93,23 @@ export function ViewEditorDialog({ view, open, onClose, onSave, onDelete }: Edit
               className="min-h-16 text-sm font-mono"
             />
           </div>
-          <div className="flex items-center justify-between gap-4">
+          <div className="flex items-start justify-between gap-6 pt-1">
             <div>
               <div className="text-sm">Agent pre-warm eligible</div>
-              <div className="text-[11px] text-muted-foreground">
-                PRs in this view are analyzed automatically — only when "Run automatically" is on in Settings.
+              <div className="text-[11px] text-muted-foreground leading-relaxed">
+                PRs in this view are analyzed automatically — only when "Run
+                automatically" is on in Settings.
               </div>
             </div>
             <Switch checked={agentEnabled} onCheckedChange={setAgentEnabled} />
           </div>
         </div>
         <DialogFooter className="gap-2">
-          {view && onDelete ? (
-            <Button
-              variant="ghost"
-              className="mr-auto"
-              onClick={() => {
-                onDelete(view.id);
-                onClose();
-              }}
-            >
-              Delete view
-            </Button>
-          ) : null}
           <Button variant="ghost" onClick={onClose}>
             Cancel
           </Button>
           <Button disabled={!canSave} onClick={save}>
-            {view ? 'Save view' : 'Add view'}
+            {view ? "Save view" : "Add view"}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -127,7 +134,7 @@ export function ViewsJsonDialog({ views, open, onClose, onApply }: JsonProps) {
 
   const apply = () => {
     const parsed = parseViewsJson(draft);
-    if ('error' in parsed) {
+    if ("error" in parsed) {
       setError(parsed.error);
       return;
     }
@@ -141,8 +148,10 @@ export function ViewsJsonDialog({ views, open, onClose, onApply }: JsonProps) {
         <DialogHeader>
           <DialogTitle>Views as JSON</DialogTitle>
           <DialogDescription>
-            The exact configuration stored in <code className="font-mono text-[11px]">~/.tandem/views.json</code>. Copy it to share;
-            paste a teammate's to import. Applying replaces ALL views.
+            The exact configuration stored in{" "}
+            <code className="font-mono text-[11px]">~/.tandem/views.json</code>.
+            Copy it to share; paste a teammate's to import. Applying replaces
+            ALL views.
           </DialogDescription>
         </DialogHeader>
         <Textarea
@@ -160,7 +169,9 @@ export function ViewsJsonDialog({ views, open, onClose, onApply }: JsonProps) {
             variant="outline"
             className="mr-auto"
             onClick={() => {
-              void navigator.clipboard.writeText(draft).then(() => toast.success('Views JSON copied'));
+              void navigator.clipboard
+                .writeText(draft)
+                .then(() => toast.success("Views JSON copied"));
             }}
           >
             Copy JSON
@@ -175,3 +186,42 @@ export function ViewsJsonDialog({ views, open, onClose, onApply }: JsonProps) {
   );
 }
 
+// ---------------------------------------------------------------------------
+// Deleting a view throws away a hand-written query — always confirm.
+
+export function DeleteViewDialog({
+  view,
+  onClose,
+  onConfirm,
+}: {
+  view: SavedView;
+  onClose: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <AlertDialog open onOpenChange={(v) => !v && onClose()}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Delete "{view.name}"?</AlertDialogTitle>
+          <AlertDialogDescription>
+            The view and its query are removed from{" "}
+            <code className="font-mono text-[11px]">~/.tandem/views.json</code>.
+            Nothing on GitHub changes, and no pending review is touched.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter className="gap-2">
+          <AlertDialogCancel onClick={onClose}>Cancel</AlertDialogCancel>
+          <AlertDialogAction
+            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            onClick={() => {
+              onConfirm();
+              onClose();
+            }}
+          >
+            Delete view
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  );
+}

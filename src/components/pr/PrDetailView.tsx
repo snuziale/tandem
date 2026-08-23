@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
+import { useEffect, useRef, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   Button,
   ResizableHandle,
@@ -8,36 +8,48 @@ import {
   Spinner,
   ToggleGroup,
   ToggleGroupItem,
-} from '@uipath/apollo-wind';
-import { ExternalLink } from 'lucide-react';
-import { startRun } from '../../api/runs';
-import { acceptFinding, dismissFinding, unstageFinding } from '../../hooks/findingActions';
-import { openPrExternal } from '../../hooks/queueActions';
-import { hasOpenBlocker, runFor, useAgentRuns } from '../../hooks/useAgentRuns';
-import { usePendingReview } from '../../hooks/usePendingReview';
-import { usePrDetail, usePrFiles } from '../../hooks/usePrDetail';
-import { useRunStream } from '../../hooks/useRunStream';
-import { useMarkSeen } from '../../hooks/useSeen';
-import { useSettings } from '../../hooks/useSettings';
-import { hasOpenDialog, isTypingTarget } from '../../keyboard/target';
-import { navigate } from '../../routes';
-import type { Finding } from '../../shared/agent-types';
-import type { PrId, ReviewVerdict } from '../../shared/review-types';
-import { useUiStore } from '../../state/uiStore';
-import { AgentPane } from '../agent/AgentPane';
-import { TopBar } from '../layout/TopBar';
-import { DescriptionCollapse } from './DescriptionCollapse';
-import { DiffPane, type DiffPaneHandle } from './DiffPane';
-import { FileTree } from './FileTree';
-import { PrHeader } from './PrHeader';
-import { ReviewTray } from './ReviewTray';
+} from "@uipath/apollo-wind";
+import { ExternalLink } from "lucide-react";
+import { startRun } from "../../api/runs";
+import {
+  acceptFinding,
+  dismissFinding,
+  unstageFinding,
+} from "../../hooks/findingActions";
+import { openPrExternal } from "../../hooks/queueActions";
+import { hasOpenBlocker, runFor, useAgentRuns } from "../../hooks/useAgentRuns";
+import { usePendingReview } from "../../hooks/usePendingReview";
+import { usePrDetail, usePrFiles } from "../../hooks/usePrDetail";
+import { useRunStream } from "../../hooks/useRunStream";
+import { useMarkSeen } from "../../hooks/useSeen";
+import { useSettings } from "../../hooks/useSettings";
+import { hasOpenDialog, isTypingTarget } from "../../keyboard/target";
+import { navigateToQueue } from "../../routes";
+import type { Finding } from "../../shared/agent-types";
+import type { PrId, ReviewVerdict } from "../../shared/review-types";
+import { useUiStore } from "../../state/uiStore";
+import { AgentPane } from "../agent/AgentPane";
+import { AppHeader } from "../layout/AppHeader";
+import { DescriptionCollapse } from "./DescriptionCollapse";
+import { DiffPane, type DiffPaneHandle } from "./DiffPane";
+import { FileTree } from "./FileTree";
+import { PrHeader } from "./PrHeader";
+import { ReviewTray } from "./ReviewTray";
 
 export function PrDetailView({ prId }: { prId: PrId }) {
   const queryClient = useQueryClient();
   const detail = usePrDetail(prId);
   const headSha = detail.data?.pr.headSha;
   const filesQuery = usePrFiles(prId, headSha);
-  const { review, toggleViewed, addComment, updateComment, removeComment, setVerdict, setSummary } = usePendingReview(prId, headSha);
+  const {
+    review,
+    toggleViewed,
+    addComment,
+    updateComment,
+    removeComment,
+    setVerdict,
+    setSummary,
+  } = usePendingReview(prId, headSha);
   const runs = useAgentRuns();
   const run = runFor(runs.data, prId, headSha);
   const progress = useRunStream(run);
@@ -49,7 +61,9 @@ export function PrDetailView({ prId }: { prId: PrId }) {
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const files = filesQuery.data;
 
-  const triageFindings = (run?.findings ?? []).filter((f) => f.state === 'proposed' || f.state === 'edited');
+  const triageFindings = (run?.findings ?? []).filter(
+    (f) => f.state === "proposed" || f.state === "edited",
+  );
   const agentPaths = new Set(triageFindings.map((f) => f.path));
 
   // A composer or finding focus left over from another PR must not follow us.
@@ -69,7 +83,7 @@ export function PrDetailView({ prId }: { prId: PrId }) {
     // measured — the first scroll gets close, the second (post-measurement)
     // lands exactly. Same trick @pierre's own viewer uses. The file tree
     // follows `selectedPath` on its own.
-    const target = { type: 'item', id: path, align: 'start' } as const;
+    const target = { type: "item", id: path, align: "start" } as const;
     codeViewRef.current?.scrollTo(target);
     window.setTimeout(() => codeViewRef.current?.scrollTo(target), 350);
   };
@@ -78,11 +92,11 @@ export function PrDetailView({ prId }: { prId: PrId }) {
     useUiStore.getState().setFocusedFinding(finding.id);
     setSelectedPath(finding.path);
     const target = {
-      type: 'line',
+      type: "line",
       id: finding.path,
       lineNumber: finding.endLine,
-      side: finding.side === 'LEFT' ? 'deletions' : 'additions',
-      align: 'center',
+      side: finding.side === "LEFT" ? "deletions" : "additions",
+      align: "center",
     } as const;
     codeViewRef.current?.scrollTo(target);
     window.setTimeout(() => codeViewRef.current?.scrollTo(target), 350);
@@ -92,15 +106,28 @@ export function PrDetailView({ prId }: { prId: PrId }) {
   const removeCommentAndUnstage = (localId: string) => {
     const comment = review?.comments.find((c) => c.localId === localId);
     removeComment(localId);
-    if (comment?.findingId && run) void unstageFinding(queryClient, run.id, comment.findingId);
+    if (comment?.findingId && run)
+      void unstageFinding(queryClient, run.id, comment.findingId);
   };
 
   // Detail-scoped keys (the global handler only runs on the queue route):
   // esc back · [ ] files · j/k findings · y/e/x triage · v viewed · r rerun ·
   // a verdict approve · o open on GitHub.
-  const keyState = useRef({ files, selectedPath, prUrl: detail.data?.pr.url, triageFindings, run });
+  const keyState = useRef({
+    files,
+    selectedPath,
+    prUrl: detail.data?.pr.url,
+    triageFindings,
+    run,
+  });
   useEffect(() => {
-    keyState.current = { files, selectedPath, prUrl: detail.data?.pr.url, triageFindings, run };
+    keyState.current = {
+      files,
+      selectedPath,
+      prUrl: detail.data?.pr.url,
+      triageFindings,
+      run,
+    };
   });
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -108,13 +135,18 @@ export function PrDetailView({ prId }: { prId: PrId }) {
       if (hasOpenDialog() || isTypingTarget(e.target)) return;
       // The @pierre/trees tree owns its keys (arrows, type-ahead a-z, its
       // search input) — never double-handle while focus is inside it.
-      if (e.target instanceof HTMLElement && e.target.closest('[data-tandem-filetree]')) return;
+      if (
+        e.target instanceof HTMLElement &&
+        e.target.closest("[data-tandem-filetree]")
+      )
+        return;
       const state = keyState.current;
       const paths = (state.files ?? []).map((f) => f.path);
       const stepFile = (delta: 1 | -1) => {
         if (paths.length === 0) return;
         const idx = state.selectedPath ? paths.indexOf(state.selectedPath) : -1;
-        const next = idx === -1 ? 0 : Math.min(paths.length - 1, Math.max(0, idx + delta));
+        const next =
+          idx === -1 ? 0 : Math.min(paths.length - 1, Math.max(0, idx + delta));
         selectFile(paths[next]);
       };
       const stepFinding = (delta: 1 | -1) => {
@@ -122,41 +154,49 @@ export function PrDetailView({ prId }: { prId: PrId }) {
         if (list.length === 0) return;
         const focusedId = useUiStore.getState().focusedFindingId;
         const idx = list.findIndex((f) => f.id === focusedId);
-        const next = idx === -1 ? (delta === 1 ? 0 : list.length - 1) : Math.min(list.length - 1, Math.max(0, idx + delta));
+        const next =
+          idx === -1
+            ? delta === 1
+              ? 0
+              : list.length - 1
+            : Math.min(list.length - 1, Math.max(0, idx + delta));
         focusFinding(list[next]);
       };
-      const focused = () => state.triageFindings.find((f) => f.id === useUiStore.getState().focusedFindingId);
+      const focused = () =>
+        state.triageFindings.find(
+          (f) => f.id === useUiStore.getState().focusedFindingId,
+        );
 
       switch (e.key) {
-        case 'Escape': {
+        case "Escape": {
           e.preventDefault();
           // First Esc closes an open composer; the next one leaves the PR.
           if (useUiStore.getState().composerTarget) {
             useUiStore.getState().setComposerTarget(null);
             return;
           }
-          navigate({ name: 'queue' });
+          navigateToQueue();
           return;
         }
-        case '[':
+        case "[":
           e.preventDefault();
           stepFile(-1);
           return;
-        case ']':
+        case "]":
           e.preventDefault();
           stepFile(1);
           return;
-        case 'j':
-        case 'ArrowDown':
+        case "j":
+        case "ArrowDown":
           e.preventDefault();
           stepFinding(1);
           return;
-        case 'k':
-        case 'ArrowUp':
+        case "k":
+        case "ArrowUp":
           e.preventDefault();
           stepFinding(-1);
           return;
-        case 'y': {
+        case "y": {
           const finding = focused();
           if (finding) {
             e.preventDefault();
@@ -164,7 +204,7 @@ export function PrDetailView({ prId }: { prId: PrId }) {
           }
           return;
         }
-        case 'e': {
+        case "e": {
           const finding = focused();
           if (finding) {
             e.preventDefault();
@@ -172,7 +212,7 @@ export function PrDetailView({ prId }: { prId: PrId }) {
           }
           return;
         }
-        case 'x': {
+        case "x": {
           const finding = focused();
           if (finding) {
             e.preventDefault();
@@ -180,21 +220,23 @@ export function PrDetailView({ prId }: { prId: PrId }) {
           }
           return;
         }
-        case 'r':
+        case "r":
           e.preventDefault();
-          void startRun(prId, true).then(() => queryClient.invalidateQueries({ queryKey: ['runs'] }));
+          void startRun(prId, true).then(() =>
+            queryClient.invalidateQueries({ queryKey: ["runs"] }),
+          );
           return;
-        case 'a':
+        case "a":
           e.preventDefault();
-          setVerdict('APPROVE' as ReviewVerdict);
+          setVerdict("APPROVE" as ReviewVerdict);
           return;
-        case 'v':
+        case "v":
           if (state.selectedPath) {
             e.preventDefault();
             toggleViewed(state.selectedPath);
           }
           return;
-        case 'o':
+        case "o":
           if (state.prUrl) {
             e.preventDefault();
             openPrExternal(state.prUrl);
@@ -202,14 +244,18 @@ export function PrDetailView({ prId }: { prId: PrId }) {
           return;
       }
     };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
     // Handlers read live state through keyState/getState snapshots.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [prId, queryClient]);
 
   const diffStyle = useUiStore((s) => s.diffStyle);
   const setDiffStyle = useUiStore((s) => s.setDiffStyle);
+  // Pane widths outlive this screen: it remounts per PR (keyed on prId), so the
+  // layout is read from / written back to the persisted store, not local state.
+  const paneLayout = useUiStore((s) => s.prPaneLayout);
+  const setPaneLayout = useUiStore((s) => s.setPrPaneLayout);
 
   if (detail.isPending) {
     return (
@@ -226,9 +272,10 @@ export function PrDetailView({ prId }: { prId: PrId }) {
       <Shell>
         <div className="flex-1 flex flex-col items-center justify-center gap-3 text-sm text-muted-foreground">
           <div>
-            Could not load {prId}: {detail.error instanceof Error ? detail.error.message : 'not found'}
+            Could not load {prId}:{" "}
+            {detail.error instanceof Error ? detail.error.message : "not found"}
           </div>
-          <Button variant="outline" size="xs" onClick={() => navigate({ name: 'queue' })}>
+          <Button variant="outline" size="xs" onClick={navigateToQueue}>
             Back to queue
           </Button>
         </div>
@@ -249,13 +296,29 @@ export function PrDetailView({ prId }: { prId: PrId }) {
           </div>
         ) : filesQuery.isError || !files ? (
           <div className="flex-1 flex items-center justify-center text-sm text-destructive">
-            Files failed to load: {filesQuery.error instanceof Error ? filesQuery.error.message : 'unknown error'}
+            Files failed to load:{" "}
+            {filesQuery.error instanceof Error
+              ? filesQuery.error.message
+              : "unknown error"}
           </div>
         ) : (
           // react-resizable-panels v4: numeric sizes are PIXELS, strings are
           // percents; orientation defaults to horizontal.
-          <ResizablePanelGroup className="flex-1 min-h-0">
-            <ResizablePanel defaultSize="15" minSize={150} maxSize="35">
+          <ResizablePanelGroup
+            className="flex-1 min-h-0"
+            defaultLayout={paneLayout ?? undefined}
+            // Only a real drag/keyboard resize is a preference; constraint
+            // recomputes and window resizes must not overwrite it.
+            onLayoutChanged={(layout, meta) => {
+              if (meta.isUserInteraction) setPaneLayout(layout);
+            }}
+          >
+            <ResizablePanel
+              id="files"
+              defaultSize="15"
+              minSize={150}
+              maxSize="35"
+            >
               <FileTree
                 files={files}
                 viewedFiles={review?.viewedFiles ?? []}
@@ -265,37 +328,49 @@ export function PrDetailView({ prId }: { prId: PrId }) {
               />
             </ResizablePanel>
             <ResizableHandle />
-            <ResizablePanel defaultSize="62" minSize="30">
+            <ResizablePanel id="diff" defaultSize="62" minSize="30">
               <div className="h-full min-w-0 flex flex-col">
                 <div className="flex items-center gap-2 px-3 h-9 border-b border-border shrink-0">
-                  <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-mono">diff</span>
-                  <span className="text-xs text-muted-foreground font-mono truncate flex-1">{selectedPath ?? ''}</span>
+                  <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-mono">
+                    diff
+                  </span>
+                  <span className="text-xs text-muted-foreground font-mono truncate flex-1">
+                    {selectedPath ?? ""}
+                  </span>
                   <span className="text-[11px] text-muted-foreground font-mono">
                     viewed {review?.viewedFiles.length ?? 0}/{files.length}
                   </span>
-                  {selectedPath ? (
-                    <Button size="2xs" variant="ghost" onClick={() => toggleViewed(selectedPath)} title="Toggle viewed for the selected file (v)">
-                      {review?.viewedFiles.includes(selectedPath) ? '✓ viewed' : 'mark viewed'}
-                    </Button>
-                  ) : null}
                   <ToggleGroup
                     type="single"
                     size="xs"
                     variant="outline"
                     value={diffStyle}
                     onValueChange={(style) => {
-                      if (style === 'unified' || style === 'split') setDiffStyle(style);
+                      if (style === "unified" || style === "split")
+                        setDiffStyle(style);
                     }}
                     aria-label="Diff layout"
                   >
-                    <ToggleGroupItem value="unified" className="font-mono text-[11px]">
+                    <ToggleGroupItem
+                      value="unified"
+                      className="font-mono text-[11px]"
+                    >
                       unified
                     </ToggleGroupItem>
-                    <ToggleGroupItem value="split" className="font-mono text-[11px]">
+                    <ToggleGroupItem
+                      value="split"
+                      className="font-mono text-[11px]"
+                    >
                       split
                     </ToggleGroupItem>
                   </ToggleGroup>
-                  <Button size="2xs" icon variant="ghost" aria-label="Open on GitHub" onClick={() => openPrExternal(pr.url)}>
+                  <Button
+                    size="2xs"
+                    icon
+                    variant="ghost"
+                    aria-label="Open on GitHub"
+                    onClick={() => openPrExternal(pr.url)}
+                  >
                     <ExternalLink />
                   </Button>
                 </div>
@@ -305,6 +380,11 @@ export function PrDetailView({ prId }: { prId: PrId }) {
                   threads={threads}
                   pendingComments={review?.comments ?? []}
                   findings={triageFindings}
+                  viewedFiles={review?.viewedFiles ?? []}
+                  onToggleViewed={toggleViewed}
+                  // Path click in a file header reveals it in the tree; the
+                  // diff is already at that file, so it must not re-scroll.
+                  onSelectPath={setSelectedPath}
                   onAddComment={addComment}
                   onUpdateComment={updateComment}
                   onRemoveComment={removeCommentAndUnstage}
@@ -313,8 +393,19 @@ export function PrDetailView({ prId }: { prId: PrId }) {
               </div>
             </ResizablePanel>
             <ResizableHandle />
-            <ResizablePanel defaultSize="23" minSize={240} maxSize="45">
-              <AgentPane prId={prId} run={run} progress={progress} settings={settings.data} onSelectFinding={focusFinding} />
+            <ResizablePanel
+              id="agent"
+              defaultSize="23"
+              minSize={240}
+              maxSize="45"
+            >
+              <AgentPane
+                prId={prId}
+                run={run}
+                progress={progress}
+                settings={settings.data}
+                onSelectFinding={focusFinding}
+              />
             </ResizablePanel>
           </ResizablePanelGroup>
         )}
@@ -325,8 +416,8 @@ export function PrDetailView({ prId }: { prId: PrId }) {
         onVerdict={setVerdict}
         onSummary={setSummary}
         submitDisabledReason={
-          review?.verdict === 'APPROVE' && hasOpenBlocker(run)
-            ? 'The agent found a blocker — dismiss it or pick another verdict to approve'
+          review?.verdict === "APPROVE" && hasOpenBlocker(run)
+            ? "The agent found a blocker — dismiss it or pick another verdict to approve"
             : undefined
         }
       />
@@ -337,7 +428,7 @@ export function PrDetailView({ prId }: { prId: PrId }) {
 function Shell({ children }: { children: React.ReactNode }) {
   return (
     <div className="h-dvh flex flex-col bg-background text-foreground">
-      <TopBar />
+      <AppHeader />
       {children}
     </div>
   );
