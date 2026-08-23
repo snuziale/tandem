@@ -16,6 +16,7 @@ import { navigate } from "../../routes";
 import type { SavedView } from "../../shared/review-types";
 import { useUiStore } from "../../state/uiStore";
 import {
+  facetLabel,
   filterByFacet,
   formatFacet,
   parseFacet,
@@ -196,6 +197,11 @@ export function QueueView() {
         isLoading={queue.isPending && !!views?.length}
         error={queue.error}
         viewError={activeViewId ? queue.data?.errors[activeViewId] : undefined}
+        filteredBy={
+          facet && allRows?.length
+            ? { label: facetLabel(facet), onClear: () => setFacet(null) }
+            : undefined
+        }
       />
 
       {editor.mode !== "closed" ? (

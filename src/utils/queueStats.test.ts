@@ -84,6 +84,24 @@ describe("facets", () => {
       expect(formatFacet(parseFacet(raw))).toBe(raw);
   });
 
+  it("rejects a value outside a closed bucket set, but not open ones", () => {
+    // A typo or a stale link must clear the filter, not silently empty the
+    // queue with no explanation.
+    expect(parseFacet("size:BOGUS")).toBeNull();
+    expect(parseFacet("idle:8d")).toBeNull();
+    expect(parseFacet("checks:green")).toBeNull();
+    expect(parseFacet("review:pending")).toBeNull();
+    // author/repo are open sets — any login or owner/repo is legitimate.
+    expect(parseFacet("author:nobody-here")).toEqual({
+      dim: "author",
+      value: "nobody-here",
+    });
+    expect(parseFacet("repo:acme/gone")).toEqual({
+      dim: "repo",
+      value: "acme/gone",
+    });
+  });
+
   it("keeps colons out of the value only at the first separator", () => {
     expect(parseFacet("repo:a/b")).toEqual({ dim: "repo", value: "a/b" });
     expect(parseFacet("nope:x")).toBeNull();

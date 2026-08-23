@@ -1,5 +1,5 @@
 import { useEffect, useMemo } from "react";
-import { Skeleton, cn } from "@uipath/apollo-wind";
+import { Button, Skeleton, cn } from "@uipath/apollo-wind";
 import { useUiStore } from "../../state/uiStore";
 import type { PullRequest } from "../../shared/review-types";
 import { openPrDetail } from "../../hooks/useKeyboardNav";
@@ -23,9 +23,21 @@ type Props = {
   error: Error | null;
   /** Per-view search failure from the queue response (other views may be fine). */
   viewError?: string;
+  /**
+   * Set only when a stats facet is narrowing a NON-empty view. Without it an
+   * empty table blames the view's query, which is a lie when the view matched
+   * plenty and the filter is what emptied it — and leaves no way back.
+   */
+  filteredBy?: { label: string; onClear: () => void };
 };
 
-export function QueueTable({ rows, isLoading, error, viewError }: Props) {
+export function QueueTable({
+  rows,
+  isLoading,
+  error,
+  viewError,
+  filteredBy,
+}: Props) {
   const focusedPrId = useUiStore((s) => s.focusedPrId);
   const setFocusedPr = useUiStore((s) => s.setFocusedPr);
   const setQueueRows = useUiStore((s) => s.setQueueRows);
@@ -100,9 +112,28 @@ export function QueueTable({ rows, isLoading, error, viewError }: Props) {
             ))}
           </div>
         ) : !rows || rows.length === 0 ? (
-          <Placeholder>
-            Nothing here — this view's query matched no open PRs.
-          </Placeholder>
+          filteredBy ? (
+            <Placeholder>
+              No PR in this view matches{" "}
+              <span className="font-mono text-foreground">
+                {filteredBy.label}
+              </span>
+              .
+              <div className="mt-3">
+                <Button
+                  size="xs"
+                  variant="outline"
+                  onClick={filteredBy.onClear}
+                >
+                  Clear filter
+                </Button>
+              </div>
+            </Placeholder>
+          ) : (
+            <Placeholder>
+              Nothing here — this view's query matched no open PRs.
+            </Placeholder>
+          )
         ) : (
           rows.map((pr) => (
             <QueueRow

@@ -95,6 +95,20 @@ export const FACET_DIMS = [
 export type FacetDim = (typeof FACET_DIMS)[number];
 export type Facet = { dim: FacetDim; value: string };
 
+/**
+ * The value space of each bucketed dimension. author/repo are open sets (any
+ * login, any `owner/repo`) and are absent here; the rest are closed, so a
+ * value outside them can only be a typo or a stale link and is rejected
+ * rather than silently matching nothing — an inexplicably empty queue is a
+ * worse answer than no filter at all.
+ */
+const BUCKET_VALUES: Partial<Record<FacetDim, readonly string[]>> = {
+  idle: IDLE_BUCKETS,
+  size: SIZE_BUCKETS,
+  checks: CHECK_BUCKETS,
+  review: REVIEW_BUCKETS,
+};
+
 /** `?by=author:alice`. Values never contain a colon (logins, `owner/repo`,
  * and the fixed bucket keys), so the first colon is always the separator. */
 export function parseFacet(raw: string | null | undefined): Facet | null {
@@ -104,9 +118,10 @@ export function parseFacet(raw: string | null | undefined): Facet | null {
   const dim = raw.slice(0, at);
   const value = raw.slice(at + 1);
   if (!value) return null;
-  return (FACET_DIMS as readonly string[]).includes(dim)
-    ? { dim: dim as FacetDim, value }
-    : null;
+  if (!(FACET_DIMS as readonly string[]).includes(dim)) return null;
+  const allowed = BUCKET_VALUES[dim as FacetDim];
+  if (allowed && !allowed.includes(value)) return null;
+  return { dim: dim as FacetDim, value };
 }
 
 export function formatFacet(facet: Facet | null): string | null {
