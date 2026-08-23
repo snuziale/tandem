@@ -35,6 +35,10 @@ type Props = {
   /** Paths the reviewer has marked viewed — each file header toggles its own. */
   viewedFiles: string[];
   onToggleViewed: (path: string) => void;
+  /** Folded files: header only, no code. Derived upstream from viewed + the
+   * reader's own chevron overrides, so the tree/findings can expand a file. */
+  collapsedPaths: Set<string>;
+  onToggleCollapsed: (path: string) => void;
   /** Path click in a file header: sync the tree, don't re-scroll the diff. */
   onSelectPath: (path: string) => void;
   onAddComment: (comment: Omit<PendingComment, "localId">) => void;
@@ -49,11 +53,14 @@ const EMPTY_ANNOS: DiffLineAnnotation<TandemAnno>[] = [];
 // CONTENT is a React render prop and updates through React regardless — the
 // version only has to change when the diff (headSha) or annotation POSITIONS
 // or COUNT change, so a pure hash of exactly those inputs is enough.
+// `collapsed` is part of the hash for the same reason: the library only reads
+// it off a re-rendered item.
 function versionOf(
   headSha: string,
   annotations: DiffLineAnnotation<TandemAnno>[],
+  collapsed: boolean,
 ): number {
-  let h = 0;
+  let h = collapsed ? 1 : 0;
   for (let i = 0; i < headSha.length; i++)
     h = (h * 31 + headSha.charCodeAt(i)) | 0;
   for (const a of annotations)
@@ -69,6 +76,8 @@ export function DiffPane({
   findings,
   viewedFiles,
   onToggleViewed,
+  collapsedPaths,
+  onToggleCollapsed,
   onSelectPath,
   onAddComment,
   onUpdateComment,
@@ -140,16 +149,18 @@ export function DiffPane({
         ?.files[0];
       if (!fileDiff) continue;
       const annotations = annotationsByPath.get(file.path) ?? EMPTY_ANNOS;
+      const collapsed = collapsedPaths.has(file.path);
       out.push({
         id: file.path,
         type: "diff",
         fileDiff,
         annotations,
-        version: versionOf(headSha, annotations),
+        collapsed,
+        version: versionOf(headSha, annotations, collapsed),
       });
     }
     return out;
-  }, [files, headSha, annotationsByPath]);
+  }, [files, headSha, annotationsByPath, collapsedPaths]);
 
   const options = useMemo<CodeViewReactOptions<TandemAnno>>(
     () => ({
@@ -197,9 +208,11 @@ export function DiffPane({
           <DiffFileHeader
             file={file}
             viewed={viewedPaths.has(file.path)}
+            collapsed={collapsedPaths.has(file.path)}
             hasFindings={findingPaths.has(file.path)}
             onSelectPath={() => onSelectPath(file.path)}
             onToggleViewed={() => onToggleViewed(file.path)}
+            onToggleCollapsed={() => onToggleCollapsed(file.path)}
           />
         );
       }}

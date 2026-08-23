@@ -131,18 +131,23 @@ One controlled `CodeView` hosts every file (`components/pr/DiffPane.tsx`):
   `parsePatchFiles(buildFilePatch(file))` — REST `patch` is bare hunks; `buildFilePatch`
   (`shared/gh/patch.ts`) re-adds git headers. Memoize; keep object identity stable.
 - Controlled items re-render ONLY on `version` change. Annotation CONTENT flows through React
-  (render prop); `version` is a pure hash of headSha + annotation POSITIONS (`versionOf`). Don't
-  replace it with a render-time counter — the React Compiler lint forbids ref/module mutation in
-  render (learned the hard way).
+  (render prop); `version` is a pure hash of headSha + annotation POSITIONS + the item's
+  `collapsed` flag (`versionOf`). Don't replace it with a render-time counter — the React Compiler
+  lint forbids ref/module mutation in render (learned the hard way).
 - Everything inline is a `DiffLineAnnotation<TandemAnno>`: human thread (blue rail), staged comment,
   composer, agent finding (violet rail). Side mapping LEFT→`deletions`, RIGHT→`additions`
   (`components/pr/annotations.ts`).
 - **The file header is ours** (`renderCustomHeader` → `components/pr/DiffFileHeader.tsx`): the
-  library's default header can't do the two things we need. The path is a BUTTON that syncs the
-  file tree (`onSelectPath` → `selectedPath`, no diff re-scroll), and **viewed is toggled per file,
-  there** — the pane toolbar keeps only the `viewed n/m` tally. Header slots are light DOM
-  (`slot="header-*"`), so Tailwind reaches them and content re-renders through React WITHOUT a
-  `version` bump — verified for the viewed toggle.
+  library's default header can't do what we need. The path is a BUTTON that syncs the file tree
+  (`onSelectPath` → `selectedPath`, no diff re-scroll), a chevron folds that one file, and
+  **viewed is a CHECKBOX per file, there** — the pane toolbar keeps only the `viewed n/m` tally.
+  Header slots are light DOM (`slot="header-*"`), so Tailwind reaches them and content re-renders
+  through React WITHOUT a `version` bump — verified for the viewed toggle.
+- **Folding is derived state, owned by `PrDetailView`** (`foldOverrides` + `collapsedPaths`): a
+  viewed file is folded (that's what marking viewed means), the chevron writes a per-path
+  override, and toggling viewed DROPS that override so the checkbox folds and unfolds again.
+  Selecting a file in the tree or focusing a finding force-expands — a `scrollTo` into a folded
+  file lands on its header.
 - The CodeView container MUST be the overflow parent (`overflow-y-auto` + bounded height) or
   nothing scrolls and `scrollTo` no-ops silently.
 - `scrollTo` against virtualized estimates lands short — scroll twice (immediately + ~350ms).

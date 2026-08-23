@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   Button,
@@ -9,7 +9,6 @@ import {
   ToggleGroup,
   ToggleGroupItem,
 } from "@uipath/apollo-wind";
-import { ExternalLink } from "lucide-react";
 import { startRun } from "../../api/runs";
 import {
   acceptFinding,
@@ -26,15 +25,21 @@ import { useSettings } from "../../hooks/useSettings";
 import { hasOpenDialog, isTypingTarget } from "../../keyboard/target";
 import { navigateToQueue } from "../../routes";
 import type { Finding } from "../../shared/agent-types";
-import type { PrId, ReviewVerdict } from "../../shared/review-types";
+import type {
+  PrId,
+  PullRequest,
+  ReviewVerdict,
+} from "../../shared/review-types";
 import { useUiStore } from "../../state/uiStore";
 import { AgentPane } from "../agent/AgentPane";
 import { AppHeader } from "../layout/AppHeader";
 import { DescriptionCollapse } from "./DescriptionCollapse";
 import { DiffPane, type DiffPaneHandle } from "./DiffPane";
 import { FileTree } from "./FileTree";
-import { PrHeader } from "./PrHeader";
+import { PrBreadcrumb, PrHeader } from "./PrHeader";
 import { ReviewTray } from "./ReviewTray";
+
+const NO_FILES: string[] = [];
 
 export function PrDetailView({ prId }: { prId: PrId }) {
   const queryClient = useQueryClient();
@@ -61,6 +66,47 @@ export function PrDetailView({ prId }: { prId: PrId }) {
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const files = filesQuery.data;
 
+  // Fold state is DERIVED: a viewed file is folded, because that's the point
+  // of marking it viewed. The chevron writes an override for that one path;
+  // toggling viewed drops the override so the default takes over again.
+  const [foldOverrides, setFoldOverrides] = useState<Record<string, boolean>>(
+    {},
+  );
+  // Stable identity when there's no draft yet — it feeds a memo dep list.
+  const viewedFiles = review?.viewedFiles ?? NO_FILES;
+  const collapsedPaths = useMemo(() => {
+    const viewed = new Set(viewedFiles);
+    const out = new Set<string>();
+    for (const path of new Set([...viewed, ...Object.keys(foldOverrides)])) {
+      if (foldOverrides[path] ?? viewed.has(path)) out.add(path);
+    }
+    return out;
+  }, [viewedFiles, foldOverrides]);
+
+  const toggleCollapsed = useCallback(
+    (path: string) =>
+      setFoldOverrides((prev) => ({
+        ...prev,
+        [path]: !(prev[path] ?? collapsedPaths.has(path)),
+      })),
+    [collapsedPaths],
+  );
+  // Marking viewed re-derives the fold, so the checkbox folds and unfolds.
+  const toggleViewedAndFold = useCallback(
+    (path: string) => {
+      setFoldOverrides((prev) => {
+        const next = { ...prev };
+        delete next[path];
+        return next;
+      });
+      toggleViewed(path);
+    },
+    [toggleViewed],
+  );
+  const expandPath = useCallback((path: string) => {
+    setFoldOverrides((prev) => ({ ...prev, [path]: false }));
+  }, []);
+
   const triageFindings = (run?.findings ?? []).filter(
     (f) => f.state === "proposed" || f.state === "edited",
   );
@@ -79,6 +125,7 @@ export function PrDetailView({ prId }: { prId: PrId }) {
 
   const selectFile = (path: string) => {
     setSelectedPath(path);
+    expandPath(path);
     // Item offsets are virtualized estimates until neighbours have been
     // measured — the first scroll gets close, the second (post-measurement)
     // lands exactly. Same trick @pierre's own viewer uses. The file tree
@@ -91,6 +138,8 @@ export function PrDetailView({ prId }: { prId: PrId }) {
   const focusFinding = (finding: Finding) => {
     useUiStore.getState().setFocusedFinding(finding.id);
     setSelectedPath(finding.path);
+    // Scrolling to a line inside a folded file would land on its header.
+    expandPath(finding.path);
     const target = {
       type: "line",
       id: finding.path,
@@ -233,7 +282,7 @@ export function PrDetailView({ prId }: { prId: PrId }) {
         case "v":
           if (state.selectedPath) {
             e.preventDefault();
-            toggleViewed(state.selectedPath);
+            toggleViewedAndFold(state.selectedPath);
           }
           return;
         case "o":
@@ -286,7 +335,7 @@ export function PrDetailView({ prId }: { prId: PrId }) {
   const { pr, threads } = detail.data;
 
   return (
-    <Shell>
+    <Shell pr={pr}>
       <PrHeader pr={pr} />
       <DescriptionCollapse body={pr.bodyMarkdown} />
       <div className="flex-1 min-h-0 flex">
@@ -321,7 +370,7 @@ export function PrDetailView({ prId }: { prId: PrId }) {
             >
               <FileTree
                 files={files}
-                viewedFiles={review?.viewedFiles ?? []}
+                viewedFiles={viewedFiles}
                 selectedPath={selectedPath}
                 onSelect={selectFile}
                 agentPaths={agentPaths}
@@ -331,14 +380,13 @@ export function PrDetailView({ prId }: { prId: PrId }) {
             <ResizablePanel id="diff" defaultSize="62" minSize="30">
               <div className="h-full min-w-0 flex flex-col">
                 <div className="flex items-center gap-2 px-3 h-9 border-b border-border shrink-0">
-                  <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-mono">
+                  {/* No path here: every file header carries its own, and this
+                      one only ever echoed the selection. */}
+                  <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-mono flex-1">
                     diff
                   </span>
-                  <span className="text-xs text-muted-foreground font-mono truncate flex-1">
-                    {selectedPath ?? ""}
-                  </span>
                   <span className="text-[11px] text-muted-foreground font-mono">
-                    viewed {review?.viewedFiles.length ?? 0}/{files.length}
+                    viewed {viewedFiles.length}/{files.length}
                   </span>
                   <ToggleGroup
                     type="single"
@@ -364,15 +412,6 @@ export function PrDetailView({ prId }: { prId: PrId }) {
                       split
                     </ToggleGroupItem>
                   </ToggleGroup>
-                  <Button
-                    size="2xs"
-                    icon
-                    variant="ghost"
-                    aria-label="Open on GitHub"
-                    onClick={() => openPrExternal(pr.url)}
-                  >
-                    <ExternalLink />
-                  </Button>
                 </div>
                 <DiffPane
                   headSha={pr.headSha}
@@ -380,8 +419,10 @@ export function PrDetailView({ prId }: { prId: PrId }) {
                   threads={threads}
                   pendingComments={review?.comments ?? []}
                   findings={triageFindings}
-                  viewedFiles={review?.viewedFiles ?? []}
-                  onToggleViewed={toggleViewed}
+                  viewedFiles={viewedFiles}
+                  onToggleViewed={toggleViewedAndFold}
+                  collapsedPaths={collapsedPaths}
+                  onToggleCollapsed={toggleCollapsed}
                   // Path click in a file header reveals it in the tree; the
                   // diff is already at that file, so it must not re-scroll.
                   onSelectPath={setSelectedPath}
@@ -425,10 +466,19 @@ export function PrDetailView({ prId }: { prId: PrId }) {
   );
 }
 
-function Shell({ children }: { children: React.ReactNode }) {
+function Shell({
+  pr,
+  children,
+}: {
+  pr?: PullRequest;
+  children: React.ReactNode;
+}) {
   return (
     <div className="h-dvh flex flex-col bg-background text-foreground">
-      <AppHeader />
+      {/* The breadcrumb is the detail screen's middle zone in the ONE header. */}
+      <AppHeader>
+        <PrBreadcrumb pr={pr} />
+      </AppHeader>
       {children}
     </div>
   );

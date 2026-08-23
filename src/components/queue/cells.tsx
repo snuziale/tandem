@@ -43,8 +43,15 @@ export function ChecksCell({ pr }: { pr: PullRequest }) {
   );
 }
 
-export function ReviewCell({ pr }: { pr: PullRequest }) {
-  if (pr.isDraft) {
+/** `showDraft={false}` where a state pill already says Draft (the PR header). */
+export function ReviewCell({
+  pr,
+  showDraft = true,
+}: {
+  pr: PullRequest;
+  showDraft?: boolean;
+}) {
+  if (pr.isDraft && showDraft) {
     return (
       <Badge variant="outline" className="border-dashed text-muted-foreground">
         Draft

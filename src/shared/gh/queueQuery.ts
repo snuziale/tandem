@@ -14,6 +14,7 @@ fragment PrFields on PullRequest {
   headRefName
   baseRefName
   isDraft
+  state
   additions
   deletions
   changedFiles
@@ -22,6 +23,7 @@ fragment PrFields on PullRequest {
   updatedAt
   reviewThreads(first: 1) { totalCount }
   commits(last: 1) {
+    totalCount
     nodes {
       commit {
         oid

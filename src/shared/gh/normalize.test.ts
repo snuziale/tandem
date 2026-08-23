@@ -25,8 +25,10 @@ function prNode(overrides: Partial<GqlPrNode> = {}): GqlPrNode {
     reviewDecision: "REVIEW_REQUIRED",
     createdAt: "2026-08-19T08:00:00Z",
     updatedAt: "2026-08-21T10:00:00Z",
+    state: "OPEN",
     reviewThreads: { totalCount: 1 },
     commits: {
+      totalCount: 5,
       nodes: [
         {
           commit: {
@@ -142,6 +144,20 @@ describe("normalizePr", () => {
       "pending",
     ]);
     expect(pr!.bodyMarkdown).toBe("");
+    expect(pr!.state).toBe("OPEN");
+    expect(pr!.commitCount).toBe(5);
+  });
+
+  it("falls back to OPEN and the fetched commit count when GitHub omits them", () => {
+    const node = prNode({ state: undefined });
+    node.commits.totalCount = undefined;
+    const pr = normalizePr(node)!;
+    expect(pr.state).toBe("OPEN");
+    expect(pr.commitCount).toBe(1);
+  });
+
+  it("carries a merged state through", () => {
+    expect(normalizePr(prNode({ state: "MERGED" }))!.state).toBe("MERGED");
   });
 
   it("drops non-PR search hits and defaults a deleted author to ghost", () => {

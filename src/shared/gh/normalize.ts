@@ -98,6 +98,8 @@ export function normalizePr(node: GqlPrNode | null): PullRequest | null {
     baseRef: node.baseRefName,
     headSha: head?.oid ?? "",
     isDraft: node.isDraft,
+    state: node.state ?? "OPEN",
+    commitCount: node.commits.totalCount ?? node.commits.nodes.length,
     additions: node.additions,
     deletions: node.deletions,
     changedFiles: node.changedFiles,

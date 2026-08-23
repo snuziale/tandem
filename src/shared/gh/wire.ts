@@ -41,6 +41,8 @@ export type GqlPrNode = {
   headRefName: string;
   baseRefName: string;
   isDraft: boolean;
+  /** PullRequestState. Older cached responses may lack it — treated as OPEN. */
+  state?: "OPEN" | "CLOSED" | "MERGED";
   additions: number;
   deletions: number;
   changedFiles: number;
@@ -48,7 +50,7 @@ export type GqlPrNode = {
   createdAt: string;
   updatedAt: string;
   reviewThreads: { totalCount: number; nodes?: GqlReviewThread[] };
-  commits: { nodes: GqlCommitWithChecks[] };
+  commits: { totalCount?: number; nodes: GqlCommitWithChecks[] };
 };
 
 export type GqlReviewThread = {

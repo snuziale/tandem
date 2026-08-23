@@ -7,6 +7,8 @@ export type PrId = string;
 
 export type ReviewDecision =
   "APPROVED" | "CHANGES_REQUESTED" | "REVIEW_REQUIRED" | null;
+/** GitHub's PullRequestState, verbatim. */
+export type PrState = "OPEN" | "CLOSED" | "MERGED";
 export type CheckRollup = "SUCCESS" | "FAILURE" | "PENDING" | "NONE";
 /** Diff side, GitHub's naming: LEFT = old file (deletions), RIGHT = new file (additions). */
 export type DiffSide = "LEFT" | "RIGHT";
@@ -30,6 +32,9 @@ export type PullRequest = {
   baseRef: string;
   headSha: string;
   isDraft: boolean;
+  state: PrState;
+  /** Commits on the head branch, as GitHub counts them for the merge line. */
+  commitCount: number;
   additions: number;
   deletions: number;
   changedFiles: number;

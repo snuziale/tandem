@@ -1,5 +1,5 @@
-import { Check, Eye } from "lucide-react";
-import { cn } from "@uipath/apollo-wind";
+import { ChevronDown, ChevronRight } from "lucide-react";
+import { Checkbox, cn } from "@uipath/apollo-wind";
 import type { FileChange } from "../../shared/review-types";
 
 const STATUS_LABEL: Partial<Record<FileChange["status"], string>> = {
@@ -12,39 +12,58 @@ const STATUS_LABEL: Partial<Record<FileChange["status"], string>> = {
 type Props = {
   file: FileChange;
   viewed: boolean;
+  collapsed: boolean;
   /** The agent proposed something in this file — same violet as everywhere. */
   hasFindings: boolean;
   /** Clicking the path selects this file in the tree (no diff re-scroll). */
   onSelectPath: () => void;
   onToggleViewed: () => void;
+  onToggleCollapsed: () => void;
 };
 
 /**
  * Tandem's own per-file header, projected into @pierre/diffs' sticky header
- * slot (`renderCustomHeader`). It owns the two things the library's default
- * header can't do for us: the path is a button that syncs the file tree, and
- * "viewed" is toggled HERE — per file, where the file is — rather than from a
- * single control in the pane toolbar acting on whatever was selected.
+ * slot (`renderCustomHeader`). It owns what the library's default header
+ * can't do for us: the path is a button that syncs the file tree, the chevron
+ * folds this one file, and "viewed" is a checkbox HERE — per file, where the
+ * file is — rather than one pane-toolbar control acting on the selection.
  */
 export function DiffFileHeader({
   file,
   viewed,
+  collapsed,
   hasFindings,
   onSelectPath,
   onToggleViewed,
+  onToggleCollapsed,
 }: Props) {
   const slash = file.path.lastIndexOf("/");
   const dir = slash === -1 ? "" : file.path.slice(0, slash + 1);
   const name = slash === -1 ? file.path : file.path.slice(slash + 1);
   const status = STATUS_LABEL[file.status];
+  const viewedId = `viewed:${file.path}`;
 
   return (
     <div
       className={cn(
-        "flex items-center gap-2 px-3 h-9 min-w-0 font-mono text-xs bg-background",
+        "flex items-center gap-2 px-2 h-9 min-w-0 font-mono text-xs bg-background",
         viewed && "opacity-60",
       )}
     >
+      <button
+        type="button"
+        onClick={onToggleCollapsed}
+        aria-expanded={!collapsed}
+        aria-label={collapsed ? "Expand this file" : "Collapse this file"}
+        title={collapsed ? "Expand this file" : "Collapse this file"}
+        className="flex items-center shrink-0 rounded-sm p-0.5 text-muted-foreground hover:text-foreground hover:bg-accent/60 cursor-pointer"
+      >
+        {collapsed ? (
+          <ChevronRight className="w-3.5 h-3.5" />
+        ) : (
+          <ChevronDown className="w-3.5 h-3.5" />
+        )}
+      </button>
       {hasFindings ? (
         <span
           aria-hidden
@@ -73,20 +92,23 @@ export function DiffFileHeader({
         <span className="text-red-400">−{file.deletions}</span>
       </span>
       <span className="flex-1" />
-      <button
-        type="button"
-        onClick={onToggleViewed}
-        aria-pressed={viewed}
-        className={cn(
-          "flex items-center gap-1 px-1.5 h-6 rounded-sm shrink-0 cursor-pointer",
+      <div className="flex items-center gap-1.5 shrink-0 pr-1">
+        <Checkbox
+          id={viewedId}
+          checked={viewed}
+          onCheckedChange={onToggleViewed}
+          className="w-3.5 h-3.5"
+        />
+        <label
+          htmlFor={viewedId}
+          className={cn(
+            "cursor-pointer select-none",
+            viewed ? "text-foreground" : "text-muted-foreground",
+          )}
+        >
           viewed
-            ? "text-foreground bg-accent"
-            : "text-muted-foreground hover:text-foreground hover:bg-accent/60",
-        )}
-      >
-        {viewed ? <Check className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
-        {viewed ? "viewed" : "mark viewed"}
-      </button>
+        </label>
+      </div>
     </div>
   );
 }

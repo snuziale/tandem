@@ -16,6 +16,7 @@ query TandemPrDetail($owner: String!, $name: String!, $number: Int!) {
       headRefName
       baseRefName
       isDraft
+      state
       additions
       deletions
       changedFiles
@@ -43,6 +44,7 @@ query TandemPrDetail($owner: String!, $name: String!, $number: Int!) {
         }
       }
       commits(last: 1) {
+        totalCount
         nodes {
           commit {
             oid
