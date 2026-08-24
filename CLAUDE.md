@@ -200,10 +200,9 @@ ref (`stateRef`) and a `setGitStatus(freshArray)` call after viewed/agent change
 visible rows. Git-status badges come from the PR's change types; decorations carry `+a −d`,
 viewed ✓, and the violet agent dot. External selection follows the `selectedPath` prop
 (select + scrollToPath) — and selection is SINGLE: `item.select()` is additive, so both the
-external-selection effect and `onSelectionChange` deselect everything else. One file is open in the
-diff, so more than one highlighted row is a lie. The tree owns its keyboard (arrows, a-z
-type-ahead, search) — the detail key handler bails when the event target is inside
-`[data-tandem-filetree]`.
+external-selection effect and `onSelectionChange` deselect everything else. One file is open in
+the diff, so more than one highlighted row is a lie. The tree owns its keyboard (arrows, a-z type-ahead, search) — the detail
+key handler bails when the event target is inside `[data-tandem-filetree]`.
 
 Its shadow-DOM palette is OUR tokens, set as `--trees-theme-*` on the host (custom properties
 inherit through the shadow boundary). Do NOT go back to `themeToTreeStyles(shikiTheme)`: it paints

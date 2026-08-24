@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { canTransitionRun, type AgentRunStatus } from "../../shared/agent-types";
+import {
+  canTransitionRun,
+  type AgentRunStatus,
+} from "../../shared/agent-types";
 import { INTERRUPTED_AFTER_MS, isInterrupted } from "./runsIndex";
 
 const NOW = Date.parse("2026-08-22T12:00:00.000Z");
