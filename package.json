@@ -22,9 +22,9 @@
     "@pierre/trees": "1.0.0-beta.6",
     "@tailwindcss/vite": "^4.3.3",
     "@tanstack/react-query": "^5.101.4",
-    "@uipath/apollo-wind": "^2.32.2",
+    "@uipath/apollo-wind": "^2.36.0",
     "date-fns": "^4.4.0",
-    "lucide-react": "^1.30.0",
+    "lucide-react": "^1.33.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "react-markdown": "^10.1.0",
@@ -33,8 +33,8 @@
     "remark-gfm": "^4.0.1",
     "tailwindcss": "^4.3.3",
     "webview-bun": "^2.4.0",
-    "zod": "^4.1.0",
-    "zustand": "^5.0.14"
+    "zod": "^4.4.3",
+    "zustand": "^5.0.15"
   },
   "devDependencies": {
     "@babel/core": "^8.0.1",
@@ -45,18 +45,18 @@
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.4",
     "@typescript/native": "npm:typescript@^7.0.2",
-    "@vitejs/plugin-react": "^6.0.5",
+    "@vitejs/plugin-react": "^6.1.0",
     "babel-plugin-react-compiler": "^1.0.0",
     "bun-types": "~1.3.14",
-    "concurrently": "^9.1.2",
-    "eslint": "^10.8.1",
+    "concurrently": "^9.2.4",
+    "eslint": "^10.9.0",
     "eslint-plugin-react-hooks": "^7.1.1",
-    "eslint-plugin-react-refresh": "^0.5.3",
-    "globals": "^17.9.0",
+    "eslint-plugin-react-refresh": "^0.5.4",
+    "globals": "^17.11.0",
     "prettier": "^3.9.6",
     "typescript": "npm:@typescript/typescript6@~6.0.2",
-    "typescript-eslint": "^8.66.0",
-    "vite": "^8.2.1",
-    "vitest": "^4.1.10"
+    "typescript-eslint": "^8.67.0",
+    "vite": "^8.2.2",
+    "vitest": "^4.1.11"
   }
 }
