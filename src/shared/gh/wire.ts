@@ -56,11 +56,7 @@ export type GqlPrNode = {
 };
 
 export type GqlReviewState =
-  | "APPROVED"
-  | "CHANGES_REQUESTED"
-  | "COMMENTED"
-  | "DISMISSED"
-  | "PENDING";
+  "APPROVED" | "CHANGES_REQUESTED" | "COMMENTED" | "DISMISSED" | "PENDING";
 
 export type GqlReviewThread = {
   id: string;
