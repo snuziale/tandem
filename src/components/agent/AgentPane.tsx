@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Button,
@@ -6,19 +6,20 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-  Spinner,
   cn,
   toast,
 } from "@uipath/apollo-wind";
-import { ChevronDown, MessageSquare } from "lucide-react";
+import { ChevronDown, ChevronRight, MessageSquare } from "lucide-react";
+import { AgentSpinner } from "./AgentSpinner";
 import { startRun } from "../../api/runs";
 import {
   SKIP_REASON_LABEL,
   type AgentRun,
   type Finding,
-  type RunEvent,
+  type RunStep,
   type Severity,
 } from "../../shared/agent-types";
+import type { RunProgress } from "../../hooks/useRunStream";
 import type { TandemSettings } from "../../shared/settings-types";
 import { useUiStore } from "../../state/uiStore";
 import { Markdown } from "../common/Markdown";
@@ -30,7 +31,7 @@ type Props = {
   /** The sha the pane is showing — chat is scoped to it, run or no run. */
   headSha: string;
   run: AgentRun | undefined;
-  progress: RunEvent | null;
+  progress: RunProgress | null;
   settings: TandemSettings | undefined;
   onSelectFinding: (finding: Finding) => void;
 };
@@ -273,58 +274,61 @@ function StatusCard({
   starting,
 }: {
   run: AgentRun | undefined;
-  progress: RunEvent | null;
+  progress: RunProgress | null;
   onStart: () => void;
   starting: boolean;
 }) {
-  if (!run || run.status === "stale" || run.status === "failed") {
+  if (!run) {
     return (
-      <div className="px-3 py-2 space-y-1.5">
-        {run?.status === "stale" ? (
-          <div className="text-xs text-yellow-400 font-mono">
-            new commits — findings below are stale
-          </div>
-        ) : null}
-        {run?.status === "failed" ? (
-          <div className="text-xs text-destructive font-mono break-words">
-            run failed: {run.error}
-          </div>
-        ) : null}
+      <div className="px-3 py-2">
         <Button
           size="xs"
           variant="outline"
           onClick={onStart}
           disabled={starting}
         >
-          {starting ? "Starting…" : run ? "Rerun agent" : "Run agent"}
+          {starting ? "Starting…" : "Run agent"}
         </Button>
       </div>
     );
   }
 
-  if (isActive(run)) {
-    const label =
-      progress?.type === "pass"
-        ? progress.label
-        : progress?.type === "status"
-          ? (progress.detail ?? progress.status)
-          : run.status;
+  if (isActive(run)) return <ActiveCard run={run} progress={progress} />;
+
+  if (run.status === "stale" || run.status === "failed") {
     return (
-      <div
-        className="px-3 py-2 flex items-center gap-2 text-sm"
-        style={{ color: "var(--tandem-agent)" }}
-      >
-        <Spinner className="size-3.5" /> Analyzing…{" "}
-        <span className="text-muted-foreground text-xs font-mono">{label}</span>
+      <div className="px-3 py-2 space-y-1.5">
+        {run.status === "stale" ? (
+          <div className="text-xs text-yellow-400 font-mono">
+            new commits — findings below are stale
+          </div>
+        ) : (
+          <div className="text-xs text-destructive font-mono break-words">
+            run failed: {run.error}
+          </div>
+        )}
+        <Button
+          size="xs"
+          variant="outline"
+          onClick={onStart}
+          disabled={starting}
+        >
+          {starting ? "Starting…" : "Rerun agent"}
+        </Button>
+        {/* Open by default when it failed: which step died is the whole story. */}
+        <RunLog run={run} defaultOpen={run.status === "failed"} />
       </div>
     );
   }
 
   if (run.status === "skipped") {
     return (
-      <div className="px-3 py-2 text-sm text-muted-foreground">
-        Skipped ·{" "}
-        {run.skipReason ? SKIP_REASON_LABEL[run.skipReason] : "not analyzed"}
+      <div className="px-3 py-2 space-y-1.5">
+        <div className="text-sm text-muted-foreground">
+          Skipped ·{" "}
+          {run.skipReason ? SKIP_REASON_LABEL[run.skipReason] : "not analyzed"}
+        </div>
+        <RunLog run={run} />
       </div>
     );
   }
@@ -332,12 +336,8 @@ function StatusCard({
   // ready
   const duration =
     run.startedAt && run.finishedAt
-      ? `${Math.round((+new Date(run.finishedAt) - +new Date(run.startedAt)) / 1000)}s`
+      ? formatDuration(+new Date(run.finishedAt) - +new Date(run.startedAt))
       : null;
-  const cost =
-    run.costUsd > 0
-      ? `$${run.costUsd.toFixed(2)}`
-      : `${Math.round(run.tokensUsed / 1000)}k tok`;
   return (
     <div className="px-3 py-2 space-y-1">
       <div className="flex items-center gap-2 text-xs font-mono text-muted-foreground">
@@ -348,7 +348,7 @@ function StatusCard({
         <span className="flex-1" />
         <span>
           {run.headSha.slice(0, 7)}
-          {duration ? ` · ${duration}` : ""} · {cost}
+          {duration ? ` · ${duration}` : ""} · {formatSpend(run)}
         </span>
       </div>
       <div className="flex items-center gap-2 text-[10px] font-mono text-muted-foreground">
@@ -357,8 +357,210 @@ function StatusCard({
           <span className="text-emerald-400">✓ auto-approved</span>
         ) : null}
       </div>
+      <RunLog run={run} />
     </div>
   );
+}
+
+/**
+ * A run in flight. The plan and the step timeline are the feedback: the passes
+ * emit one strict-JSON blob each, so there is no prose to stream — but what the
+ * agent is looking for, and which files it is reading right now, are knowable.
+ */
+function ActiveCard({
+  run,
+  progress,
+}: {
+  run: AgentRun;
+  progress: RunProgress | null;
+}) {
+  // The stream is authoritative while it is connected; the persisted copy
+  // covers the gap before the first frame (and a reload mid-run).
+  const steps = progress?.steps.length ? progress.steps : (run.steps ?? []);
+  const plan = progress?.plan ?? run.plan ?? null;
+  const tokens = progress?.tokens ?? run.tokensUsed;
+  const costUsd = progress?.costUsd ?? run.costUsd;
+  const now = useNow(true);
+  const elapsed = run.startedAt
+    ? formatDuration(now - +new Date(run.startedAt))
+    : null;
+
+  return (
+    <div className="px-3 py-2 space-y-2">
+      <div className="flex items-center gap-2 text-sm">
+        <span
+          className="flex items-center gap-2"
+          style={{ color: "var(--tandem-agent)" }}
+        >
+          <AgentSpinner className="size-3" /> Analyzing…
+        </span>
+        <span className="flex-1" />
+        <span className="text-[10px] font-mono text-muted-foreground tabular-nums">
+          {elapsed ? `${elapsed} · ` : ""}
+          {formatSpend({ costUsd, tokensUsed: tokens })}
+        </span>
+      </div>
+
+      <PlanBlock plan={plan} degraded={progress?.planDegraded ?? false} />
+      <StepList steps={steps} />
+    </div>
+  );
+}
+
+/** The collapsed post-mortem: what the run planned, and how each stage went. */
+function RunLog({
+  run,
+  defaultOpen = false,
+}: {
+  run: AgentRun;
+  defaultOpen?: boolean;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+  const steps = run.steps ?? [];
+  if (steps.length === 0 && !run.plan) return null;
+  return (
+    <div className="pt-0.5">
+      <button
+        type="button"
+        className="flex items-center gap-1 text-[10px] uppercase tracking-wider font-mono text-muted-foreground hover:text-foreground"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+      >
+        {open ? (
+          <ChevronDown className="size-3" />
+        ) : (
+          <ChevronRight className="size-3" />
+        )}
+        run log · {steps.length} steps
+      </button>
+      {open ? (
+        <div className="mt-1 space-y-2">
+          <PlanBlock plan={run.plan ?? null} degraded={false} />
+          <StepList steps={steps} />
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function PlanBlock({
+  plan,
+  degraded,
+}: {
+  plan: string[] | null;
+  degraded: boolean;
+}) {
+  if (!plan || plan.length === 0) return null;
+  return (
+    <div>
+      <div className="text-[10px] uppercase tracking-wider font-mono text-muted-foreground">
+        looking for
+        {degraded ? (
+          <span className="text-yellow-400 normal-case tracking-normal">
+            {" "}
+            · generic plan (pass 1 failed)
+          </span>
+        ) : null}
+      </div>
+      <ul className="mt-0.5 space-y-0.5">
+        {plan.map((check) => (
+          <li
+            key={check}
+            className="text-[11px] text-muted-foreground leading-snug flex gap-1.5"
+          >
+            <span className="opacity-50">·</span>
+            <span>{check}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function StepList({ steps }: { steps: RunStep[] }) {
+  if (steps.length === 0) return null;
+  return (
+    <ul className="space-y-1">
+      {steps.map((step) => (
+        <StepRow key={step.id} step={step} />
+      ))}
+    </ul>
+  );
+}
+
+function StepRow({ step }: { step: RunStep }) {
+  const running = step.status === "running";
+  return (
+    <li className="text-[11px] font-mono leading-5">
+      <div className="flex items-center gap-1.5">
+        {/* Fixed 14px gutter, centred: the three markers are different glyphs
+            and one of them spins, so labels must not shift between rows. */}
+        <span className="flex-none size-3.5 flex items-center justify-center">
+          {running ? (
+            <AgentSpinner />
+          ) : step.status === "done" ? (
+            <span className="text-emerald-400">✓</span>
+          ) : (
+            <span className="text-destructive">✗</span>
+          )}
+        </span>
+        <span
+          className={cn(
+            "min-w-0 truncate",
+            !running && "text-muted-foreground",
+          )}
+        >
+          {step.label}
+        </span>
+        <span className="flex-1" />
+        {step.detail ? (
+          <span
+            className={cn(
+              "flex-none pl-2 text-[10px] tabular-nums",
+              step.status === "failed"
+                ? "text-destructive"
+                : "text-muted-foreground/80",
+            )}
+          >
+            {step.detail}
+          </span>
+        ) : null}
+      </div>
+      {step.paths ? (
+        // What it is reading RIGHT NOW — the difference between "something is
+        // happening" and "it is reading my code". Indent = gutter + gap.
+        <div
+          className="pl-5 text-[10px] text-muted-foreground/70 truncate"
+          title={step.paths.join("\n")}
+        >
+          {step.paths.map((path) => path.split("/").pop()).join(" · ")}
+        </div>
+      ) : null}
+    </li>
+  );
+}
+
+/** Ticking clock for the live elapsed readout; frozen when nothing is running. */
+function useNow(active: boolean): number {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!active) return;
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [active]);
+  return now;
+}
+
+function formatDuration(ms: number): string {
+  const total = Math.max(0, Math.round(ms / 1000));
+  if (total < 60) return `${total}s`;
+  return `${Math.floor(total / 60)}m ${String(total % 60).padStart(2, "0")}s`;
+}
+
+/** Subscription-billed CLI runs report $0 — fall back to token counts. */
+function formatSpend(run: Pick<AgentRun, "costUsd" | "tokensUsed">): string {
+  if (run.costUsd > 0) return `$${run.costUsd.toFixed(2)}`;
+  return `${Math.round(run.tokensUsed / 1000)}k tok`;
 }
 
 function FindingGroup({

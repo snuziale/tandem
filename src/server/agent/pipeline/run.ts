@@ -3,7 +3,13 @@
 // claude CLI harness, findings validated and post-filtered before anything is
 // stored. Runs are detached from HTTP (live.ts); results land in runsIndex.
 import { randomUUID } from "node:crypto";
-import type { AgentRun, Finding, RunEvent } from "../../../shared/agent-types";
+import type {
+  AgentRun,
+  Finding,
+  RunEvent,
+  RunStep,
+  RunStepStatus,
+} from "../../../shared/agent-types";
 import {
   Pass1PlanSchema,
   Pass2OutputSchema,
@@ -125,6 +131,15 @@ async function driveRun(
     await upsertRun(run);
   };
 
+  // Passes that completed cost money whether or not the run did — the daily
+  // ceiling must see it either way, and exactly once.
+  let spendSettled = false;
+  const settleSpend = async (usd: number) => {
+    if (spendSettled) return;
+    spendSettled = true;
+    await addSpend(usd);
+  };
+
   try {
     const result = await executePipeline(
       cfg,
@@ -137,7 +152,7 @@ async function driveRun(
       emit,
     );
     await persist(result);
-    await addSpend(result.costUsd ?? 0);
+    await settleSpend(result.costUsd ?? 0);
     if (run.status === "ready")
       await maybeAutoApprove(cfg, settings, run, detail);
     emit({ type: "done", run });
@@ -147,11 +162,21 @@ async function driveRun(
       : e instanceof Error
         ? e.message
         : String(e);
+    // Whatever was in flight died with the run: say so, rather than leaving a
+    // step spinning forever in the timeline.
+    for (const step of run.steps ?? []) {
+      if (step.status !== "running") continue;
+      step.status = "failed";
+      step.detail = message;
+      step.finishedAt = new Date().toISOString();
+      emit({ type: "step", step });
+    }
     await persist({
       status: "failed",
       error: message,
       finishedAt: new Date().toISOString(),
     });
+    await settleSpend(run.costUsd ?? 0);
     emit({ type: "error", message });
     emit({ type: "done", run });
   } finally {
@@ -172,18 +197,28 @@ async function executePipeline(
   const { pr, threads } = detail;
   const now = () => new Date().toISOString();
 
+  const begin = stepRecorder(run, emit);
+
   emit({ type: "status", status: "fetching", detail: "reading changed files" });
   run.status = "fetching";
   await upsertRun(run);
 
+  const fetchStep = await begin({
+    id: "fetch",
+    label: "reading changed files",
+  });
   const files = await fetchPrFiles(cfg, ref, signal);
   const analyzable = analyzableFiles(files);
+  const diffLines = countDiffLines(files);
+  await fetchStep.done(
+    `${analyzable.length}/${files.length} files · ${diffLines} diff lines`,
+  );
 
   const skip = skipDecision(
     {
       isDraft: pr.isDraft,
       changedFiles: pr.changedFiles,
-      diffLines: countDiffLines(files),
+      diffLines,
       allGenerated: analyzable.length === 0,
       agentEnabled: agentEnabledFor(settings, `${ref.owner}/${ref.repo}`),
       spentTodayUsd: await spendToday(),
@@ -207,11 +242,15 @@ async function executePipeline(
   const track = (r: Extract<ClaudePassResult, { ok: true }>) => {
     tokens += r.tokens;
     cost += r.costUsd;
+    // Onto the run too — the next step's write persists it, so a reload
+    // mid-run (and a failed run) reports what was actually spent.
+    run.tokensUsed = tokens;
+    run.costUsd = cost;
     emit({ type: "usage", tokens, costUsd: cost });
   };
 
   // --- Pass 1: orient (cheap model) ---
-  emit({ type: "pass", pass: 1, label: "orienting" });
+  const orientStep = await begin({ id: "orient", pass: 1, label: "orienting" });
   const planResult = await validatedPass(
     buildOrientPrompt({
       prompts: agent.prompts,
@@ -237,6 +276,12 @@ async function executePipeline(
           "test coverage of new behavior",
         ],
       };
+  // The plan is the most legible thing the run produces — what it set out to
+  // look for. Persist it and say so, degraded or not.
+  run.plan = plan.checks;
+  emit({ type: "plan", checks: plan.checks, degraded: !planResult.ok });
+  if (planResult.ok) await orientStep.done(`${plan.checks.length} checks`);
+  else await orientStep.failed("model output unusable — generic plan");
 
   // --- Pass 2: analyze, per cluster (respects model-authored clusters when sane) ---
   const clusters =
@@ -244,10 +289,11 @@ async function executePipeline(
   const candidates: FindingJson[] = [];
   for (let i = 0; i < clusters.length; i++) {
     if (signal.aborted) throw new Error("cancelled");
-    emit({
-      type: "pass",
+    const clusterStep = await begin({
+      id: `analyze:${i}`,
       pass: 2,
       label: `analyzing ${i + 1}/${clusters.length}`,
+      paths: clusters[i].map((f) => f.path),
     });
     const passResult = await validatedPass(
       buildAnalyzePrompt({
@@ -262,11 +308,15 @@ async function executePipeline(
       signal,
       track,
     );
-    if (passResult.ok) candidates.push(...passResult.value.findings);
-    else
+    if (passResult.ok) {
+      candidates.push(...passResult.value.findings);
+      await clusterStep.done(`${passResult.value.findings.length} candidates`);
+    } else {
       console.error(
         `[pipeline] pass 2 cluster ${i} unusable after repair: ${passResult.errors}`,
       );
+      await clusterStep.failed("output unusable after repair");
+    }
   }
 
   const lineIndex = new Map<string, DiffLineIndex>(
@@ -275,7 +325,11 @@ async function executePipeline(
   const sanitized = sanitizeFindings(candidates, lineIndex, threads);
 
   // --- Pass 3: reconcile — the pass that keeps output signal-dense. Do not skip. ---
-  emit({ type: "pass", pass: 3, label: "reconciling" });
+  const reconcileStep = await begin({
+    id: "reconcile",
+    pass: 3,
+    label: "reconciling",
+  });
   const reconcileResult = await validatedPass(
     buildReconcilePrompt({
       prompts: agent.prompts,
@@ -292,6 +346,7 @@ async function executePipeline(
   );
   if (!reconcileResult.ok) {
     // Fail visibly rather than showing degraded output (spec §4).
+    await reconcileStep.failed("output invalid after repair");
     return {
       status: "failed",
       error: `reconcile output invalid: ${reconcileResult.errors}`,
@@ -326,6 +381,10 @@ async function executePipeline(
     console.error(
       `[pipeline] run ${run.id}: discarded ${discardedTotal} unanchored/duplicate findings`,
     );
+
+  await reconcileStep.done(
+    `${findings.length} findings · score ${reconcileResult.value.score}`,
+  );
 
   return {
     status: "ready",
@@ -382,6 +441,50 @@ async function maybeAutoApprove(
       `[pipeline] auto-approve failed for ${run.prId}: ${e instanceof Error ? e.message : e}`,
     );
   }
+}
+
+type StepHandle = {
+  done: (detail?: string) => Promise<void>;
+  failed: (detail: string) => Promise<void>;
+};
+
+/**
+ * Records the run's timeline as it happens. Every step is BOTH emitted (for the
+ * pane watching live) and persisted on the run (for a reload mid-run and for
+ * the post-mortem after the live buffer is gone) — one source of truth, read
+ * two ways.
+ */
+function stepRecorder(
+  run: AgentRun,
+  emit: (event: RunEvent) => void,
+): (init: Omit<RunStep, "status" | "startedAt">) => Promise<StepHandle> {
+  const steps: RunStep[] = [];
+  run.steps = steps;
+
+  return async function begin(init) {
+    const step: RunStep = {
+      ...init,
+      status: "running",
+      startedAt: new Date().toISOString(),
+    };
+    steps.push(step);
+    // Safe to publish the live object and mutate it later: publish() stringifies
+    // on the spot, so each frame is a snapshot.
+    emit({ type: "step", step });
+    await upsertRun(run);
+
+    const settle = async (status: RunStepStatus, detail?: string) => {
+      step.status = status;
+      step.finishedAt = new Date().toISOString();
+      if (detail !== undefined) step.detail = detail;
+      emit({ type: "step", step });
+      await upsertRun(run);
+    };
+    return {
+      done: (detail?: string) => settle("done", detail),
+      failed: (detail: string) => settle("failed", detail),
+    };
+  };
 }
 
 /** Run one pass; on schema failure, one repair attempt, then give up (spec §4). */
