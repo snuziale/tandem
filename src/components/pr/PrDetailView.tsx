@@ -33,7 +33,7 @@ import { usePrDetail, usePrFiles } from "../../hooks/usePrDetail";
 import { useRunStream } from "../../hooks/useRunStream";
 import { useMarkSeen } from "../../hooks/useSeen";
 import { useSettings } from "../../hooks/useSettings";
-import { hasOpenDialog, isTypingTarget } from "../../keyboard/target";
+import { hasOpenDialog, isTypingTarget } from "../../keyboard/keyOwnership";
 import { navigateToQueue } from "../../routes";
 import type { Finding } from "../../shared/agent-types";
 import type {

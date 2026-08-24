@@ -4,8 +4,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@uipath/apollo-wind";
-import { SHORTCUT_GROUPS } from "../keyboard/shortcuts";
-import { useUiStore } from "../state/uiStore";
+import { SHORTCUT_GROUPS } from "../../keyboard/shortcuts";
+import { useUiStore } from "../../state/uiStore";
 
 export function ShortcutsHelp() {
   const open = useUiStore((s) => s.shortcutsOpen);

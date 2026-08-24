@@ -1,7 +1,7 @@
 import { PrDetailView } from "./components/pr/PrDetailView";
 import { QueueView } from "./components/queue/QueueView";
 import { SettingsView } from "./components/settings/SettingsView";
-import { ShortcutsHelp } from "./components/ShortcutsHelp";
+import { ShortcutsHelp } from "./components/common/ShortcutsHelp";
 import { useKeyboardNav } from "./hooks/useKeyboardNav";
 import { useRouteSync } from "./routes";
 import { useUiStore } from "./state/uiStore";

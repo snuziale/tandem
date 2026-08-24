@@ -5,7 +5,7 @@ import { Toaster, TooltipProvider } from "@uipath/apollo-wind";
 import { ApiError } from "./api/http";
 import "./index.css";
 import { Bootstrap } from "./components/setup/Bootstrap";
-import { ErrorBoundary } from "./components/ErrorBoundary";
+import { ErrorBoundary } from "./components/common/ErrorBoundary";
 import {
   applyThemeClass,
   resolveTheme,

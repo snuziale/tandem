@@ -15,7 +15,7 @@ import { fetchAgentHealth } from "../../api/runs";
 import { useAgentRuns } from "../../hooks/useAgentRuns";
 import { useConfigStatus } from "../../hooks/useConfigStatus";
 import { useSaveSettings, useSettings } from "../../hooks/useSettings";
-import { hasOpenDialog, isTypingTarget } from "../../keyboard/target";
+import { hasOpenDialog, isTypingTarget } from "../../keyboard/keyOwnership";
 import { navigateToQueue } from "../../routes";
 import {
   DEFAULT_PROMPTS,

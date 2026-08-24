@@ -247,7 +247,7 @@ src/
                      keyboard dispatchers, which run outside React
   state/             themeStore (persist)  uiStore (route, focus, composer target, lastViewId,
                      lastFacet, statsOpen; persist partialize: diffStyle + lastViewId + pane/stats toggles)
-  keyboard/          target.ts (isTypingTarget/hasOpenDialog)  shortcuts.ts (? sheet registry —
+  keyboard/          keyOwnership.ts (isTypingTarget/hasOpenDialog)  shortcuts.ts (? sheet registry —
                      manually synced with the dispatchers)
   routes.ts          History-API routing: /?view=<id>[&by=<dim>:<value>] ·
                      /:owner/:repo/pull/:n · /settings
@@ -256,7 +256,8 @@ src/
                      (buckets, top-N folding, parse/format/match facet)
   components/        layout/AppHeader (the ONE header: chrome + brand + agent pill + settings
                      + theme; screens fill `children`/`actions`) queue/ pr/ agent/
-                     review(tray in pr/)/ settings/ setup/
+                     review(tray in pr/)/ settings/ setup/  common/ (Markdown, ErrorBoundary,
+                     ShortcutsHelp) — every component lives in a subdirectory, none at the root
 ```
 
 ## Storage (`$TANDEM_HOME ?? ~/.tandem`, all via jsonFile.ts, all 0600)
@@ -266,6 +267,7 @@ config.json    PAT (+defaultOrg)          settings.json  caps/threshold/models/r
 views.json     saved queue views          reviews.json   pending-review drafts by prId
 runs.json      AgentRun by prId@headSha + spendByDay     claude.log  harness stderr
 chats.json     ChatSession by prId@headSha[#findingId], LRU-capped at 100
+seen.json      last-seen updatedAt per prId (drives the unseen-changes dot)
 sandbox/       cwd for the read-only claude passes
 localStorage   tandem:theme:v1 · tandem:ui:v1 (diffStyle, lastViewId, pane + stats toggles) —
                display prefs ONLY
@@ -273,7 +275,7 @@ localStorage   tandem:theme:v1 · tandem:ui:v1 (diffStyle, lastViewId, pane + st
 
 ## Keyboard
 
-Two dispatchers, one guard module (`keyboard/target.ts`), one display registry
+Two dispatchers, one guard module (`keyboard/keyOwnership.ts`), one display registry
 (`keyboard/shortcuts.ts` — update it when touching either dispatcher):
 
 - `useKeyboardNav` (mounted in App): `?` everywhere; queue keys

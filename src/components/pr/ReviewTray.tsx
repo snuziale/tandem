@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { hasOpenDialog, isTypingTarget } from "../../keyboard/target";
+import { hasOpenDialog, isTypingTarget } from "../../keyboard/keyOwnership";
 import {
   Button,
   Dialog,

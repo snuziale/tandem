@@ -6,7 +6,7 @@
 import { useEffect } from "react";
 import { useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { toast } from "@uipath/apollo-wind";
-import { hasOpenDialog, isTypingTarget } from "../keyboard/target";
+import { hasOpenDialog, isTypingTarget } from "../keyboard/keyOwnership";
 import { navigate } from "../routes";
 import { parsePrId } from "../shared/gh/prKey";
 import { useUiStore } from "../state/uiStore";
