@@ -27,3 +27,6 @@ src/server/asset-manifest.ts
 !.vscode/extensions.json
 .idea
 .DS_Store
+
+# Claude Code local overrides (machine-specific: model, permissions, MCP servers)
+.claude/settings.local.json

@@ -2,8 +2,9 @@
 
 A GitHub review center with an inline agent: the agent pre-reads every PR in your queue and drafts
 review comments into your **local pending review**; you triage them, add your own, and submit ONE
-GitHub review as yourself. Built on the Sift skeleton (`~/code/my-jira`) — Bun + webview-bun native
-app, Vite/React 19 SPA, Apollo Wind, TanStack Query, Zustand.
+GitHub review as yourself. Built on the skeleton of Sift, a private predecessor project (comments
+citing "Sift" point at patterns carried over from it) — Bun + webview-bun native app, Vite/React 19
+SPA, Apollo Wind, TanStack Query, Zustand.
 
 > Collaboration norms (response style, ask-vs-execute, commit cadence): [`AGENTS.md`](./AGENTS.md).
 > This file documents the codebase.
@@ -371,6 +372,12 @@ exceeds the loaded rows, says so above the charts. Never drop that caveat.
 - **Approving your own PR 422s** — GitHub policy, surfaced verbatim (client.ts merges `errors[]`
   into the message; keep that, review submission errors live there).
 - **bun-types must stay ~1.3.x** until webview-bun handles bun 1.4's `bigint` FFI Pointer type.
+- **The TypeScript deps are deliberately crossed.** `tsc` — what `pnpm typecheck`/`build` run — is
+  TypeScript **7.0.2 native**, installed under the `typescript7` alias. The bare `typescript` name
+  is pinned to `@typescript/typescript6` because typescript-eslint (8.67, latest) declares its peer
+  as `typescript: ">=4.8.4 <6.1.0"` and its parser needs that JS compiler API; it uses the same
+  alias trick internally. Un-alias only once typescript-eslint ships a TS7 peer range — until then
+  `typescript: ^7` breaks lint. `tsc6` is on PATH if you need the old compiler.
 - **Zustand multi-key selectors need `useShallow`** (React 19 getSnapshot loop) — single-key
   selectors used everywhere so far.
 - **`claude` CLI flags** (`--safe-mode --tools '' --permission-mode dontAsk`, plus

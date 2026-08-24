@@ -45,6 +45,5 @@ different long-term costs, or genuinely unreadable intent. Otherwise pick what C
 - `pnpm test && pnpm typecheck && pnpm lint` green before any milestone commit.
 - Server route changes: restart the Bun server and hit the route (dev has no server HMR).
 - UI changes: look at it (Playwright screenshot or the browser), don't assume.
-- GitHub writes: verify against the scratch repo (`snuziale/tandem-scratch`), never on teammates'
-  real PRs.
+- GitHub writes: verify against a throwaway scratch repo of your own, never on teammates' real PRs.
 - New pure logic ships with a co-located `*.test.ts`.

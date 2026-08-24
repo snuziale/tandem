@@ -1,0 +1,41 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# A new push supersedes the run it interrupted.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      # The server, the asset-manifest generator and the native shell run on
+      # Bun; Vite / vitest / eslint run on Node. CI needs both.
+      #
+      # Bun is pinned to 1.3.x on purpose, NOT out of staleness: bun-types is
+      # held at ~1.3.x until webview-bun handles Bun 1.4's bigint FFI Pointer
+      # type (see CLAUDE.md). Bump both together or not at all.
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm test
+      - run: pnpm typecheck
+      - run: pnpm lint
