@@ -49,7 +49,7 @@ already read the code.
 - **[Bun](https://bun.sh) ≥ 1.3** — the server and the native shell run on it
   (`bun-types` is pinned to ~1.3.x until webview-bun handles Bun 1.4's FFI
   pointer type).
-- **pnpm** and Node ≥ 20.19 (or ≥ 22.12) for the Vite dev server and tooling.
+- **pnpm** and Node ≥ 22.12 for the Vite dev server and tooling.
 - **macOS** for `pnpm build:app`. The web app itself is platform-agnostic.
 - **[Claude Code](https://claude.com/claude-code)** on your PATH, logged in, for
   agent features. Everything else works without it.
