@@ -17,7 +17,7 @@ import {
   GitPullRequestClosed,
   GitPullRequestDraft,
 } from "lucide-react";
-import { openPrExternal } from "../../hooks/queueActions";
+import { openPrExternal } from "../../actions/queue";
 import { navigateToQueue } from "../../routes";
 import type { PrState, PullRequest } from "../../shared/review-types";
 import { ReviewCell } from "../queue/cells";

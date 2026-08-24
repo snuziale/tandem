@@ -20,13 +20,13 @@ import {
   PanelRightOpen,
 } from "lucide-react";
 import { startRun } from "../../api/runs";
-import { openChatFor } from "../../hooks/chatActions";
+import { openChatFor } from "../../actions/chat";
 import {
   acceptFinding,
   dismissFinding,
   unstageFinding,
-} from "../../hooks/findingActions";
-import { openPrExternal } from "../../hooks/queueActions";
+} from "../../actions/finding";
+import { openPrExternal } from "../../actions/queue";
 import { hasOpenBlocker, runFor, useAgentRuns } from "../../hooks/useAgentRuns";
 import { usePendingReview } from "../../hooks/usePendingReview";
 import { usePrDetail, usePrFiles } from "../../hooks/usePrDetail";

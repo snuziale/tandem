@@ -1,5 +1,5 @@
 import { API_PATHS } from "../../shared/api-paths";
-import { isPlainObject } from "../../shared/isPlainObject";
+import { isPlainObject } from "../../shared/is-plain-object";
 import { matchIdPath } from "../pathMatch";
 import { parseJsonBody } from "../requestJson";
 import { loadSeen, markSeen } from "./store";

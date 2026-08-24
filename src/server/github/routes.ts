@@ -3,7 +3,7 @@
 // quick action needs it.
 import { API_PATHS } from "../../shared/api-paths";
 import { prIdOf, type PrRef } from "../../shared/gh/prKey";
-import { isPlainObject } from "../../shared/isPlainObject";
+import { isPlainObject } from "../../shared/is-plain-object";
 import type { PendingComment } from "../../shared/review-types";
 import { deleteReview, loadReview } from "../reviews/store";
 import { loadConfig } from "../config/store";

@@ -1,7 +1,7 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { mkdir, chmod } from "node:fs/promises";
-import type { GitHubCreds } from "../../shared/github-schema";
+import type { GitHubCreds } from "../../shared/github-credentials";
 import { validateConfig } from "./validate";
 
 export type Config = { github: GitHubCreds };

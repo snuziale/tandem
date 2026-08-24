@@ -215,8 +215,10 @@ first paint fell back to the library's light defaults and flashed white in dark 
 ```
 src/
   shared/              client↔server bridge (tsconfig.server compiles ONLY server+shared)
-    api-paths.ts  config-types.ts  github-schema.ts  review-types.ts  agent-types.ts
-    finding-schema.ts (zod)  settings-types.ts  isPlainObject  runtime  user-agent
+    api-paths.ts  config-types.ts  github-credentials.ts  review-types.ts  agent-types.ts
+    finding-schema.ts (zod)  settings-types.ts  is-plain-object  runtime  user-agent
+                     kebab-case here; gh/ below is a camelCase sub-package. `-schema` means
+                     zod (chat-schema, finding-schema); plain data is named for what it holds.
     gh/              runtime-neutral GitHub core, ALL TESTED: wire.ts (raw shapes),
                      normalize.ts, queueQuery.ts, detailQuery.ts, patch.ts (buildFilePatch,
                      splitRawDiff, diffLineIndex), generated.ts, prKey.ts (prId = "owner/repo#n")
@@ -230,14 +232,19 @@ src/
              tail, shared)  runsIndex.ts  prewarm.ts  routes.ts
              pipeline/{run,prompts,cluster,parse,context,decide}
              chat/{turn,prompt,prose,actions,context,store,routes}
-  api/               plain-fetch clients (http.ts wrapper + per-family files)
+  api/               plain-fetch clients (http.ts wrapper + one file per resource, named for
+                     the resource: config, settings, queue, prs, reviews, runs, seen, views)
   hooks/             useQueue (60s poll + focus refetch)  usePrDetail/usePrFiles (files:
                      staleTime Infinity per sha)  usePendingReview (optimistic)  useAgentRuns
                      (30s poll, byKey index)  useRunStream (SSE)  useChat (transcript + turn
                      stream + apply)  useSettings
                      useSavedViews (+ useViewActions: every view write + its navigation)
                      useActiveView (URL ↔ view list reconciliation)
-                     useKeyboardNav (global dispatcher)  queueActions  findingActions
+                     useKeyboardNav (global dispatcher) — `use*` ONLY; the plain-function
+                     half lives in actions/ (below)
+  actions/           chat.ts  finding.ts  queue.ts — triage/nav actions as plain functions
+                     over the queryClient + stores, callable from components AND from the
+                     keyboard dispatchers, which run outside React
   state/             themeStore (persist)  uiStore (route, focus, composer target, lastViewId,
                      lastFacet, statsOpen; persist partialize: diffStyle + lastViewId + pane/stats toggles)
   keyboard/          target.ts (isTypingTarget/hasOpenDialog)  shortcuts.ts (? sheet registry —
@@ -345,7 +352,8 @@ exceeds the loaded rows, says so above the charts. Never drop that caveat.
 - **Findings embed in their run record** (`runs.json`) — no separate findings store.
 - **Failed runs don't auto-retry**; skipped/cached shas never re-run without explicit rerun.
 - **Tests cover pure logic only** (shared/gh, pipeline parse/cluster/decide, stores' validators);
-  UI components are not tested. New pure utils ship with tests.
+  UI components are not tested. New pure utils ship with tests, colocated as
+  `<module>.test.ts` beside the module they cover — never named after the behaviour.
 - **No unattended GitHub writes, ever.** The agent proposes; a human submits.
 - **Chat proposes, the human applies** — the same rule one level down. A turn's edits to findings
   and staged comments arrive as chips; nothing is written until the click. That is what lets chat

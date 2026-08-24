@@ -1,6 +1,6 @@
 // Parse/validate a pasted views-JSON payload (the same array shape stored in
 // ~/.tandem/views.json) for the import dialog. Pure — tested.
-import { isPlainObject } from "../shared/isPlainObject";
+import { isPlainObject } from "../shared/is-plain-object";
 import type { SavedView } from "../shared/review-types";
 
 export function parseViewsJson(

@@ -4,7 +4,7 @@ import remarkGfm from "remark-gfm";
 import rehypeRaw from "rehype-raw";
 import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
 import { cn } from "@uipath/apollo-wind";
-import { openPrExternal } from "../../hooks/queueActions";
+import { openPrExternal } from "../../actions/queue";
 import { rehypeGithubAlerts } from "./mdAlerts";
 
 // The one markdown renderer: PR descriptions, thread comments, finding bodies,

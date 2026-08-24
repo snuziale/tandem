@@ -1,9 +1,9 @@
 // Wire types for `/api/config/*`. Imported by:
 // - the Bun server (src/server/config/*) which serves them
-// - the SPA client (src/api/configApi.ts, src/components/setup/*) which consumes them
+// - the SPA client (src/api/config.ts, src/components/setup/*) which consumes them
 // Single source of truth — do not redeclare these per side.
 
-// One field of the credential form (shape comes from shared/github-schema.ts
+// One field of the credential form (shape comes from shared/github-credentials.ts
 // and is echoed by /api/config/status).
 export type CredentialField = {
   key: string;

@@ -1,7 +1,7 @@
-import { GITHUB_CREDENTIAL_FIELDS } from "../../shared/github-schema";
+import { GITHUB_CREDENTIAL_FIELDS } from "../../shared/github-credentials";
 import type { ConfigStatus } from "../../shared/config-types";
 import { API_PATHS } from "../../shared/api-paths";
-import { isPlainObject } from "../../shared/isPlainObject";
+import { isPlainObject } from "../../shared/is-plain-object";
 import { testGitHubCredentials } from "../github/client";
 import { parseJsonBody } from "../requestJson";
 import { loadConfig, saveConfig, configPath, type Config } from "./store";

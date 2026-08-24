@@ -9,7 +9,7 @@ import {
   type ChatScope,
   type ChatSession,
 } from "../../../shared/chat-types";
-import { isPlainObject } from "../../../shared/isPlainObject";
+import { isPlainObject } from "../../../shared/is-plain-object";
 import {
   enqueueMutation,
   readTextFile,

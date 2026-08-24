@@ -3,7 +3,7 @@
 // credential probe all live here — route handlers never build GitHub requests
 // themselves.
 import type { CredentialTestResult } from "../../shared/config-types";
-import type { GitHubCreds } from "../../shared/github-schema";
+import type { GitHubCreds } from "../../shared/github-credentials";
 import type { RateLimitInfo } from "../../shared/review-types";
 import { PROXY_USER_AGENT } from "../../shared/user-agent";
 

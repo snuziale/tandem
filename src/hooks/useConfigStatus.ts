@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { fetchConfigStatus } from "../api/configApi";
+import { fetchConfigStatus } from "../api/config";
 
 // Single definition of the /api/config/status query, shared by Bootstrap
 // (gates first-run setup) and anything needing the authenticated login.

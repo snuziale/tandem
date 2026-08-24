@@ -2,7 +2,7 @@
 // PR and how fresh it was then. The queue compares a PR's updatedAt against
 // this to show the "unseen changes" marker. Pruned so PRs that left every
 // view don't accumulate forever.
-import { isPlainObject } from "../../shared/isPlainObject";
+import { isPlainObject } from "../../shared/is-plain-object";
 import type { SeenRecord } from "../../shared/review-types";
 import {
   enqueueMutation,

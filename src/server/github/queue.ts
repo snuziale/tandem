@@ -14,7 +14,7 @@ import type {
   QueueResult,
   RateLimitInfo,
 } from "../../shared/review-types";
-import { isPlainObject } from "../../shared/isPlainObject";
+import { isPlainObject } from "../../shared/is-plain-object";
 import { prewarmSweep } from "../agent/prewarm";
 import { loadConfig } from "../config/store";
 import type { Config } from "../config/store";

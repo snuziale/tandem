@@ -1,6 +1,6 @@
 import { Card } from "@uipath/apollo-wind";
 import { Users } from "lucide-react";
-import type { ConfigStatus } from "../../api/configApi";
+import type { ConfigStatus } from "../../api/config";
 import { CredentialsForm } from "./CredentialsForm";
 
 type Props = {

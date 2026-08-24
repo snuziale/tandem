@@ -1,11 +1,8 @@
 import { useState } from "react";
 import { Button, Input, Label, cn } from "@uipath/apollo-wind";
 import { CheckCircle2, Loader2, XCircle } from "lucide-react";
-import type {
-  CredentialField,
-  CredentialTestResult,
-} from "../../api/configApi";
-import { saveConfig, testCredentials } from "../../api/configApi";
+import type { CredentialField, CredentialTestResult } from "../../api/config";
+import { saveConfig, testCredentials } from "../../api/config";
 
 type Props = {
   fields: ReadonlyArray<CredentialField>;

@@ -1,8 +1,8 @@
 import {
   GITHUB_CREDENTIAL_FIELDS,
   type GitHubCreds,
-} from "../../shared/github-schema";
-import { isPlainObject } from "../../shared/isPlainObject";
+} from "../../shared/github-credentials";
+import { isPlainObject } from "../../shared/is-plain-object";
 import type { Config } from "./store";
 
 export type ValidateResult<T> =

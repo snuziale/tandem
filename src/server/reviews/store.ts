@@ -2,7 +2,7 @@
 // The draft is the whole point of the product: agent findings and human
 // comments accumulate here and NOTHING reaches GitHub until submit. Drafts
 // survive reloads and the browser/native split because they live server-side.
-import { isPlainObject } from "../../shared/isPlainObject";
+import { isPlainObject } from "../../shared/is-plain-object";
 import type { PendingComment, PendingReview } from "../../shared/review-types";
 import {
   enqueueMutation,

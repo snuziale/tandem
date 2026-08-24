@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "@uipath/apollo-wind";
-import { fetchSettings, putSettings } from "../api/settingsApi";
+import { fetchSettings, putSettings } from "../api/settings";
 import type { TandemSettings } from "../shared/settings-types";
 
 export function useSettings() {

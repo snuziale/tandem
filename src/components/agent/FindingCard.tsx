@@ -1,12 +1,12 @@
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button, Textarea, cn } from "@uipath/apollo-wind";
-import { openChatFor } from "../../hooks/chatActions";
+import { openChatFor } from "../../actions/chat";
 import {
   acceptFinding,
   commentBodyOf,
   dismissFinding,
-} from "../../hooks/findingActions";
+} from "../../actions/finding";
 import type { Finding } from "../../shared/agent-types";
 import type { PendingComment } from "../../shared/review-types";
 import { useUiStore } from "../../state/uiStore";

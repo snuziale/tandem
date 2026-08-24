@@ -2,7 +2,7 @@
 // state transitions. /api/agent/health — claude CLI availability.
 import { API_PATHS } from "../../shared/api-paths";
 import type { FindingState, RunEvent } from "../../shared/agent-types";
-import { isPlainObject } from "../../shared/isPlainObject";
+import { isPlainObject } from "../../shared/is-plain-object";
 import { loadConfig } from "../config/store";
 import { matchIdPath } from "../pathMatch";
 import { parseJsonBody } from "../requestJson";

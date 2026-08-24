@@ -1,7 +1,7 @@
 // Tandem settings, ~/.tandem/settings.json. Missing file = defaults; unknown
 // keys are dropped on save. Values merge over DEFAULT_SETTINGS so adding a
 // setting never requires a migration.
-import { isPlainObject } from "../../shared/isPlainObject";
+import { isPlainObject } from "../../shared/is-plain-object";
 import { promptTextsOf } from "../../shared/prompt-defaults";
 import {
   DEFAULT_AGENT,

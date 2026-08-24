@@ -4,7 +4,7 @@
 // ~9s of the queue's budget on every poll. Add one by hand if you want it.
 import { randomUUID } from "node:crypto";
 import type { SavedView } from "../../shared/review-types";
-import { isPlainObject } from "../../shared/isPlainObject";
+import { isPlainObject } from "../../shared/is-plain-object";
 import {
   enqueueMutation,
   readTextFile,

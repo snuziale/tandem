@@ -11,7 +11,7 @@ import {
   type FindingState,
 } from "../../shared/agent-types";
 import { runKeyOf } from "../../shared/gh/prKey";
-import { isPlainObject } from "../../shared/isPlainObject";
+import { isPlainObject } from "../../shared/is-plain-object";
 import {
   enqueueMutation,
   readTextFile,

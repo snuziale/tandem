@@ -8,7 +8,7 @@ import {
   cn,
 } from "@uipath/apollo-wind";
 import { Check, ExternalLink } from "lucide-react";
-import { approvePrAction, openPrExternal } from "../../hooks/queueActions";
+import { approvePrAction, openPrExternal } from "../../actions/queue";
 import type { AgentRun } from "../../shared/agent-types";
 import type { PullRequest } from "../../shared/review-types";
 import { AgeCell, AgentCell, ChecksCell, ReviewCell, SizeCell } from "./cells";

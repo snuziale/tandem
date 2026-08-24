@@ -10,7 +10,7 @@ import { hasOpenDialog, isTypingTarget } from "../keyboard/target";
 import { navigate } from "../routes";
 import { parsePrId } from "../shared/gh/prKey";
 import { useUiStore } from "../state/uiStore";
-import { approvePrAction, openPrExternal } from "./queueActions";
+import { approvePrAction, openPrExternal } from "../actions/queue";
 
 export function openPrDetail(prId: string): void {
   const ref = parsePrId(prId);

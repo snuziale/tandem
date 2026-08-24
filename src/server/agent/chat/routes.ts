@@ -12,7 +12,7 @@
 // and it happens here — on an explicit human request, never from the turn.
 import { API_PATHS } from "../../../shared/api-paths";
 import type { ChatEvent, ChatScope } from "../../../shared/chat-types";
-import { isPlainObject } from "../../../shared/isPlainObject";
+import { isPlainObject } from "../../../shared/is-plain-object";
 import { loadConfig } from "../../config/store";
 import { matchIdPath } from "../../pathMatch";
 import { parseJsonBody } from "../../requestJson";

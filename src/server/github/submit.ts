@@ -2,7 +2,7 @@
 // Exactly two operations exist: submitting the pending review as one GitHub
 // review, and the queue's one-click empty approve. Nothing else in the server
 // may POST/PUT/DELETE against the GitHub API — keep it that way.
-import type { GitHubCreds } from "../../shared/github-schema";
+import type { GitHubCreds } from "../../shared/github-credentials";
 import type { PrRef } from "../../shared/gh/prKey";
 import { rest } from "./client";
 
