@@ -9,12 +9,12 @@ describe("routes", () => {
       facet: null,
     });
     expect(routeOfLocation("/settings")).toEqual({ name: "settings" });
-    expect(routeOfLocation("/uipath/flow-workbench/pull/234")).toEqual({
+    expect(routeOfLocation("/acme/web/pull/234")).toEqual({
       name: "pr",
-      owner: "uipath",
-      repo: "flow-workbench",
+      owner: "acme",
+      repo: "web",
       number: 234,
-      prId: "uipath/flow-workbench#234",
+      prId: "acme/web#234",
     });
   });
 
@@ -65,7 +65,7 @@ describe("routes", () => {
 
   it("round-trips", () => {
     for (const [pathname, search] of [
-      ["/uipath/flow-workbench/pull/234", ""],
+      ["/acme/web/pull/234", ""],
       ["/settings", ""],
       ["/", "?view=a b"],
       ["/", "?view=v1&by=idle%3A%3E7d"],

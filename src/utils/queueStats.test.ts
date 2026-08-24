@@ -76,11 +76,7 @@ describe("buckets", () => {
 
 describe("facets", () => {
   it("round-trips through the URL form", () => {
-    for (const raw of [
-      "author:alice",
-      "repo:uipath/flow-workbench",
-      "idle:>7d",
-    ])
+    for (const raw of ["author:alice", "repo:acme/web", "idle:>7d"])
       expect(formatFacet(parseFacet(raw))).toBe(raw);
   });
 

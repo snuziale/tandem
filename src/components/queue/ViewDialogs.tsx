@@ -63,7 +63,7 @@ export function ViewEditorDialog({ view, open, onClose, onSave }: EditorProps) {
           <DialogDescription>
             A view is a raw GitHub search query shown as a queue tab — e.g.{" "}
             <code className="font-mono text-[11px]">
-              is:pr is:open repo:UiPath/flow-workbench review-requested:@me
+              is:pr is:open repo:acme/web review-requested:@me
             </code>
           </DialogDescription>
         </DialogHeader>
@@ -77,7 +77,7 @@ export function ViewEditorDialog({ view, open, onClose, onSave }: EditorProps) {
               autoFocus
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="flow-workbench only"
+              placeholder="acme/web only"
               className="h-8 text-sm"
             />
           </div>

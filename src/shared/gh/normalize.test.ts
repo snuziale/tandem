@@ -13,9 +13,9 @@ function prNode(overrides: Partial<GqlPrNode> = {}): GqlPrNode {
     __typename: "PullRequest",
     number: 234,
     title: "Refactor FlowFileEditor state",
-    url: "https://github.com/uipath/flow-workbench/pull/234",
-    author: { login: "mbayyaram" },
-    repository: { name: "flow-workbench", owner: { login: "uipath" } },
+    url: "https://github.com/acme/web/pull/234",
+    author: { login: "alice" },
+    repository: { name: "web", owner: { login: "acme" } },
     headRefName: "feat/flow-editor-state",
     baseRefName: "main",
     isDraft: false,
@@ -133,7 +133,7 @@ describe("normalizePr", () => {
   it("normalizes a search node", () => {
     const pr = normalizePr(prNode());
     expect(pr).not.toBeNull();
-    expect(pr!.prId).toBe("uipath/flow-workbench#234");
+    expect(pr!.prId).toBe("acme/web#234");
     expect(pr!.headSha).toBe("a3f9c21");
     expect(pr!.checkRollup).toBe("FAILURE");
     expect(pr!.checkRuns).toHaveLength(4);
@@ -199,7 +199,7 @@ function thread(overrides: Partial<GqlReviewThread> = {}): GqlReviewThread {
       nodes: [
         {
           id: "C_1",
-          author: { login: "sflorentino" },
+          author: { login: "bob" },
           body: "Nice.",
           createdAt: "2026-08-21T09:00:00Z",
         },
@@ -213,7 +213,7 @@ describe("normalizeThread", () => {
   it("maps thread and comments", () => {
     const t = normalizeThread(thread());
     expect(t.side).toBe("RIGHT");
-    expect(t.comments[0].author).toBe("sflorentino");
+    expect(t.comments[0].author).toBe("bob");
     expect(t.startLine).toBeUndefined();
   });
 });
