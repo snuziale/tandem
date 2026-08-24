@@ -7,6 +7,17 @@ export type PrId = string;
 
 export type ReviewDecision =
   "APPROVED" | "CHANGES_REQUESTED" | "REVIEW_REQUIRED" | null;
+/** The VIEWER's own latest submitted review, verbatim from GitHub's
+ * PullRequestReviewState. Distinct from reviewDecision: that one is the
+ * repo-wide verdict and is null on any base branch without a required-reviews
+ * rule — so an approval you posted yourself shows up here and NOWHERE else. */
+export type ViewerReviewState =
+  | "APPROVED"
+  | "CHANGES_REQUESTED"
+  | "COMMENTED"
+  | "DISMISSED"
+  | "PENDING"
+  | null;
 /** GitHub's PullRequestState, verbatim. */
 export type PrState = "OPEN" | "CLOSED" | "MERGED";
 export type CheckRollup = "SUCCESS" | "FAILURE" | "PENDING" | "NONE";
@@ -39,6 +50,7 @@ export type PullRequest = {
   deletions: number;
   changedFiles: number;
   reviewDecision: ReviewDecision;
+  viewerReviewState: ViewerReviewState;
   checkRollup: CheckRollup;
   /** Individual check contexts (first 30). Present on queue and detail responses. */
   checkRuns: CheckRun[];

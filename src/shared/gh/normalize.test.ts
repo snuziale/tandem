@@ -160,6 +160,18 @@ describe("normalizePr", () => {
     expect(normalizePr(prNode({ state: "MERGED" }))!.state).toBe("MERGED");
   });
 
+  it("carries the viewer's own review state, absent or not", () => {
+    expect(normalizePr(prNode())!.viewerReviewState).toBeNull();
+    expect(
+      normalizePr(prNode({ viewerLatestReview: { state: "APPROVED" } }))!
+        .viewerReviewState,
+    ).toBe("APPROVED");
+    // GitHub sends null when you have never reviewed it.
+    expect(
+      normalizePr(prNode({ viewerLatestReview: null }))!.viewerReviewState,
+    ).toBeNull();
+  });
+
   it("drops non-PR search hits and defaults a deleted author to ghost", () => {
     expect(normalizePr({ ...prNode(), __typename: "Issue" })).toBeNull();
     expect(normalizePr(null)).toBeNull();

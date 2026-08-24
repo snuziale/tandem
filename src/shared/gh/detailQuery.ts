@@ -21,6 +21,7 @@ query TandemPrDetail($owner: String!, $name: String!, $number: Int!) {
       deletions
       changedFiles
       reviewDecision
+      viewerLatestReview { state }
       createdAt
       updatedAt
       reviewThreads(first: 100) {

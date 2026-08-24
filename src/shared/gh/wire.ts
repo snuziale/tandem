@@ -47,11 +47,20 @@ export type GqlPrNode = {
   deletions: number;
   changedFiles: number;
   reviewDecision: "APPROVED" | "CHANGES_REQUESTED" | "REVIEW_REQUIRED" | null;
+  /** Absent on older cached responses — treated as "no review by me". */
+  viewerLatestReview?: { state: GqlReviewState } | null;
   createdAt: string;
   updatedAt: string;
   reviewThreads: { totalCount: number; nodes?: GqlReviewThread[] };
   commits: { totalCount?: number; nodes: GqlCommitWithChecks[] };
 };
+
+export type GqlReviewState =
+  | "APPROVED"
+  | "CHANGES_REQUESTED"
+  | "COMMENTED"
+  | "DISMISSED"
+  | "PENDING";
 
 export type GqlReviewThread = {
   id: string;

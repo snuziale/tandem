@@ -67,9 +67,22 @@ export function checkBucket(pr: PullRequest): CheckBucket {
   }
 }
 
-/** Draft outranks the review decision — it's what the row's badge shows too. */
+/**
+ * Draft outranks the review decision — it's what the row's badge shows too,
+ * and so is the viewer's own verdict winning over a null reviewDecision
+ * (see ReviewCell: a repo with no required-reviews rule reports null even
+ * when you have approved). Keep these two in step or the drawer and the row
+ * disagree about the same PR.
+ */
 export function reviewBucket(pr: PullRequest): ReviewBucket {
   if (pr.isDraft) return "draft";
+  if (pr.viewerReviewState === "APPROVED" && pr.reviewDecision !== "APPROVED")
+    return "approved";
+  if (
+    pr.viewerReviewState === "CHANGES_REQUESTED" &&
+    pr.reviewDecision !== "CHANGES_REQUESTED"
+  )
+    return "changes";
   switch (pr.reviewDecision) {
     case "APPROVED":
       return "approved";

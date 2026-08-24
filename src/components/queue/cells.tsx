@@ -1,4 +1,4 @@
-import { Badge, Spinner, cn } from "@uipath/apollo-wind";
+import { Badge, cn } from "@uipath/apollo-wind";
 import {
   SKIP_REASON_LABEL,
   type AgentRun,
@@ -6,6 +6,7 @@ import {
 } from "../../shared/agent-types";
 import type { PullRequest } from "../../shared/review-types";
 import { relativeAge } from "../../utils/time";
+import { AgentSpinner } from "../agent/AgentSpinner";
 import { SeverityBadge } from "../agent/SeverityBadge";
 
 export function ChecksCell({ pr }: { pr: PullRequest }) {
@@ -43,7 +44,16 @@ export function ChecksCell({ pr }: { pr: PullRequest }) {
   );
 }
 
-/** `showDraft={false}` where a state pill already says Draft (the PR header). */
+/**
+ * `showDraft={false}` where a state pill already says Draft (the PR header).
+ *
+ * TWO fields, and the order matters. `reviewDecision` is the repo-wide verdict
+ * and it is null on any base branch WITHOUT a required-reviews rule — so on a
+ * repo with no branch protection, a PR you approved yourself still reports
+ * null and used to render "No review", which reads as "nobody has looked at
+ * this" when in fact you signed off on it. Your own review is the one thing
+ * this app can never be wrong about, so it wins the badge.
+ */
 export function ReviewCell({
   pr,
   showDraft = true,
@@ -57,6 +67,17 @@ export function ReviewCell({
         Draft
       </Badge>
     );
+  }
+  // Only a SUBMITTED verdict of yours counts: COMMENTED left no verdict,
+  // DISMISSED was revoked, and PENDING is a GitHub-side draft you never sent.
+  if (pr.viewerReviewState === "APPROVED" && pr.reviewDecision !== "APPROVED") {
+    return <Badge variant="success">Approved by you</Badge>;
+  }
+  if (
+    pr.viewerReviewState === "CHANGES_REQUESTED" &&
+    pr.reviewDecision !== "CHANGES_REQUESTED"
+  ) {
+    return <Badge variant="error">You requested changes</Badge>;
   }
   switch (pr.reviewDecision) {
     case "CHANGES_REQUESTED":
@@ -176,7 +197,7 @@ export function AgentCell({ run }: { run: AgentRun | undefined }) {
         className="flex items-center gap-1.5 text-xs font-medium motion-safe:animate-pulse"
         style={{ color: "var(--tandem-agent)" }}
       >
-        <Spinner className="size-3" /> Analyzing…
+        <AgentSpinner className="size-3" /> Analyzing…
       </span>
     );
   }

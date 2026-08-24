@@ -104,6 +104,7 @@ export function normalizePr(node: GqlPrNode | null): PullRequest | null {
     deletions: node.deletions,
     changedFiles: node.changedFiles,
     reviewDecision: node.reviewDecision,
+    viewerReviewState: node.viewerLatestReview?.state ?? null,
     checkRollup: rollupOf(rollup?.state),
     checkRuns: (rollup?.contexts.nodes ?? []).map(checkRunOf),
     threadCount: node.reviewThreads.totalCount,

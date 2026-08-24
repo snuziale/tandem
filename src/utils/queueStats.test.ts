@@ -34,6 +34,7 @@ function pr(over: Partial<PullRequest> = {}): PullRequest {
     deletions: 5,
     changedFiles: 2,
     reviewDecision: null,
+    viewerReviewState: null,
     checkRollup: "SUCCESS",
     checkRuns: [],
     threadCount: 0,
@@ -71,6 +72,29 @@ describe("buckets", () => {
       "awaiting",
     );
     expect(reviewBucket(pr({ reviewDecision: null }))).toBe("none");
+  });
+
+  // A base branch with no required-reviews rule reports reviewDecision: null
+  // however many approvals it has — your own verdict is the only evidence.
+  it("counts the viewer's own verdict when the repo reports none", () => {
+    expect(
+      reviewBucket(pr({ reviewDecision: null, viewerReviewState: "APPROVED" })),
+    ).toBe("approved");
+    expect(
+      reviewBucket(
+        pr({ reviewDecision: null, viewerReviewState: "CHANGES_REQUESTED" }),
+      ),
+    ).toBe("changes");
+    // Neither of these is a submitted verdict.
+    for (const state of ["COMMENTED", "DISMISSED", "PENDING"] as const) {
+      expect(
+        reviewBucket(pr({ reviewDecision: null, viewerReviewState: state })),
+      ).toBe("none");
+    }
+    // Draft still outranks it.
+    expect(
+      reviewBucket(pr({ isDraft: true, viewerReviewState: "APPROVED" })),
+    ).toBe("draft");
   });
 });
 

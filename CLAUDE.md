@@ -99,6 +99,15 @@ duplicates drop, severity×confidence ranking under the caps (default 8 findings
 
 - **Runs are server-owned** (`live.ts`): closing the pane detaches; `POST /api/runs/:id/cancel` is
   the only kill switch. SSE = replay-then-tail in one synchronous block.
+- **Progress is structural, and it is PERSISTED** (`RunStep` in `shared/agent-types.ts`, recorded by
+  `stepRecorder` in `pipeline/run.ts`): one step per stage — fetch, orient, one per pass-2 cluster
+  (carrying that cluster's `paths`), reconcile — each emitted for the live pane AND written onto
+  `run.steps`, plus `run.plan` (pass 1's checks). The live replay buffer dies with the run, so the
+  persisted copy is what makes a reload mid-run and the pane's collapsed "run log" read the same;
+  a failed run names the step that died instead of just carrying a message. `useRunStream`
+  ACCUMULATES these frames (keyed by runId, never reset from an effect) — it does not keep only the
+  latest. Do NOT stream tokens for the pipeline passes: each answers with one strict-JSON blob, so
+  `--include-partial-messages` stays chat-only and everything watchable is derived from the steps.
 - **Cache rule**: never re-run a sha without explicit rerun. Failed runs stay manual — auto-retry
   would burn budget every poll.
 - **Prewarm** (`prewarm.ts`): gated on `settings.autoRunEnabled` (default OFF — runs are manual).
@@ -379,6 +388,11 @@ exceeds the loaded rows, says so above the charts. Never drop that caveat.
 - **`useQuery` detail-vs-queue thread counts differ**: queue fetches `reviewThreads(first:1)`
   totalCount only; `unresolvedThreadCount` is accurate only on detail. Same field with different
   args in one query is a GraphQL conflict — that's why detailQuery.ts doesn't reuse the fragment.
+- **`reviewDecision` is null without branch protection.** GitHub only computes the repo-wide
+  verdict when the BASE branch has a required-reviews rule; without one it stays null however
+  many approvals a PR has. The badge (`ReviewCell`) and `reviewBucket` therefore read
+  `viewerLatestReview` too and let YOUR verdict win — otherwise a PR you approved yourself
+  renders "No review". Keep those two in step.
 - **Approving your own PR 422s** — GitHub policy, surfaced verbatim (client.ts merges `errors[]`
   into the message; keep that, review submission errors live there).
 - **bun-types must stay ~1.3.x** until webview-bun handles bun 1.4's `bigint` FFI Pointer type.

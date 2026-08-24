@@ -19,6 +19,7 @@ fragment PrFields on PullRequest {
   deletions
   changedFiles
   reviewDecision
+  viewerLatestReview { state }
   createdAt
   updatedAt
   reviewThreads(first: 1) { totalCount }
