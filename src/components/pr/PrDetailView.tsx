@@ -6,6 +6,7 @@ import {
   ResizablePanel,
   ResizablePanelGroup,
   Spinner,
+  Toggle,
   ToggleGroup,
   ToggleGroupItem,
   Tooltip,
@@ -229,7 +230,7 @@ export function PrDetailView({ prId }: { prId: PrId }) {
 
   // Detail-scoped keys (the global handler only runs on the queue route):
   // esc back · [ ] files · j/k findings · y/e/x triage · c chat · v viewed ·
-  // r rerun · a verdict approve · o open on GitHub.
+  // w hide whitespace · r rerun · a verdict approve · o open on GitHub.
   const keyState = useRef({
     files,
     selectedPath,
@@ -352,6 +353,10 @@ export function PrDetailView({ prId }: { prId: PrId }) {
           e.preventDefault();
           setVerdict("APPROVE" as ReviewVerdict);
           return;
+        case "w":
+          e.preventDefault();
+          useUiStore.getState().setHideWhitespace((hide) => !hide);
+          return;
         case "v":
           if (state.selectedPath) {
             e.preventDefault();
@@ -374,6 +379,8 @@ export function PrDetailView({ prId }: { prId: PrId }) {
 
   const diffStyle = useUiStore((s) => s.diffStyle);
   const setDiffStyle = useUiStore((s) => s.setDiffStyle);
+  const hideWhitespace = useUiStore((s) => s.hideWhitespace);
+  const setHideWhitespace = useUiStore((s) => s.setHideWhitespace);
   // Pane widths outlive this screen: it remounts per PR (keyed on prId), so the
   // layout is read from / written back to the persisted store, not local state.
   const paneLayout = useUiStore((s) => s.prPaneLayout);
@@ -484,6 +491,32 @@ export function PrDetailView({ prId }: { prId: PrId }) {
                   <span className="text-[11px] text-muted-foreground font-mono">
                     viewed {viewedFiles.length}/{files.length}
                   </span>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      {/* A Toggle, not a Button: pressing changes the fill
+                          only, so the control keeps its width. */}
+                      <Toggle
+                        size="xs"
+                        variant="outline"
+                        pressed={hideWhitespace}
+                        onPressedChange={setHideWhitespace}
+                        aria-label="Hide whitespace-only changes"
+                        // Styled off aria-pressed, NOT data-state: the
+                        // tooltip trigger owns data-state on its child, so
+                        // the toggle's own on/off never reaches the DOM.
+                        className="h-6 px-1.5 min-w-0 font-mono text-[11px] aria-pressed:bg-foreground/10 aria-pressed:border-foreground/40 aria-pressed:text-foreground future:aria-pressed:text-foreground"
+                      >
+                        ws
+                      </Toggle>
+                    </TooltipTrigger>
+                    <TooltipPortal>
+                      <TooltipContent>
+                        {hideWhitespace
+                          ? "Show whitespace changes (w)"
+                          : "Hide whitespace changes (w)"}
+                      </TooltipContent>
+                    </TooltipPortal>
+                  </Tooltip>
                   <ToggleGroup
                     type="single"
                     size="xs"

@@ -15,6 +15,9 @@ type Props = {
   collapsed: boolean;
   /** The agent proposed something in this file — same violet as everywhere. */
   hasFindings: boolean;
+  /** Whitespace is hidden and nothing else changed here — without the tag the
+   * empty diff under this header reads as a bug. */
+  whitespaceOnly: boolean;
   /** Clicking the path selects this file in the tree (no diff re-scroll). */
   onSelectPath: () => void;
   onToggleViewed: () => void;
@@ -33,6 +36,7 @@ export function DiffFileHeader({
   viewed,
   collapsed,
   hasFindings,
+  whitespaceOnly,
   onSelectPath,
   onToggleViewed,
   onToggleCollapsed,
@@ -85,6 +89,14 @@ export function DiffFileHeader({
       {status ? (
         <span className="text-[10px] uppercase tracking-wider text-muted-foreground shrink-0">
           {status}
+        </span>
+      ) : null}
+      {whitespaceOnly ? (
+        <span
+          title="Only whitespace changed here — turn off “hide whitespace” to see it"
+          className="text-[10px] uppercase tracking-wider text-muted-foreground shrink-0 border border-border rounded-sm px-1"
+        >
+          whitespace only
         </span>
       ) : null}
       <span className="shrink-0">

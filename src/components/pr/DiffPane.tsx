@@ -8,7 +8,12 @@ import {
   type DiffLineAnnotation,
 } from "@pierre/diffs/react";
 import type { Finding } from "../../shared/agent-types";
-import { buildFilePatch } from "../../shared/gh/patch";
+import {
+  buildFilePatch,
+  hasHunks,
+  hideWhitespaceChanges,
+  type KeepLines,
+} from "../../shared/gh/patch";
 import type {
   FileChange,
   PendingComment,
@@ -49,18 +54,27 @@ type Props = {
 
 const EMPTY_ANNOS: DiffLineAnnotation<TandemAnno>[] = [];
 
+function keepLinesOf(annotations: DiffLineAnnotation<TandemAnno>[]): KeepLines {
+  const left = new Set<number>();
+  const right = new Set<number>();
+  for (const a of annotations)
+    (a.side === "deletions" ? left : right).add(a.lineNumber);
+  return { left, right };
+}
+
 // Controlled CodeView items re-render only on version changes. Annotation
 // CONTENT is a React render prop and updates through React regardless — the
 // version only has to change when the diff (headSha) or annotation POSITIONS
 // or COUNT change, so a pure hash of exactly those inputs is enough.
-// `collapsed` is part of the hash for the same reason: the library only reads
-// it off a re-rendered item.
+// `collapsed` and `hideWhitespace` are in the hash for the same reason: the
+// library only reads them off a re-rendered item.
 function versionOf(
   headSha: string,
   annotations: DiffLineAnnotation<TandemAnno>[],
   collapsed: boolean,
+  hideWhitespace: boolean,
 ): number {
-  let h = collapsed ? 1 : 0;
+  let h = (collapsed ? 1 : 0) + (hideWhitespace ? 2 : 0);
   for (let i = 0; i < headSha.length; i++)
     h = (h * 31 + headSha.charCodeAt(i)) | 0;
   for (const a of annotations)
@@ -85,6 +99,7 @@ export function DiffPane({
   codeViewRef,
 }: Props) {
   const diffStyle = useUiStore((s) => s.diffStyle);
+  const hideWhitespace = useUiStore((s) => s.hideWhitespace);
   const themePreference = useThemeStore((s) => s.preference);
   const composerTarget = useUiStore((s) => s.composerTarget);
   const setComposerTarget = useUiStore((s) => s.setComposerTarget);
@@ -140,15 +155,24 @@ export function DiffPane({
     return map;
   }, [threads, pendingComments, findings, composerTarget]);
 
-  const items = useMemo(() => {
+  const { items, whitespaceOnlyPaths } = useMemo(() => {
     const out: CodeViewDiffItem<TandemAnno>[] = [];
+    const whitespaceOnly = new Set<string>();
     for (const file of files) {
-      const patch = buildFilePatch(file);
-      if (!patch) continue; // binary / tooLarge — listed in the FileTree with a badge instead
-      const fileDiff = parsePatchFiles(patch, `${headSha}:${file.path}`)[0]
-        ?.files[0];
-      if (!fileDiff) continue;
+      const raw = buildFilePatch(file);
+      if (!raw) continue; // binary / tooLarge — listed in the FileTree with a badge instead
       const annotations = annotationsByPath.get(file.path) ?? EMPTY_ANNOS;
+      // Whatever is annotated stays unfolded, or its card goes with the line.
+      const patch = hideWhitespace
+        ? hideWhitespaceChanges(raw, keepLinesOf(annotations))
+        : raw;
+      // Headers but no hunks: everything this file changed was whitespace.
+      if (hideWhitespace && !hasHunks(patch)) whitespaceOnly.add(file.path);
+      const fileDiff = parsePatchFiles(
+        patch,
+        `${headSha}:${file.path}:${hideWhitespace ? "w" : "a"}`,
+      )[0]?.files[0];
+      if (!fileDiff) continue;
       const collapsed = collapsedPaths.has(file.path);
       out.push({
         id: file.path,
@@ -156,11 +180,11 @@ export function DiffPane({
         fileDiff,
         annotations,
         collapsed,
-        version: versionOf(headSha, annotations, collapsed),
+        version: versionOf(headSha, annotations, collapsed, hideWhitespace),
       });
     }
-    return out;
-  }, [files, headSha, annotationsByPath, collapsedPaths]);
+    return { items: out, whitespaceOnlyPaths: whitespaceOnly };
+  }, [files, headSha, annotationsByPath, collapsedPaths, hideWhitespace]);
 
   const options = useMemo<CodeViewReactOptions<TandemAnno>>(
     () => ({
@@ -216,6 +240,7 @@ export function DiffPane({
             viewed={viewedPaths.has(file.path)}
             collapsed={collapsedPaths.has(file.path)}
             hasFindings={findingPaths.has(file.path)}
+            whitespaceOnly={whitespaceOnlyPaths.has(file.path)}
             onSelectPath={() => onSelectPath(file.path)}
             onToggleViewed={() => onToggleViewed(file.path)}
             onToggleCollapsed={() => onToggleCollapsed(file.path)}

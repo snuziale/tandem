@@ -191,6 +191,15 @@ One controlled `CodeView` hosts every file (`components/pr/DiffPane.tsx`):
   override, and toggling viewed DROPS that override so the checkbox folds and unfolds again.
   Selecting a file in the tree or focusing a finding force-expands — a `scrollTo` into a folded
   file lands on its header.
+- **Hide whitespace is OURS, not the library's** (`hideWhitespaceChanges` in `shared/gh/patch.ts`,
+  toggled from the diff toolbar / `w`, persisted in `uiStore.hideWhitespace`): @pierre/diffs has no
+  such option, so we rewrite the patch — a deletion and an addition that differ only in whitespace
+  collapse into ONE context line, and a hunk left with no real change is dropped (the file then
+  renders as an empty diff under a "whitespace only" header tag). **Line numbering is preserved
+  exactly** — a collapsed pair consumed one old + one new line and so does its context line, so the
+  `@@` counts never move and every anchor, line click and `scrollTo` still addresses the same
+  lines. Annotated lines (threads, staged comments, findings, the composer) are passed in as
+  `KeepLines` and never fold, or their cards would vanish with them.
 - **`options.itemMetrics.diffHeaderHeight` MUST match our header's real height** (36px = `h-9`).
   The library reserves 44 by default, so every item's layout height silently ran 8px ahead of what
   it renders; when the layout total exceeds the real content, CodeView centres its render window in
@@ -278,8 +287,8 @@ runs.json      AgentRun by prId@headSha + spendByDay     claude.log  harness std
 chats.json     ChatSession by prId@headSha[#findingId], LRU-capped at 100
 seen.json      last-seen updatedAt per prId (drives the unseen-changes dot)
 sandbox/       cwd for the read-only claude passes
-localStorage   tandem:theme:v1 · tandem:ui:v1 (diffStyle, lastViewId, pane + stats toggles) —
-               display prefs ONLY
+localStorage   tandem:theme:v1 · tandem:ui:v1 (diffStyle, hideWhitespace, lastViewId,
+               panes + stats toggles) — display prefs ONLY
 ```
 
 ## Keyboard
@@ -290,8 +299,8 @@ Two dispatchers, one guard module (`keyboard/keyOwnership.ts`), one display regi
 - `useKeyboardNav` (mounted in App): `?` everywhere; queue keys
   j/k/Enter/o/a/A(override)/r/s/esc//. Reads state via `getState()` snapshots — the listener
   never re-binds.
-- `PrDetailView` binds its own detail keys (esc, [ ], j/k findings, y/e/x, c chat, v, r, a, o) — same
-  snapshot pattern via a ref updated in an effect. Composer/tray own ⌘↵ (stage vs submit) — the
+- `PrDetailView` binds its own detail keys (esc, [ ], j/k findings, y/e/x, c chat, v, w, r, a,
+  o) — same snapshot pattern via a ref updated in an effect. Composer/tray own ⌘↵ (stage vs submit) — the
   tray's is a WINDOW listener that bails on `isTypingTarget`, which is why a text box can claim
   ⌘↵ for itself. The chat composer is the one box that sends on plain ↵ (⇧↵ = newline, ⌘↵ still
   works): it is a chat box, and overloading ⌘↵ a third time reads as ambiguous.

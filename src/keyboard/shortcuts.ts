@@ -33,6 +33,7 @@ export const SHORTCUT_GROUPS: ShortcutGroup[] = [
       ["x", "dismiss focused finding"],
       ["c", "chat with the agent (about the focused finding)"],
       ["v", "mark selected file viewed"],
+      ["w", "hide / show whitespace-only changes"],
       ["r", "rerun agent"],
       ["a", "set verdict: approve"],
       ["o", "open PR on GitHub"],

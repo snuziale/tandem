@@ -62,6 +62,11 @@ type UiState = {
   diffStyle: DiffStyle;
   setDiffStyle: (style: DiffStyle) => void;
 
+  /** Fold whitespace-only changes out of the diff (`git diff -w`). Persisted
+   * like diffStyle: how you read diffs is a working preference. */
+  hideWhitespace: boolean;
+  setHideWhitespace: (hide: boolean | ((current: boolean) => boolean)) => void;
+
   /**
    * PR-detail pane widths (files / diff / agent), as react-resizable-panels'
    * own Layout map. PrDetailView remounts per PR (keyed on prId), so the sizes
@@ -130,6 +135,13 @@ export const useUiStore = create<UiState>()(
       diffStyle: "unified",
       setDiffStyle: (style) => set({ diffStyle: style }),
 
+      hideWhitespace: false,
+      setHideWhitespace: (hide) =>
+        set((s) => ({
+          hideWhitespace:
+            typeof hide === "function" ? hide(s.hideWhitespace) : hide,
+        })),
+
       prPaneLayout: null,
       setPrPaneLayout: (layout) => set({ prPaneLayout: layout }),
 
@@ -171,6 +183,7 @@ export const useUiStore = create<UiState>()(
       version: 1,
       partialize: (s) => ({
         diffStyle: s.diffStyle,
+        hideWhitespace: s.hideWhitespace,
         lastViewId: s.lastViewId,
         prPaneLayout: s.prPaneLayout,
         prFilesOpen: s.prFilesOpen,
