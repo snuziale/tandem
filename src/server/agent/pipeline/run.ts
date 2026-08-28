@@ -105,7 +105,10 @@ export async function startRun(
     startedAt: new Date().toISOString(),
   };
   await upsertRun(run);
-  const signal = createLive(run.id, prId);
+  const signal = createLive(run.id, prId, "run", {
+    headSha,
+    agentName: agent.name,
+  });
 
   // Detached: the HTTP response returns the queued snapshot; SSE follows along.
   void driveRun(cfg, settings, agent, run, ref, detail, signal).catch((e) => {

@@ -341,3 +341,65 @@ body.future-dark {
     overflow-y: auto;
   }
 }
+
+/*
+ * The agent status strip's comet (components/agent/AgentStatusStrip.tsx).
+ *
+ * A run's three passes each answer with ONE strict-JSON blob, so there is no
+ * token stream to watch and no honest percentage to fill — the only truthful
+ * readouts are "which pass" and "still going". The segments say the first; the
+ * comet says the second, by travelling rather than by filling, so it never
+ * implies a fraction of the work it hasn't measured.
+ *
+ * Violet only: the strip marks machine work, and a second hue in the app's
+ * most prominent chrome would be the loudest possible break of the provenance
+ * rule (spec §1 principle 3).
+ *
+ * CSS-only and composited (transform + opacity): the header re-renders on a
+ * 2s poll, not per frame, so the motion costs no React work. Every user of
+ * these classes gates them behind `motion-safe:`.
+ */
+@keyframes tandem-comet {
+  from {
+    transform: translateX(-110%);
+  }
+  to {
+    transform: translateX(320%);
+  }
+}
+
+.tandem-comet {
+  /* Head at the leading (right) edge with the tail fading behind it — the
+     shape is what reads as direction at this size, not the movement alone. */
+  background-image: linear-gradient(
+    90deg,
+    transparent 0%,
+    var(--tandem-agent-dim) 55%,
+    var(--tandem-agent) 100%
+  );
+  animation: tandem-comet 1.15s linear infinite;
+}
+
+/* The idle dot and the tray's live rows: a slow breath, not the pulse utility's
+   hard 50% blink — this can sit on screen for minutes at a time. */
+@keyframes tandem-breathe {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}
+
+.tandem-breathe {
+  animation: tandem-breathe 1.8s ease-in-out infinite;
+}
+
+/* A second, fainter comet a beat behind the first: two passes of the same
+   sweep read as a trail rather than as one sliding block, at the cost of one
+   more composited element. Same keyframes, offset start. */
+.tandem-comet--trail {
+  animation-delay: -0.38s;
+  opacity: 0.35;
+}

@@ -79,7 +79,10 @@ export async function startChatTurn(
     s.status = "thinking";
   });
 
-  const signal = createLive(sessionId, scope.prId, "chat");
+  const signal = createLive(sessionId, scope.prId, "chat", {
+    headSha: scope.headSha,
+    agentName: agent.name,
+  });
   void drive(cfg, scope, sessionId, agent, question, signal).catch((e) => {
     console.error(`[chat] turn ${sessionId} crashed:`, e);
   });

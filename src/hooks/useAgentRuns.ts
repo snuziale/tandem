@@ -7,11 +7,17 @@ import type { PrId } from "../shared/review-types";
 export type RunsIndex = {
   byKey: Map<string, AgentRun>;
   spendTodayUsd: number;
-  liveCount: number;
 };
 
-/** All agent-run records indexed by (prId, headSha), plus the agent status
- * strip's numbers. Queue, detail, top bar, and settings all share it. */
+/**
+ * All agent-run records indexed by (prId, headSha). Queue, PR detail, the
+ * agent tray's history list and settings all share it.
+ *
+ * Stays on a SLOW poll on purpose: this response carries every run with its
+ * findings and steps, and `select` rebuilds the index for each subscribing
+ * component. What the agent is doing right now lives in useAgentActivity,
+ * which is small enough to poll hard.
+ */
 export function useAgentRuns() {
   return useQuery({
     queryKey: ["runs"],
@@ -21,11 +27,7 @@ export function useAgentRuns() {
       const byKey = new Map<string, AgentRun>();
       for (const run of snapshot.runs)
         byKey.set(runKeyOf(run.prId, run.headSha), run);
-      return {
-        byKey,
-        spendTodayUsd: snapshot.spendTodayUsd,
-        liveCount: snapshot.liveCount,
-      };
+      return { byKey, spendTodayUsd: snapshot.spendTodayUsd };
     },
   });
 }

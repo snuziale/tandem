@@ -22,6 +22,7 @@ import {
 import type { RunProgress } from "../../hooks/useRunStream";
 import type { TandemSettings } from "../../shared/settings-types";
 import { useUiStore } from "../../state/uiStore";
+import { formatDuration, formatSpend } from "../../utils/agentFormat";
 import { Markdown } from "../common/Markdown";
 import { ChatPanel } from "./ChatPanel";
 import { SeverityBadge } from "./SeverityBadge";
@@ -549,18 +550,6 @@ function useNow(active: boolean): number {
     return () => clearInterval(timer);
   }, [active]);
   return now;
-}
-
-function formatDuration(ms: number): string {
-  const total = Math.max(0, Math.round(ms / 1000));
-  if (total < 60) return `${total}s`;
-  return `${Math.floor(total / 60)}m ${String(total % 60).padStart(2, "0")}s`;
-}
-
-/** Subscription-billed CLI runs report $0 — fall back to token counts. */
-function formatSpend(run: Pick<AgentRun, "costUsd" | "tokensUsed">): string {
-  if (run.costUsd > 0) return `$${run.costUsd.toFixed(2)}`;
-  return `${Math.round(run.tokensUsed / 1000)}k tok`;
 }
 
 function FindingGroup({

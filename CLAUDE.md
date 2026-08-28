@@ -68,7 +68,8 @@ browser → /api/* → Vite proxy (dev) → Bun server (src/server/worker.ts)
                                          unseen-changes dot when updatedAt moved past it)
   /api/settings    settings/routes.ts    caps, threshold, models, per-repo agent toggle,
                                          prompts (see below)
-  /api/runs[...]   agent/routes.ts       run records · SSE stream · cancel · finding state
+  /api/runs[...]   agent/routes.ts       run records · /activity (small live readout for the
+                                         header strip) · SSE stream · cancel · finding state
   /api/chats[...]  agent/chat/routes.ts  chat turns · SSE token stream · cancel · apply/reject
                                          one proposed action (the only state-changing chat call)
   /api/agent/health                      claude CLI availability
@@ -424,6 +425,7 @@ src/
     api-paths.ts  config-types.ts  github-credentials.ts  review-types.ts  agent-types.ts
     finding-schema.ts (zod)  settings-types.ts  is-plain-object  runtime  user-agent
     team-types.ts  pulse.ts (TESTED: states, blockedOn, grouping)
+    agent-activity.ts (TESTED: live-registry ↔ run-record reconciliation, today's tally)
     pulse-journal.ts (TESTED)  xbar.ts (TESTED: the menu-bar plugin renderer)
                      kebab-case here; gh/ below is a camelCase sub-package. `-schema` means
                      zod (chat-schema, finding-schema); plain data is named for what it holds.
@@ -469,10 +471,12 @@ src/
                      /:owner/:repo/pull/:n · /settings/<section>
                      (navigateToQueue() = back to the last-selected view AND facet;
                      navigateToSettings() = the rail's first page)
+  utils/agentFormat.ts TESTED duration/spend/PR-ref/file-name formatting, shared by the
+                     agent pane, the header strip and the tray
   utils/queueStats.ts  TESTED pure stats + facets over the active view's rows
                      (buckets, top-N folding, parse/format/match facet; `pulse` is the one
                      facet dim needing context, hence the optional PulseOptions arg)
-  components/        layout/AppHeader (the ONE header: chrome + brand + agent pill + settings
+  components/        layout/AppHeader (the ONE header: chrome + brand + agent strip + settings
                      + theme; screens fill `children`/`actions`) queue/ pr/ agent/
                      review(tray in pr/)/ teams/ (TeamsPanel, framed by the settings
                      section AND the view editor's dialog)/ settings/ (SettingsView
@@ -533,12 +537,62 @@ One fixed-height row, and NOTHING in it wraps — so the rule has to be visible 
 emergent. `ViewTabs` is the only `flex-1` child and the only thing that scrolls (`overflow-x-auto`
 on its strip), which means every control to its right keeps the same position whether there are
 two views or twelve. A `HeaderDivider` marks where the tab strip ends and the ACTIVE VIEW's own
-controls begin — pulse pill, breakdown toggle, query toggle — followed by the agent pill and
+controls begin — pulse pill, breakdown toggle, query toggle — followed by the agent strip and
 settings. `AppHeader` has NO `actions` slot as of 2026-08-28 — the queue was its last caller, and
 teams and the views/teams JSON round-trip moved into Settings, because neither is a thing you do
 to the queue you happen to be looking at. A screen's own controls go in its middle zone
 (`children`); the right-hand group is app-level and identical everywhere. Put a new control in
 the zone it belongs to; do not add a second row, and prefer Settings over a ninth icon here.
+
+## Agent status strip (`components/agent/AgentStatusStrip.tsx`)
+
+The header's agent readout, and the ONE place outside a PR that answers "what is the agent doing
+right now?". It replaced a dot plus the words "2 running" — one bit rendered out of a model that
+already carried the rest.
+
+- **`/api/runs` ships `live: LiveWork[]`**, derived in `server/agent/live.ts` from the frames the
+  passes ALREADY publish — nothing new is emitted to produce it, so a run that says nothing on the
+  wire says nothing here rather than inventing progress. `publish()` stringifies immediately and
+  the pipeline then MUTATES the step object it published, so scanning `events` for the running step
+  reads the same truth the SSE stream does, with no second bookkeeping path to drift. Runs AND chat
+  turns appear, told apart by `kind` exactly as `liveCount` tells them apart — a streaming turn is
+  work the user is waiting on and was invisible outside the pane it streamed into.
+- **In flight = the registry RECONCILED with the run records** (`shared/agent-activity.ts`,
+  tested, run SERVER-side). The registry is in-memory and per-process: two servers can share
+  `$TANDEM_HOME` (the native app and a dev server beside it), so a run genuinely analyzing in the
+  sibling process looks idle in this one's registry. `inFlightWork` therefore adds every active
+  run the registry doesn't have, described from its own persisted `steps` — but EXCLUDES an
+  interrupted one, reusing the same `isInterrupted` window the startup sweep uses (moved to
+  `shared/agent-types.ts` for exactly this reason: one window, one answer, so the strip and the
+  sweep cannot disagree about which runs are real). The registry's entry wins on a tie — a
+  persisted step lags the frame that produced it by one write. "Recent" is then simply everything
+  NOT active, which keeps a run mid-analysis from being filed under finished work.
+- **Two queries, opposite shapes — do not merge them back.** `GET /api/runs/activity`
+  (`useAgentActivity`) answers "what now?" in a payload that does not grow with history — MEASURED
+  2026-08-28: **86 bytes vs 336KB** for `/api/runs` at 70 runs. That is why the strip's 2s poll is
+  affordable; putting `live` on the runs snapshot meant re-reading, re-parsing and re-shipping
+  every run WITH its findings and steps every two seconds, and re-running `select` once per
+  subscribed component (two on the queue screen, where it also churned 50 table rows). `useAgentRuns`
+  stays at 30s. The activity query is keyed `["runs", "activity"]` ON PURPOSE: the eight existing
+  `invalidateQueries({ queryKey: ["runs"] })` call sites match it by prefix, so none of them has to
+  know it exists.
+- **The trigger's width is FIXED (168px)** and every line inside truncates. It is the leftmost
+  thing in the app-level header zone, so a strip that grew with a longer step label would slide the
+  ⚙ sideways every few seconds — the same rule that keeps `ViewTabs` the only `flex-1` child.
+- **Three segments, one per pass, and the live one carries a comet — never a percentage.** Each
+  pass answers with a single strict-JSON blob, so there is no measurable fraction inside one; a bar
+  jumping 0→33→90 would be a claim nothing measured. Which pass, plus visible motion, is all that
+  is known. Animation is CSS-only and composited (`.tandem-comet` in `index.css`, two sweeps
+  staggered for a trail), `motion-safe:` gated, and **violet only** — a second hue in the app's most
+  prominent chrome would be the loudest possible break of invariant §3.
+- **Idle is a readout, not the word "idle"**: runs today, open findings, failures — counted
+  client-side from the snapshot's own run list, so no server counter can disagree with it. Static
+  on purpose; motion in the header is reserved for work actually happening.
+- **Detail lives in the tray, one click away, never in a second header row**: in-flight rows naming
+  the files the current step is READING (`RunStep.paths` — the difference between "busy" and "it
+  has my code open"), queued runs (the prewarm cap made visible), the last six finished runs, spend
+  against the daily ceiling, and a claude-CLI health line. Cancel goes through the same
+  `POST /api/runs/:id/cancel` the pane uses — runs are server-owned, so it is a real kill switch.
 
 ## Query help (`components/queue/QueryHelp.tsx`)
 

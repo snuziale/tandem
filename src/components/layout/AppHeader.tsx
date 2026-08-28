@@ -5,9 +5,8 @@ import {
   TooltipContent,
   TooltipPortal,
   TooltipTrigger,
-  cn,
 } from "@uipath/apollo-wind";
-import { useAgentRuns } from "../../hooks/useAgentRuns";
+import { AgentStatusStrip } from "../agent/AgentStatusStrip";
 import { navigateToQueue, navigateToSettings } from "../../routes";
 import { useThemeStore, type ThemePreference } from "../../state/themeStore";
 
@@ -38,32 +37,6 @@ export function BrandMark() {
         TANDEM
       </span>
     </button>
-  );
-}
-
-/** Live-run indicator. Violet ONLY while the agent is actually working. */
-function AgentStatusPill() {
-  const runs = useAgentRuns();
-  const liveCount = runs.data?.liveCount ?? 0;
-  const live = liveCount > 0;
-
-  return (
-    <span
-      className={cn(
-        "flex items-center gap-1.5 text-xs font-mono shrink-0 px-1",
-        !live && "text-muted-foreground",
-      )}
-      style={live ? { color: "var(--tandem-agent)" } : undefined}
-    >
-      <span
-        className={cn(
-          "inline-block w-1.5 h-1.5 rounded-full",
-          live ? "motion-safe:animate-pulse" : "bg-muted-foreground/40",
-        )}
-        style={live ? { background: "var(--tandem-agent)" } : undefined}
-      />
-      {live ? `${liveCount} running` : "agent idle"}
-    </span>
   );
 }
 
@@ -128,7 +101,7 @@ export function AppHeader({ children }: { children?: React.ReactNode }) {
         <div className="flex-1" />
       )}
       <div className="flex items-center gap-1 shrink-0">
-        <AgentStatusPill />
+        <AgentStatusStrip />
         <HeaderDivider />
         <IconAction label="Settings" onClick={() => navigateToSettings()}>
           <Settings />

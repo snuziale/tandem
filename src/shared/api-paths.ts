@@ -11,6 +11,8 @@ export const API_PATHS = {
   PRS: "/api/prs",
   REVIEWS: "/api/reviews",
   RUNS: "/api/runs",
+  /** Small, history-independent: what the agent is doing right now. */
+  RUNS_ACTIVITY: "/api/runs/activity",
   CHATS: "/api/chats",
   AGENT: "/api/agent",
   AGENT_HEALTH: "/api/agent/health",

@@ -1,16 +1,39 @@
 import { API_PATHS } from "../shared/api-paths";
-import type { AgentRun, FindingState, RunEvent } from "../shared/agent-types";
+import type { TodayTally } from "../shared/agent-activity";
+import type {
+  AgentRun,
+  FindingState,
+  LiveWork,
+  RunEvent,
+} from "../shared/agent-types";
 import type { PrId } from "../shared/review-types";
 import { apiRequest } from "./http";
 
 export type RunsSnapshot = {
   runs: AgentRun[];
   spendTodayUsd: number;
+  /** Runs only — chat turns are live work but not run accounting. */
   liveCount: number;
 };
 
 export function fetchRuns(): Promise<RunsSnapshot> {
   return apiRequest<RunsSnapshot>(API_PATHS.RUNS);
+}
+
+/**
+ * What the agent is doing right now. Its own endpoint, not a field on the runs
+ * snapshot: the header polls this every 2s while work is live, and the runs
+ * snapshot grows with review history.
+ */
+export type AgentActivity = {
+  /** Everything in flight, runs and chat turns alike, newest first. */
+  work: LiveWork[];
+  today: TodayTally;
+  spendTodayUsd: number;
+};
+
+export function fetchAgentActivity(): Promise<AgentActivity> {
+  return apiRequest<AgentActivity>(API_PATHS.RUNS_ACTIVITY);
 }
 
 export function startRun(

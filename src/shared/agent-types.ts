@@ -142,6 +142,38 @@ export type AgentRun = {
 };
 
 /**
+ * One unit of agent work in flight RIGHT NOW, derived from the server's live
+ * registry (server/agent/live.ts) for the header's status strip and tray.
+ *
+ * Runs AND chat turns both appear, told apart by `kind` exactly as live.ts
+ * tells them apart — a streaming chat turn is real work the user is waiting
+ * on, and until this existed it was completely invisible outside the pane it
+ * was streaming into. `kind` is also what keeps it out of the run accounting.
+ *
+ * Everything here is derived from events the passes ALREADY emit; nothing new
+ * is published to produce it, so a run that says nothing on the wire also says
+ * nothing here rather than inventing progress.
+ */
+export type LiveWork = {
+  /** runId for a run, chat session id for a turn. */
+  id: string;
+  kind: "run" | "chat";
+  prId: PrId;
+  /** The sha under analysis — joins back to the full AgentRun by runKeyOf. */
+  headSha?: string;
+  agentName?: string;
+  /** Pipeline pass the run has reached; absent before pass 1, and for chat. */
+  pass?: 1 | 2 | 3;
+  /** What it is doing right now: the running step's label, or the chat status. */
+  label: string;
+  /** Files the current step is reading — "it is reading MY code", not "busy". */
+  paths?: string[];
+  startedAt: string;
+  tokensUsed: number;
+  costUsd: number;
+};
+
+/**
  * SSE frames on /api/runs/:id/stream. Structural progress, not a token stream:
  * the pipeline passes each emit one strict-JSON blob, so there is no prose to
  * stream — everything worth watching is derivable from the steps.
@@ -153,6 +185,40 @@ export type RunEvent =
   | { type: "usage"; tokens: number; costUsd: number }
   | { type: "done"; run: AgentRun }
   | { type: "error"; message: string };
+
+/** Statuses that mean the pipeline has not finished with this run. */
+export function isActiveRun(run: Pick<AgentRun, "status">): boolean {
+  return (
+    run.status === "queued" ||
+    run.status === "fetching" ||
+    run.status === "analyzing"
+  );
+}
+
+/**
+ * A run left in an active status by a process that is gone. Age-gated on
+ * purpose: TWO servers can share `$TANDEM_HOME` (the native app on 5274 and a
+ * dev server next to it), and one must never declare the other's genuinely
+ * live run dead. Nothing legitimate outlives this window — a pass is capped at
+ * 10 minutes and a run is a handful of passes.
+ *
+ * Shared, not server-only, because the same question decides two things: which
+ * runs the startup sweep fails, and which active-but-unstreamed runs the status
+ * strip is willing to call in flight. One window, one answer.
+ */
+export const INTERRUPTED_AFTER_MS = 45 * 60_000;
+
+export function isInterrupted(
+  run: Pick<AgentRun, "status" | "startedAt">,
+  now: number,
+  maxAgeMs: number = INTERRUPTED_AFTER_MS,
+): boolean {
+  if (!isActiveRun(run)) return false;
+  const started = run.startedAt ? Date.parse(run.startedAt) : NaN;
+  // No usable timestamp: it cannot be young, so treat it as interrupted.
+  if (Number.isNaN(started)) return true;
+  return now - started > maxAgeMs;
+}
 
 // ---------------------------------------------------------------------------
 // State machines (spec §2). Enforced by the server stores: transitionRun /

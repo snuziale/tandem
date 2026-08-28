@@ -4,12 +4,17 @@
 // ledger. State transitions go through the guarded helpers here; illegal
 // edges throw (RUN_EDGES / FINDING_EDGES in shared/agent-types.ts).
 import {
+  INTERRUPTED_AFTER_MS,
   canTransitionFinding,
   canTransitionRun,
+  isInterrupted,
   type AgentRun,
   type Finding,
   type FindingState,
 } from "../../shared/agent-types";
+// Re-exported: the interrupted-run window is defined in shared/ (the status
+// strip asks the same question), but this module is where it is enforced.
+export { INTERRUPTED_AFTER_MS, isInterrupted };
 import { runKeyOf } from "../../shared/gh/prKey";
 import { isPlainObject } from "../../shared/is-plain-object";
 import {
@@ -167,32 +172,6 @@ export async function appendFinding(
     await writeAll(all);
     return run;
   });
-}
-
-/**
- * A run left in an active status by a process that is gone. Age-gated on
- * purpose: TWO servers can share `$TANDEM_HOME` (the native app on 5274 and a
- * dev server next to it), and one must never declare the other's genuinely
- * live run dead. Nothing legitimate outlives this window — a pass is capped at
- * 10 minutes and a run is a handful of passes.
- */
-export const INTERRUPTED_AFTER_MS = 45 * 60_000;
-
-export function isInterrupted(
-  run: Pick<AgentRun, "status" | "startedAt">,
-  now: number,
-  maxAgeMs: number = INTERRUPTED_AFTER_MS,
-): boolean {
-  if (
-    run.status !== "queued" &&
-    run.status !== "fetching" &&
-    run.status !== "analyzing"
-  )
-    return false;
-  const started = run.startedAt ? Date.parse(run.startedAt) : NaN;
-  // No usable timestamp: it cannot be young, so treat it as interrupted.
-  if (Number.isNaN(started)) return true;
-  return now - started > maxAgeMs;
 }
 
 /**

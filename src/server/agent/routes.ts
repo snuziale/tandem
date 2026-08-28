@@ -7,7 +7,8 @@ import { loadConfig } from "../config/store";
 import { matchIdPath } from "../pathMatch";
 import { parseJsonBody } from "../requestJson";
 import { checkClaudeAvailable } from "./claude";
-import { cancelLive, liveCount } from "./live";
+import { cancelLive, liveCount, liveWork } from "./live";
+import { inFlightWork, tallyToday } from "../../shared/agent-activity";
 import { streamLive } from "./sse";
 import { startRun } from "./pipeline/run";
 import {
@@ -33,6 +34,21 @@ export async function handleRuns(req: Request): Promise<Response> {
       runs: await listRuns(),
       spendTodayUsd: await spendToday(),
       liveCount: liveCount(),
+    });
+  }
+
+  // The header's fast poll. Deliberately NOT a field on /api/runs: that
+  // response carries every run WITH its findings and steps (hundreds of KB
+  // once a few weeks of reviews accumulate), and re-shipping it every 2s to
+  // animate a 168px strip would be the most expensive thing the app does.
+  // This answers the same question in a payload that does not grow with
+  // history.
+  if (url.pathname === API_PATHS.RUNS_ACTIVITY && req.method === "GET") {
+    const runs = await listRuns();
+    return Response.json({
+      work: inFlightWork(liveWork(), runs),
+      today: tallyToday(runs),
+      spendTodayUsd: await spendToday(),
     });
   }
 
