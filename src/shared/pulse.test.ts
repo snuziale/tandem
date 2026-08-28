@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   blockedOn,
+  dedupePrs,
   groupPullRequests,
   pulseCounts,
   pulseStateOf,
@@ -225,5 +226,28 @@ describe("groupPullRequests", () => {
     expect(
       groupPullRequests(rows, "none", opts)[0].rows.map((p) => p.prId),
     ).toEqual(["new", "old"]);
+  });
+});
+
+describe("dedupePrs", () => {
+  const a = pr({ prId: "acme/web#1", updatedAt: "2026-08-20T00:00:00Z" });
+  const b = pr({ prId: "acme/web#2", updatedAt: "2026-08-27T00:00:00Z" });
+  const c = pr({ prId: "acme/web#3", updatedAt: "2026-08-24T00:00:00Z" });
+
+  it("keeps arrival order, so a query's own sort survives", () => {
+    // The queue hands GitHub's page straight through: re-sorting here would
+    // arrange the first 50 of one ordering by another.
+    expect(dedupePrs([a, b, c]).map((p) => p.prId)).toEqual([
+      "acme/web#1",
+      "acme/web#2",
+      "acme/web#3",
+    ]);
+  });
+
+  it("keeps the first copy of a PR two shards both matched", () => {
+    const later = pr({ prId: "acme/web#1", title: "From the second shard" });
+    const rows = dedupePrs([a, b, later]);
+    expect(rows).toHaveLength(2);
+    expect(rows[0].title).toBe(a.title);
   });
 });

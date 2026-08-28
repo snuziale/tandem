@@ -12,6 +12,7 @@
 // one curl. See shared/xbar.ts.
 import { API_PATHS } from "../../shared/api-paths";
 import {
+  byUpdatedDesc,
   dedupePrs,
   isGroupDim,
   pulseCounts,
@@ -83,8 +84,12 @@ export async function handlePulse(req: Request): Promise<Response> {
   );
 
   // One deduped list across every selected view: the menu bar is a single
-  // glance, and the same PR matching two views is one PR.
-  const rows = dedupePrs(Object.values(result.views).flat());
+  // glance, and the same PR matching two views is one PR. Several views
+  // concatenated have no meaningful order of their own, so the feed picks
+  // one — most recently touched first, which is what a glance wants.
+  const rows = dedupePrs(Object.values(result.views).flat()).sort(
+    byUpdatedDesc,
+  );
 
   // Sections are a MENU-BAR concern — the queue table is flat. `pulse` is the
   // only default worth having here: a pulldown with no columns needs headings,

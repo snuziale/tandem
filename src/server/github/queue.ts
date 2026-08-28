@@ -14,7 +14,7 @@
 import { normalizePr } from "../../shared/gh/normalize";
 import { buildQueueQuery } from "../../shared/gh/queueQuery";
 import { shardTeamQuery } from "../../shared/gh/team";
-import { dedupePrs } from "../../shared/pulse";
+import { byUpdatedDesc, dedupePrs } from "../../shared/pulse";
 import type { GqlRateLimit, GqlSearchResult } from "../../shared/gh/wire";
 import type {
   PullRequest,
@@ -183,7 +183,16 @@ export async function fetchQueueViews(
 
       // Shards can overlap (a PR authored by one member and requested from
       // another), so dedupe on prId before anything reads a count.
-      byView[view.id] = dedupePrs(outcomes.flatMap((o) => o.prs));
+      //
+      // ORDER IS GITHUB'S, and deliberately so: a view's query owns its own
+      // `sort:` qualifier, and the page window GitHub returns is chosen in
+      // that same order — re-sorting here would show the first 50 of one
+      // ordering arranged by another, which is how a long-open PR touched a
+      // minute ago went missing from the queue entirely. The one case with no
+      // order to honour is a sharded team view: N searches concatenated is
+      // just N sorted runs end to end, so that merge picks newest-first.
+      const rows = dedupePrs(outcomes.flatMap((o) => o.prs));
+      byView[view.id] = queries.length > 1 ? rows.sort(byUpdatedDesc) : rows;
       // issueCounts sum across shards for the same reason the rows dedupe:
       // each shard searched a disjoint set of authors. Where a query can match
       // the same PR twice this over-counts slightly — it is GitHub's estimate

@@ -268,6 +268,16 @@ does. The query bar shows the raw string and prints the expansion under it, neve
 - Shards are deduped by prId and their `issueCount`s summed; per-view `shards` comes back in the
   queue response and shows on the tab as `×n`.
 
+**Row ORDER is GitHub's, and the queue must not re-sort it** (`dedupePrs` in `shared/pulse.ts` is
+order-preserving; TESTED). A view's query owns its own `sort:` qualifier, and the `first: 50`
+window GitHub returns is chosen in that same order — so sorting the rows afterwards shows the
+first 50 of ONE ordering arranged by ANOTHER, and a long-open PR touched a minute ago is missing
+from the queue entirely rather than sitting at the top. `dedupePrs` used to end in `byUpdatedDesc`
+and ran on every view including single-shard ones, which is exactly that bug plus a `sort:` in the
+query bar that could never reach the table. The two callers with no order to honour sort for
+themselves: a SHARDED team view (N searches end to end is N sorted runs, not one) and the
+menu-bar feed (several views concatenated), both newest-first.
+
 **Pulse** (`shared/pulse.ts`, tested) maps every PR onto exactly one attention state:
 `blocked-on-you · rotting · blocked-on-them · ready · moving`. The ORDER of those rules is the
 design and is spelled out in the file — a draft is always moving; your own action outranks

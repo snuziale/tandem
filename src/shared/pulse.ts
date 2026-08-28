@@ -208,17 +208,26 @@ export function byUpdatedDesc(a: PullRequest, b: PullRequest): number {
 }
 
 /**
- * One row per PR, newest first.
+ * One row per PR, in the order they arrived — first-seen wins.
  *
  * Two callers need exactly this and for the same reason: team shards overlap
  * (a PR authored by one member and requested from another), and the menu-bar
  * feed folds several views into one list. Either way the same PR arriving
- * twice is one PR, and first-seen wins.
+ * twice is one PR.
+ *
+ * It does NOT sort. It used to end in `byUpdatedDesc`, which silently
+ * overrode GitHub's ordering for every queue view — including the single-shard
+ * ones where the dedupe is a no-op — so a `sort:` qualifier in a view's query
+ * could never reach the table. Worse, the page window is chosen by GitHub in
+ * ITS order and only then re-sorted here, so the queue showed the 50
+ * newest-CREATED PRs ordered by newest-TOUCHED: a PR opened last month and
+ * updated a minute ago was absent entirely. Callers that genuinely merge
+ * unordered lists sort for themselves with `byUpdatedDesc`.
  */
 export function dedupePrs(rows: Iterable<PullRequest>): PullRequest[] {
   const seen = new Map<string, PullRequest>();
   for (const pr of rows) if (!seen.has(pr.prId)) seen.set(pr.prId, pr);
-  return [...seen.values()].sort(byUpdatedDesc);
+  return [...seen.values()];
 }
 
 /**
