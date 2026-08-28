@@ -5,6 +5,8 @@ import { expandTeamQuery, hasTeamToken } from "../../shared/gh/team";
 import type { RateLimitInfo } from "../../shared/review-types";
 import type { Team } from "../../shared/team-types";
 import { refreshAge } from "../../utils/time";
+import { appendQualifier } from "../../utils/searchQuery";
+import { QueryHelpButton } from "./QueryHelp";
 
 type Props = {
   query: string;
@@ -70,6 +72,12 @@ export function QueryBar({
           }}
           spellCheck={false}
           className="h-7 font-mono text-xs flex-1"
+        />
+        {/* Inserting only edits the DRAFT — an insert is a typing shortcut, so
+            it still commits on Enter like anything else typed here. */}
+        <QueryHelpButton
+          focusTargetId="queue-query-input"
+          onInsert={(token) => setDraft((d) => appendQualifier(d, token))}
         />
         <Button
           size="2xs"

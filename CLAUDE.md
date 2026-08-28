@@ -442,6 +442,21 @@ controls begin — pulse pill, breakdown toggle, query toggle — and `AppHeader
 keeps only what is about the app rather than the view (teams, views-JSON), followed by the
 agent pill and settings. Put a new control in the zone it belongs to; do not add a second row.
 
+## Query help (`components/queue/QueryHelp.tsx`)
+
+The query stays RAW — but a raw string only reads as an invitation once you know the vocabulary,
+and nothing in the app ever said `repo:owner/name`, so a first view was a guess. One popover
+(`QueryHelpButton`) sits next to BOTH boxes you can type a query into — the `QueryBar` input and
+the view editor's textarea — and every row in it is also the insert button (`appendQualifier`,
+`utils/searchQuery.ts`, tested). In the query bar an insert edits the DRAFT only, so it still
+commits on Enter like anything typed by hand.
+
+It is deliberately NOT the whole GitHub grammar: the four groups are the qualifiers a review
+queue actually uses, and the footer link owns the long tail. The view editor adds the other half
+of the answer — `hasScopeQualifier` warns while a query carries no repo/org/person qualifier,
+because the starter query would otherwise search all of GitHub and the first save would be a
+surprise.
+
 ## Queue stats drawer (`components/queue/StatsDrawer.tsx` + `charts.tsx`)
 
 A breakdown of the ACTIVE VIEW, toggled from the header (`s`), where every mark is also a

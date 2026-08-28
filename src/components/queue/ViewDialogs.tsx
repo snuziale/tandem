@@ -25,6 +25,8 @@ import { hasTeamToken, TEAM_TOKEN } from "../../shared/gh/team";
 import type { SavedView } from "../../shared/review-types";
 import type { Team } from "../../shared/team-types";
 import { formatConfigJson, parseConfigJson } from "../../utils/configJson";
+import { appendQualifier, hasScopeQualifier } from "../../utils/searchQuery";
+import { QueryHelpButton } from "./QueryHelp";
 
 // ---------------------------------------------------------------------------
 // Create / edit one saved view.
@@ -55,6 +57,9 @@ export function ViewEditorDialog({
   const [teamId, setTeamId] = useState(view?.teamId ?? "");
 
   const usesTeam = hasTeamToken(query);
+  // Say it sooner than an empty queue would: without a scoping qualifier the
+  // search is every open PR on GitHub.
+  const needsScope = !hasScopeQualifier(query);
   const canSave = name.trim().length > 0 && query.trim().length > 0;
   const save = () => {
     if (!canSave) return;
@@ -96,9 +101,15 @@ export function ViewEditorDialog({
             />
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="view-query" className="text-xs">
-              GitHub search query
-            </Label>
+            <div className="flex items-center justify-between">
+              <Label htmlFor="view-query" className="text-xs">
+                GitHub search query
+              </Label>
+              <QueryHelpButton
+                focusTargetId="view-query"
+                onInsert={(token) => setQuery((q) => appendQualifier(q, token))}
+              />
+            </div>
             <Textarea
               id="view-query"
               value={query}
@@ -106,6 +117,21 @@ export function ViewEditorDialog({
               spellCheck={false}
               className="min-h-16 text-sm font-mono"
             />
+            {/* The starter query has no scope, so a brand-new view searches all
+                of GitHub — say which qualifier narrows it rather than letting
+                the first save be a surprise. */}
+            {needsScope ? (
+              <p className="text-[11px] text-muted-foreground leading-relaxed">
+                Nothing scopes this yet — add{" "}
+                <code className="font-mono text-[10px]">repo:owner/name</code>{" "}
+                or <code className="font-mono text-[10px]">org:owner</code>, or
+                a person qualifier like{" "}
+                <code className="font-mono text-[10px]">
+                  review-requested:@me
+                </code>
+                .
+              </p>
+            ) : null}
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="view-team" className="text-xs">
