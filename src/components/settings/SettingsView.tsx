@@ -14,6 +14,7 @@ import { ArrowLeft } from "lucide-react";
 import { fetchAgentHealth } from "../../api/runs";
 import { useAgentRuns } from "../../hooks/useAgentRuns";
 import { useConfigStatus } from "../../hooks/useConfigStatus";
+import { useSavedViews } from "../../hooks/useSavedViews";
 import { useSaveSettings, useSettings } from "../../hooks/useSettings";
 import { hasOpenDialog, isTypingTarget } from "../../keyboard/keyOwnership";
 import { navigateToQueue } from "../../routes";
@@ -214,6 +215,7 @@ export function SettingsView() {
             ) : null}
           </Card>
 
+          {settings ? <PulseCard settings={settings} onPatch={patch} /> : null}
           {settings ? (
             <AutoApproveCard settings={settings} onPatch={patch} />
           ) : null}
@@ -221,6 +223,86 @@ export function SettingsView() {
         </div>
       </div>
     </div>
+  );
+}
+
+/**
+ * Pulse: how the queue reads a cohort, and what the menu-bar feed serves.
+ *
+ * `rottingDays` is here rather than as a constant because it is a team norm,
+ * not a fact — a repo shipping twice a day and one shipping monthly disagree
+ * about when silence becomes a problem, and every "rotting" mark in the app
+ * (rows, drawer, trend, menu bar) is drawn against this one number.
+ */
+function PulseCard({
+  settings,
+  onPatch,
+}: {
+  settings: TandemSettings;
+  onPatch: (p: Partial<TandemSettings>) => void;
+}) {
+  const views = useSavedViews();
+  const pulse = settings.pulse;
+  const set = (p: Partial<TandemSettings["pulse"]>) =>
+    onPatch({ pulse: { ...pulse, ...p } });
+  const origin = typeof window === "undefined" ? "" : window.location.origin;
+
+  return (
+    <Card className="p-5 space-y-4">
+      <div>
+        <h2 className="text-sm font-semibold">Pulse</h2>
+        <p className="text-[11px] text-muted-foreground mt-0.5">
+          Whose court the ball is in, for every open PR. One definition drives
+          the queue's pulse column, the breakdown, the header pill and the
+          menu-bar feed — change it here and all five move together.
+        </p>
+      </div>
+
+      <NumberField
+        label="Rotting after (days idle)"
+        value={pulse.rottingDays}
+        onCommit={(v) => set({ rottingDays: Math.max(1, v) })}
+      />
+
+      <ToggleRow
+        label="Keep a daily rollup"
+        hint="Five integers per view per day in ~/.tandem/pulse.json — enough for the trend line in the breakdown, and nothing more. Off = no history is written."
+        checked={pulse.journalEnabled}
+        onChange={(v) => set({ journalEnabled: v })}
+      />
+
+      <div className="space-y-1.5">
+        <Label className="text-xs">Menu-bar view</Label>
+        <select
+          value={pulse.menuViewId ?? ""}
+          onChange={(e) => set({ menuViewId: e.target.value || null })}
+          className="h-8 w-full rounded-md border border-input bg-background px-2 text-sm"
+        >
+          <option value="">All views, merged</option>
+          {(views.data ?? []).map((view) => (
+            <option key={view.id} value={view.id}>
+              {view.name}
+            </option>
+          ))}
+        </select>
+        <p className="text-[11px] text-muted-foreground leading-relaxed">
+          Tandem serves its own xbar / SwiftBar plugin, so the menu bar inherits
+          the team, this staleness line and the pulse rules instead of keeping a
+          second copy of all three. Drop a file in your plugins folder
+          containing:
+        </p>
+        <pre className="text-[10px] font-mono bg-muted/50 rounded-md p-2 overflow-x-auto">
+          {`#!/bin/sh\ncurl -s ${origin}/api/pulse.xbar`}
+        </pre>
+        <p className="text-[11px] text-muted-foreground leading-relaxed">
+          Append{" "}
+          <code className="font-mono text-[10px]">?team=&lt;name&gt;</code> or{" "}
+          <code className="font-mono text-[10px]">?group=author</code> to
+          override per plugin. It is a read of the same queue — no extra token,
+          no team list to maintain twice.
+        </p>
+      </div>
+    </Card>
   );
 }
 

@@ -10,11 +10,29 @@ import {
 import { Check, ExternalLink } from "lucide-react";
 import { approvePrAction, openPrExternal } from "../../actions/queue";
 import type { AgentRun } from "../../shared/agent-types";
+import type { PulseOptions } from "../../shared/pulse";
 import type { PullRequest } from "../../shared/review-types";
-import { AgeCell, AgentCell, ChecksCell, ReviewCell, SizeCell } from "./cells";
+import {
+  AgeCell,
+  AgentCell,
+  ChecksCell,
+  PulseCell,
+  ReviewCell,
+  SignalsCell,
+  SizeCell,
+} from "./cells";
 
+// Pulse sits second, right after the title: it is the column that says whether
+// the row is yours to act on, and everything to its right is the evidence.
+//
+// The hover actions get their OWN trailing column rather than sharing the
+// agent cell. They used to sit beside the agent content behind a
+// `justify-between`, which meant the widest agent state (a findings tally plus
+// a score meter plus severity chips) was competing for width with two buttons
+// that are invisible most of the time — so the agent text truncated on hover-
+// capable widths for no reason. Separate columns, no competition.
 export const QUEUE_GRID =
-  "grid grid-cols-[minmax(0,1fr)_95px_140px_135px_95px_240px] gap-3 items-center px-4";
+  "grid grid-cols-[minmax(0,1fr)_120px_95px_175px_125px_95px_195px_104px] gap-3 items-center px-4";
 
 type Props = {
   pr: PullRequest;
@@ -23,6 +41,9 @@ type Props = {
   unseen: boolean;
   /** Largest churn among the rows on screen — the churn bar's shared scale. */
   maxChurn: number;
+  /** Viewer + staleness line, so the pulse cell means the same thing here as
+   * in the drawer and the menu bar. */
+  pulseOpts: PulseOptions;
   now: number;
   focused: boolean;
   onFocus: () => void;
@@ -34,6 +55,7 @@ export function QueueRow({
   run,
   unseen,
   maxChurn,
+  pulseOpts,
   now,
   focused,
   onFocus,
@@ -95,44 +117,51 @@ export function QueueRow({
           </span>
         </div>
       </div>
+      <PulseCell pr={pr} opts={pulseOpts} />
       <ChecksCell pr={pr} />
-      <ReviewCell pr={pr} />
+      {/* Verdict over its evidence, and the second line is ALWAYS reserved
+          (SignalsCell renders an empty track when a PR has no reviews or
+          comments yet). Without that the badge sat centred on one-line rows
+          and high on two-line rows, so the column's most-scanned element
+          drifted up and down as you moved through the queue. */}
+      <div className="flex flex-col gap-1 min-w-0 items-start">
+        <ReviewCell pr={pr} />
+        <SignalsCell pr={pr} />
+      </div>
       <SizeCell pr={pr} maxChurn={maxChurn} />
       <AgeCell pr={pr} now={now} />
-      <div className="flex items-center justify-between gap-2 min-w-0">
-        <AgentCell run={run} />
-        {/* invisible (not hidden): the actions always occupy their space, so
-            hovering never changes the row height. */}
-        <div className="invisible group-hover:visible flex items-center gap-1 shrink-0">
-          <Button
-            size="2xs"
-            variant="outline"
-            disabled={pr.isDraft || !!blocker}
-            title={
-              blocker
-                ? `Agent found a blocker: ${blocker.title} (shift+A overrides)`
-                : undefined
-            }
-            onClick={(e) => {
-              e.stopPropagation();
-              void approvePrAction(queryClient, pr.prId);
-            }}
-          >
-            <Check /> Approve
-          </Button>
-          <Button
-            size="2xs"
-            icon
-            variant="ghost"
-            aria-label="Open on GitHub"
-            onClick={(e) => {
-              e.stopPropagation();
-              openPrExternal(pr.url);
-            }}
-          >
-            <ExternalLink />
-          </Button>
-        </div>
+      <AgentCell run={run} />
+      {/* invisible (not hidden): the actions always occupy their column, so
+          hovering never reflows the row. */}
+      <div className="invisible group-hover:visible flex items-center justify-end gap-1">
+        <Button
+          size="2xs"
+          variant="outline"
+          disabled={pr.isDraft || !!blocker}
+          title={
+            blocker
+              ? `Agent found a blocker: ${blocker.title} (shift+A overrides)`
+              : undefined
+          }
+          onClick={(e) => {
+            e.stopPropagation();
+            void approvePrAction(queryClient, pr.prId);
+          }}
+        >
+          <Check /> Approve
+        </Button>
+        <Button
+          size="2xs"
+          icon
+          variant="ghost"
+          aria-label="Open on GitHub"
+          onClick={(e) => {
+            e.stopPropagation();
+            openPrExternal(pr.url);
+          }}
+        >
+          <ExternalLink />
+        </Button>
       </div>
     </div>
   );

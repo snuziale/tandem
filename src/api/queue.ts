@@ -13,6 +13,9 @@ export function fetchQueue(
         id: v.id,
         query: v.query,
         agentEnabled: v.agentEnabled,
+        // The server owns {team} expansion and sharding — the client only
+        // says which team the view's token refers to.
+        teamId: v.teamId,
       })),
     },
     signal,

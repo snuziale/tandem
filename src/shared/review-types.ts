@@ -56,6 +56,21 @@ export type PullRequest = {
   checkRuns: CheckRun[];
   threadCount: number;
   unresolvedThreadCount: number;
+  /** Submitted APPROVED reviews. Counted, not listed — the queue only needs
+   * the tally, and `reviews(states:)` totalCount costs no nodes. */
+  approvalCount: number;
+  /** Submitted CHANGES_REQUESTED reviews — the strongest "ball is with the
+   * author" signal there is. */
+  changesRequestedCount: number;
+  /** Issue-level comments (not review threads); `threadCount` is the other half. */
+  commentCount: number;
+  /** Login that armed auto-merge, or null. A PR that merges itself the moment
+   * checks go green is not waiting on anyone. */
+  autoMergeBy: string | null;
+  /** Outstanding review requests: user logins, and teams as "org/slug".
+   * Team membership is not resolvable here, so a team request never counts as
+   * a request from YOU. */
+  requestedReviewers: string[];
   createdAt: string;
   updatedAt: string;
   url: string;
@@ -148,10 +163,14 @@ export type PendingReview = {
 export type SavedView = {
   id: string;
   name: string;
-  /** Raw GitHub search query, always visible/editable in the query bar. */
+  /** Raw GitHub search query, always visible/editable in the query bar. May
+   * contain the `{team}` token (see shared/gh/team.ts), which the server
+   * expands before searching. */
   query: string;
   /** Whether PRs entering this view are pre-warmed by the agent. */
   agentEnabled: boolean;
+  /** Team backing this view's `{team}` token. A view without one ignores it. */
+  teamId?: string;
   position: number;
 };
 
@@ -168,6 +187,12 @@ export type QueueResult = {
   counts: Record<string, number>;
   /** Per-view failures (searches run independently); absent views succeeded. */
   errors: Record<string, string>;
+  /**
+   * How many parallel searches each view fanned out to. 1 for a plain view;
+   * more when a team was sharded (shared/gh/team.ts). Surfaced so "this
+   * view costs 6 searches a poll" is visible rather than inferred.
+   */
+  shards: Record<string, number>;
   rateLimit: RateLimitInfo | null;
   fetchedAt: string;
 };

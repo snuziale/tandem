@@ -7,10 +7,12 @@ import {
   TooltipTrigger,
   cn,
 } from "@uipath/apollo-wind";
-import { Braces, ChartNoAxesColumn } from "lucide-react";
+import { Braces, ChartNoAxesColumn, Users } from "lucide-react";
 import { useActiveView } from "../../hooks/useActiveView";
 import { useNow } from "../../hooks/useNow";
+import { usePulseOptions } from "../../hooks/usePulse";
 import { useQueue } from "../../hooks/useQueue";
+import { useTeamActions, useTeams } from "../../hooks/useTeams";
 import { useSavedViews, useViewActions } from "../../hooks/useSavedViews";
 import { navigate } from "../../routes";
 import type { SavedView } from "../../shared/review-types";
@@ -22,14 +24,16 @@ import {
   parseFacet,
   type Facet,
 } from "../../utils/queueStats";
-import { AppHeader } from "../layout/AppHeader";
+import { AppHeader, HeaderDivider } from "../layout/AppHeader";
+import { PulsePill } from "./PulsePill";
 import { QueryBar } from "./QueryBar";
 import { QueueTable } from "./QueueTable";
+import { TeamManagerDialog } from "./TeamDialogs";
 import { StatsDrawer } from "./StatsDrawer";
 import {
   DeleteViewDialog,
   ViewEditorDialog,
-  ViewsJsonDialog,
+  ConfigJsonDialog,
 } from "./ViewDialogs";
 import { ViewTabs } from "./ViewTabs";
 
@@ -39,10 +43,14 @@ type EditorState =
 export function QueueView() {
   const viewsQuery = useSavedViews();
   const views = viewsQuery.data;
+  const teamsQuery = useTeams();
+  const teams = teamsQuery.data;
+  const teamActions = useTeamActions(teams);
 
   const [editor, setEditor] = useState<EditorState>({ mode: "closed" });
   const [deleting, setDeleting] = useState<SavedView | null>(null);
   const [jsonOpen, setJsonOpen] = useState(false);
+  const [teamsOpen, setTeamsOpen] = useState(false);
 
   const queryBarOpen = useUiStore((s) => s.queryBarOpen);
   const setQueryBarOpen = useUiStore((s) => s.setQueryBarOpen);
@@ -50,6 +58,10 @@ export function QueueView() {
   const setStatsOpen = useUiStore((s) => s.setStatsOpen);
   const route = useUiStore((s) => s.route);
   const now = useNow();
+  // One source of viewer + staleness line, so the table cell, the drawer, the
+  // header pill and the menu-bar feed can never disagree about what a state
+  // means (shared/pulse.ts).
+  const pulseOpts = usePulseOptions(now);
 
   // Selection is URL state; every list write goes through one action set.
   const { activeViewId, activeView } = useActiveView(views);
@@ -66,44 +78,67 @@ export function QueueView() {
   const facetRaw = route.name === "queue" ? route.facet : null;
   const facet = useMemo(() => parseFacet(facetRaw), [facetRaw]);
   const statsShown = statsOpen || facet !== null;
+
   const setFacet = (next: Facet | null) =>
     navigate({
       name: "queue",
       viewId: activeViewId,
       facet: formatFacet(next),
     });
+
   const rows = useMemo(
-    () => (allRows ? filterByFacet(allRows, facet, now) : undefined),
-    [allRows, facet, now],
+    () => (allRows ? filterByFacet(allRows, facet, now, pulseOpts) : undefined),
+    [allRows, facet, now, pulseOpts],
   );
 
   return (
     <div className="h-dvh flex flex-col bg-background text-foreground">
       <AppHeader
         actions={
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                size="xs"
-                icon
-                variant="ghost"
-                aria-label="Views as JSON"
-                onClick={() => setJsonOpen(true)}
-              >
-                <Braces />
-              </Button>
-            </TooltipTrigger>
-            <TooltipPortal>
-              <TooltipContent>
-                View / export / import the views as JSON
-              </TooltipContent>
-            </TooltipPortal>
-          </Tooltip>
+          <>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  size="xs"
+                  icon
+                  variant="ghost"
+                  aria-label="Manage teams"
+                  onClick={() => setTeamsOpen(true)}
+                >
+                  <Users />
+                </Button>
+              </TooltipTrigger>
+              <TooltipPortal>
+                <TooltipContent>
+                  Teams — the logins a view's {"{team}"} token expands to
+                </TooltipContent>
+              </TooltipPortal>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  size="xs"
+                  icon
+                  variant="ghost"
+                  aria-label="Configuration as JSON"
+                  onClick={() => setJsonOpen(true)}
+                >
+                  <Braces />
+                </Button>
+              </TooltipTrigger>
+              <TooltipPortal>
+                <TooltipContent>
+                  View / export / import views and teams as JSON
+                </TooltipContent>
+              </TooltipPortal>
+            </Tooltip>
+          </>
         }
       >
         <ViewTabs
           views={views ?? []}
           counts={queue.data?.counts ?? {}}
+          shards={queue.data?.shards ?? {}}
           activeViewId={activeViewId}
           onSelect={actions.select}
           onRename={actions.rename}
@@ -111,6 +146,17 @@ export function QueueView() {
           onDelete={setDeleting}
           onEdit={(view) => setEditor({ mode: "edit", view })}
           onAddView={() => setEditor({ mode: "new" })}
+        />
+        {/* Everything past this divider is about the ACTIVE VIEW and never
+            moves: the tab strip above absorbs all the slack and scrolls
+            sideways on its own, so these controls keep the same position
+            whether there are two views or twelve. */}
+        <HeaderDivider />
+        <PulsePill
+          rows={allRows}
+          opts={pulseOpts}
+          facet={facet}
+          onFacet={setFacet}
         />
         <Tooltip>
           <TooltipTrigger asChild>
@@ -168,6 +214,12 @@ export function QueueView() {
       {queryBarOpen && activeView ? (
         <QueryBar
           query={activeView.query}
+          team={
+            activeView.teamId
+              ? (teams?.find((t) => t.id === activeView.teamId) ?? null)
+              : null
+          }
+          shards={activeViewId ? queue.data?.shards[activeViewId] : undefined}
           onCommit={(query) =>
             actions.replaceAll(
               (views ?? []).map((v) =>
@@ -184,6 +236,8 @@ export function QueueView() {
       {statsShown ? (
         <StatsDrawer
           rows={allRows}
+          viewId={activeViewId}
+          pulseOpts={pulseOpts}
           shownCount={rows?.length ?? 0}
           matching={activeViewId ? queue.data?.counts[activeViewId] : undefined}
           now={now}
@@ -197,6 +251,7 @@ export function QueueView() {
         isLoading={queue.isPending && !!views?.length}
         error={queue.error}
         viewError={activeViewId ? queue.data?.errors[activeViewId] : undefined}
+        pulseOpts={pulseOpts}
         filteredBy={
           facet && allRows?.length
             ? { label: facetLabel(facet), onClear: () => setFacet(null) }
@@ -209,9 +264,11 @@ export function QueueView() {
           // Keyed so switching between "new" and each view resets the fields.
           key={editor.mode === "edit" ? editor.view.id : "new"}
           view={editor.mode === "edit" ? editor.view : null}
+          teams={teams ?? []}
           open
           onClose={() => setEditor({ mode: "closed" })}
           onSave={actions.upsert}
+          onManageTeams={() => setTeamsOpen(true)}
         />
       ) : null}
       {deleting ? (
@@ -222,11 +279,26 @@ export function QueueView() {
         />
       ) : null}
       {jsonOpen ? (
-        <ViewsJsonDialog
+        <ConfigJsonDialog
           views={views ?? []}
+          teams={teams ?? []}
           open
           onClose={() => setJsonOpen(false)}
-          onApply={actions.replaceAll}
+          onApply={(config) => {
+            actions.replaceAll(config.views);
+            // Null means the payload never mentioned teams (an old
+            // views-only export) — leave the ones already configured alone.
+            if (config.teams) teamActions.replaceAll(config.teams);
+          }}
+        />
+      ) : null}
+      {teamsOpen ? (
+        <TeamManagerDialog
+          teams={teams ?? []}
+          open
+          onClose={() => setTeamsOpen(false)}
+          onSave={teamActions.upsert}
+          onDelete={teamActions.remove}
         />
       ) : null}
     </div>

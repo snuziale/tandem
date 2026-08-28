@@ -70,6 +70,7 @@ describe("routes", () => {
       ["/", "?view=a b"],
       ["/", "?view=v1&by=idle%3A%3E7d"],
       ["/", "?by=repo%3Aacme%2Fweb"],
+      ["/", "?view=v1&by=pulse%3Arotting"],
       ["/", ""],
     ] as const) {
       const route = routeOfLocation(pathname, search);

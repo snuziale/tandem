@@ -4,7 +4,9 @@ import { handleChats } from "./agent/chat/routes";
 import { handleConfig } from "./config/routes";
 import { handleQueue } from "./github/queue";
 import { handlePrs } from "./github/routes";
+import { handlePulse } from "./pulse/routes";
 import { handleReviews } from "./reviews/routes";
+import { handleTeams } from "./teams/routes";
 import { handleSeen } from "./seen/routes";
 import { handleSettings } from "./settings/routes";
 import { handleViews } from "./views/routes";
@@ -39,6 +41,10 @@ function listen(port: number): ReturnType<typeof Bun.serve> {
           res = await handleReviews(req);
         } else if (url.pathname.startsWith(API_PATHS.VIEWS)) {
           res = await handleViews(req);
+        } else if (url.pathname.startsWith(API_PATHS.TEAMS)) {
+          res = await handleTeams(req);
+        } else if (url.pathname.startsWith(API_PATHS.PULSE)) {
+          res = await handlePulse(req);
         } else if (url.pathname.startsWith(API_PATHS.RUNS)) {
           res = await handleRuns(req);
         } else if (url.pathname.startsWith(API_PATHS.CHATS)) {

@@ -48,6 +48,11 @@ export function validateView(raw: unknown): SavedView | null {
     name: raw.name,
     query: raw.query,
     agentEnabled: raw.agentEnabled === true,
+    // Kept even when the team no longer exists: shardTeamQuery fails the view
+    // loudly in that case, which is far better than silently running a query
+    // whose {team} token expanded to nothing.
+    teamId:
+      typeof raw.teamId === "string" && raw.teamId ? raw.teamId : undefined,
     position: typeof raw.position === "number" ? raw.position : 0,
   };
 }

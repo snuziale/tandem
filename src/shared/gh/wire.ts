@@ -53,6 +53,22 @@ export type GqlPrNode = {
   updatedAt: string;
   reviewThreads: { totalCount: number; nodes?: GqlReviewThread[] };
   commits: { totalCount?: number; nodes: GqlCommitWithChecks[] };
+  // --- Pulse inputs. Aliased totalCounts, not review nodes: the tally is all
+  // the queue needs, and `reviews(states:)` under two aliases costs no nodes
+  // at all. All optional — a cached response, or the detail query before it
+  // was extended, simply reports zero rather than breaking normalization.
+  approvals?: { totalCount: number };
+  changesRequested?: { totalCount: number };
+  comments?: { totalCount: number };
+  autoMergeRequest?: { enabledBy?: { login: string } | null } | null;
+  reviewRequests?: { totalCount: number; nodes?: GqlReviewRequest[] };
+};
+
+export type GqlReviewRequest = {
+  requestedReviewer:
+    | { __typename: "User"; login: string }
+    | { __typename: "Team"; slug: string; organization?: { login: string } }
+    | null;
 };
 
 export type GqlReviewState =

@@ -31,6 +31,9 @@ export type ViewTabActions = {
 type Props = ViewTabActions & {
   views: SavedView[];
   counts: Record<string, number>;
+  /** Parallel searches each view fanned out to. >1 means a team was sharded
+   * — worth showing on the tab, because it is what that view costs per poll. */
+  shards: Record<string, number>;
   activeViewId: string | null;
 };
 
@@ -42,6 +45,7 @@ type Props = ViewTabActions & {
 export function ViewTabs({
   views,
   counts,
+  shards,
   activeViewId,
   onAddView,
   ...actions
@@ -49,10 +53,16 @@ export function ViewTabs({
   const [renamingId, setRenamingId] = useState<string | null>(null);
 
   return (
-    <div className="flex items-center gap-1 min-w-0">
+    // flex-1 so the STRIP absorbs the header's slack: whatever sits to the
+    // right of it (the view controls) then keeps the same position whether
+    // there are two views or twelve, instead of sliding with the tab widths.
+    <div className="flex items-center gap-1 flex-1 min-w-0">
       {views.length > 0 ? (
         // Flat like the rest of the app: no segmented-control tray, the active
-        // view is just the one pill that's filled in.
+        // view is just the one pill that's filled in. This is also the ONLY
+        // thing in the header that scrolls — the header is one fixed-height
+        // row and nothing in it wraps, so a long view list runs off sideways
+        // instead of pushing the controls beside it around.
         <div
           role="tablist"
           className="flex items-center gap-1 min-w-0 overflow-x-auto"
@@ -62,6 +72,7 @@ export function ViewTabs({
               key={view.id}
               view={view}
               count={counts[view.id]}
+              shards={shards[view.id]}
               active={view.id === activeViewId}
               renaming={renamingId === view.id}
               onStartRename={() => setRenamingId(view.id)}
@@ -94,6 +105,7 @@ export function ViewTabs({
 type TabProps = Omit<ViewTabActions, "onAddView"> & {
   view: SavedView;
   count: number | undefined;
+  shards: number | undefined;
   active: boolean;
   renaming: boolean;
   onStartRename: () => void;
@@ -103,6 +115,7 @@ type TabProps = Omit<ViewTabActions, "onAddView"> & {
 function ViewTab({
   view,
   count,
+  shards,
   active,
   renaming,
   onStartRename,
@@ -166,6 +179,14 @@ function ViewTab({
                 )}
               >
                 {count}
+              </span>
+            ) : null}
+            {shards !== undefined && shards > 1 ? (
+              <span
+                className="text-[10px] text-muted-foreground/60 tabular-nums"
+                title={`${shards} parallel searches — this view's team is chunked`}
+              >
+                ×{shards}
               </span>
             ) : null}
           </button>

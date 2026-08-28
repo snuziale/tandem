@@ -23,6 +23,23 @@ fragment PrFields on PullRequest {
   createdAt
   updatedAt
   reviewThreads(first: 1) { totalCount }
+  comments { totalCount }
+  autoMergeRequest { enabledBy { login } }
+  # Two aliases of the same field with different args — the ONLY way to ask
+  # for both tallies in one selection set (the same key twice is a conflict,
+  # which is why detailQuery.ts can't reuse this fragment for threads).
+  approvals: reviews(states: [APPROVED]) { totalCount }
+  changesRequested: reviews(states: [CHANGES_REQUESTED]) { totalCount }
+  reviewRequests(first: 10) {
+    totalCount
+    nodes {
+      requestedReviewer {
+        __typename
+        ... on User { login }
+        ... on Team { slug organization { login } }
+      }
+    }
+  }
   commits(last: 1) {
     totalCount
     nodes {

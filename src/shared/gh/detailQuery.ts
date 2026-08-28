@@ -22,6 +22,20 @@ query TandemPrDetail($owner: String!, $name: String!, $number: Int!) {
       changedFiles
       reviewDecision
       viewerLatestReview { state }
+      comments { totalCount }
+      autoMergeRequest { enabledBy { login } }
+      approvals: reviews(states: [APPROVED]) { totalCount }
+      changesRequested: reviews(states: [CHANGES_REQUESTED]) { totalCount }
+      reviewRequests(first: 10) {
+        totalCount
+        nodes {
+          requestedReviewer {
+            __typename
+            ... on User { login }
+            ... on Team { slug organization { login } }
+          }
+        }
+      }
       createdAt
       updatedAt
       reviewThreads(first: 100) {

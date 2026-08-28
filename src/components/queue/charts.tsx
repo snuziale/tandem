@@ -284,3 +284,90 @@ export function StatTile({
     </Tag>
   );
 }
+
+type SparkSeries = {
+  key: string;
+  label: string;
+  color: string;
+  /** One value per day, oldest → newest. Same length as every other series. */
+  values: number[];
+};
+
+/**
+ * The one chart here that is a TREND rather than a distribution, and the only
+ * place the queue is allowed to draw one — it reads the daily rollup
+ * (shared/pulse-journal.ts), not the live rows, so it cannot accidentally
+ * imply that a snapshot has history.
+ *
+ * Deliberately small and unlabelled per point: it answers "is this pile
+ * growing?" and nothing finer. The exact numbers stay in the strip above it,
+ * and the last value of each series is printed beside its name — so, like
+ * every other mark in this drawer, nothing is hover-gated.
+ */
+export function Sparklines({
+  series,
+  days,
+  height = 28,
+}: {
+  series: SparkSeries[];
+  /** Day labels for the axis ends, oldest first. */
+  days: string[];
+  height?: number;
+}) {
+  const width = 100;
+  const points = days.length;
+  if (points < 2)
+    return (
+      <p className="text-[11px] text-muted-foreground/70">
+        Not enough history yet — one point is recorded per day.
+      </p>
+    );
+  const max = Math.max(1, ...series.flatMap((s) => s.values));
+  const x = (i: number) => (i / (points - 1)) * width;
+  const y = (v: number) => height - (v / max) * (height - 2) - 1;
+
+  return (
+    <div className="flex flex-col gap-1.5">
+      <svg
+        viewBox={`0 0 ${width} ${height}`}
+        preserveAspectRatio="none"
+        className="w-full"
+        style={{ height }}
+        role="img"
+        aria-label={`${points}-day trend`}
+      >
+        {series.map((s) => (
+          <polyline
+            key={s.key}
+            fill="none"
+            stroke={s.color}
+            strokeWidth={1.5}
+            // The viewBox is stretched horizontally by preserveAspectRatio,
+            // which would stretch the stroke with it — this keeps it 1.5px.
+            vectorEffect="non-scaling-stroke"
+            strokeLinejoin="round"
+            strokeLinecap="round"
+            points={s.values.map((v, i) => `${x(i)},${y(v)}`).join(" ")}
+          />
+        ))}
+      </svg>
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+        {series.map((s) => (
+          <span key={s.key} className="flex items-center gap-1.5 text-[11px]">
+            <span
+              className="inline-block w-2 h-[2px] rounded-full shrink-0"
+              style={{ background: s.color }}
+            />
+            <span className="text-foreground/80">{s.label}</span>
+            <span className="tabular-nums text-muted-foreground">
+              {s.values[s.values.length - 1]}
+            </span>
+          </span>
+        ))}
+        <span className="text-[10px] text-muted-foreground/70 ml-auto">
+          {days[0]} → {days[days.length - 1]}
+        </span>
+      </div>
+    </div>
+  );
+}

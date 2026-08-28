@@ -51,8 +51,11 @@ browser → /api/* → Vite proxy (dev) → Bun server (src/server/worker.ts)
                                             approve · submit  ← the only two GitHub writes
   /api/reviews/:prId  reviews/routes.ts  local pending-review draft (GET/PUT/DELETE)
   /api/views       views/routes.ts       saved queue views (created/edited/imported from the
-                                         queue UI; the views-JSON dialog round-trips the exact
-                                         views.json array — utils/viewsJson.ts validates imports)
+                                         queue UI; the JSON dialog round-trips views AND teams
+                                         together — utils/configJson.ts validates imports)
+  /api/teams       teams/routes.ts       named lists of GitHub logins (GET/PUT, like views)
+  /api/pulse[...]  pulse/routes.ts       .xbar → menu-bar plugin text · /history → daily rollup
+                                         · plain GET → JSON. All read-only.
   /api/seen        seen/routes.ts        last-seen per PR (detail marks; queue shows the
                                          unseen-changes dot when updatedAt moved past it)
   /api/settings    settings/routes.ts    caps, threshold, models, per-repo agent toggle,
@@ -67,7 +70,9 @@ browser → /api/* → Vite proxy (dev) → Bun server (src/server/worker.ts)
 **Queue divergence from the spec**: views are NOT batched into one aliased GraphQL request. A
 batch's execution time is the sum of its searches and GitHub kills GraphQL around ~10s (502); an
 org-wide view alone runs ~9s. One request per view, in parallel — same rate-limit points, per-view
-errors, and a single 502-retry in `github/client.ts`.
+errors, and a single 502-retry in `github/client.ts`. A team-backed view extends the SAME shape
+one level down (see below): its query is chunked and each chunk is another parallel search, under
+a global `MAX_SEARCHES_PER_POLL` so a few team views can't turn one poll into forty searches.
 
 ## The agent pipeline (server/agent/)
 
@@ -79,7 +84,7 @@ errors, and a single 502-retry in `github/client.ts`.
 2. **Analyze** (sonnet): per file cluster (`cluster.ts`: top-dir grouping, ≤8 files/≤800 lines) →
    candidate findings as strict JSON.
 3. **Reconcile** (sonnet): candidates + existing human threads → deduped, ranked, capped final set
-   + run summary. This pass keeps output signal-dense; do not skip it.
+   - run summary. This pass keeps output signal-dense; do not skip it.
 
 **Agents are configurable profiles** (`settings.agents: AgentProfile[]` + `defaultAgentId`): each
 profile carries its own per-pass models and prompt instruction blocks, so agents can specialize
@@ -135,9 +140,9 @@ believes it, how to reword the comment. Interactive, but the same read-only pass
   `[immutable context] + [transcript] + [question]` (`chat/prompt.ts`) — stable prefix first, so
   prompt caching pays for the diff instead of us re-paying per message. Transcripts live in
   `chats.json`; `--no-session-persistence` stays.
-- **Prose first, actions in an OPTIONAL trailing ```json fence** (`chat/prose.ts`): strict JSON is
-  not the product here, so an unparseable tail degrades to prose-only instead of failing the turn.
-  `createFenceGate` hides the fence while it streams (only ```json — a ```ts snippet still
+- **Prose first, actions in an OPTIONAL trailing ``json fence** (`chat/prose.ts`): strict JSON is
+not the product here, so an unparseable tail degrades to prose-only instead of failing the turn.
+`createFenceGate` hides the fence while it streams (only ``json — a ```ts snippet still
   streams); `splitTrailingJson` walks fences line by line and is authoritative for what persists.
 - **Actions are PROPOSALS, gated twice** (`chat/actions.ts`): `sanitizeChatActions` before the chip
   is shown (ids exist, transitions legal, `new-finding` anchored via `diffLineIndex` and dropped
@@ -165,6 +170,81 @@ believes it, how to reword the comment. Interactive, but the same read-only pass
   `anchorMoved` comments refused (409). Success clears the draft.
 - Blocker gate (guard rail, not a block): quick-approve disabled + `a` refused while an undismissed
   blocker exists; `shift+A` overrides; APPROVE submit blocked the same way.
+
+## Teams and pulse (the cohort half)
+
+The queue answers "what must I review?". A second question — "how is my team's work doing?" —
+needs two things the queue never had: a durable set of PEOPLE, and a reading of each PR that says
+whose court the ball is in. Both are pure and shared, because the server (the menu-bar feed)
+needs them as much as the client does.
+
+**A team** (`shared/team-types.ts`, `server/teams/`, `~/.tandem/teams.json`) is a name and a list
+of GitHub logins. That is the entire type. A richer one was built first — display names, emails,
+managers, repos, a `gh-team`/`org-members` sync, a paste-and-filter importer — and every field
+beyond the login was carried around without being read, so it was cut (user decision 2026-08-27).
+Don't add a field back without a consumer.
+
+A view references a team (`SavedView.teamId`) and reaches it through ONE token, `{team}`, which
+stands in for a person wherever a person can go:
+
+```
+author:{team}            → author:alice author:bob
+review-requested:{team}  → review-requested:alice review-requested:bob
+{team}                   → author:alice author:bob      (bare = authors)
+```
+
+The qualifier the token is attached to is the one that repeats, so the query keeps saying what it
+does. The query bar shows the raw string and prints the expansion under it, never in place of it.
+
+- **Expansion and sharding are one pure module** (`shared/gh/team.ts`, tested).
+  `shardTeamQuery` chunks the logins 8 at a time and returns ONE QUERY PER CHUNK — that is how a
+  25-person team gets full coverage without touching `first: 50`, which is measured and must not
+  move. It is the single reason a team beats typing the logins into the query yourself.
+- **An empty expansion is an ERROR, never a query.** `author:{team}` over a team with no members
+  would leave `is:pr is:open archived:false`, which matches all of GitHub. The view fails loudly
+  instead — that is also why a deleted team leaves `teamId` in place.
+- Shards are deduped by prId and their `issueCount`s summed; per-view `shards` comes back in the
+  queue response and shows on the tab as `×n`.
+
+**Pulse** (`shared/pulse.ts`, tested) maps every PR onto exactly one attention state:
+`blocked-on-you · rotting · blocked-on-them · ready · moving`. The ORDER of those rules is the
+design and is spelled out in the file — a draft is always moving; your own action outranks
+everything; `ready` beats `rotting` (an approved green PR sitting two weeks is a merge click, not
+rot); then rot, because "three weeks untouched" is the story. `blockedOn()` is separately testable
+and answers author/reviewer/neither without knowing who you are.
+
+- Inputs come from four cheap fields added to `PR_SEARCH_FRAGMENT`: `comments { totalCount }`,
+  `autoMergeRequest`, and `approvals`/`changesRequested` as ALIASED `reviews(states:)` totalCounts
+  (aliases are the only way to ask twice in one selection set), plus `reviewRequests(first: 10)`.
+  All optional in the normalizer — a response without them reports zero, never a wrong state.
+- **A team review request never counts as YOURS**: membership isn't resolvable from a search
+  response, so `awaitsViewer` only matches a direct user request. Same discipline as the null
+  `reviewDecision` rule: degrade honestly rather than guess.
+- `settings.pulse.rottingDays` is a SETTING because it is a team norm, not a fact. Every "rotting"
+  mark in the app is drawn against that one number.
+- It surfaces in four places, all fed by ONE `usePulseOptions(now)`: the queue's pulse column, the
+  breakdown's strip + tiles, the header `PulsePill`, and the menu-bar feed. `usePulseOptions`
+  MEMOIZES its result — it is a useMemo dependency in three of them. Never compute pulse from
+  anywhere else, or two surfaces will disagree.
+
+**The queue table is FLAT, and grouping is a menu-bar concern only** (user decision 2026-08-27).
+`groupPullRequests` in `shared/pulse.ts` exists for `shared/xbar.ts`: a pulldown has no columns to
+read across, so it needs headings. The table has columns, and the pulse pill slices it faster than
+a grouping control would — so there is no group toggle, no `&group=` URL param and no `g` key.
+Don't reintroduce them in the table; `?group=` on `/api/pulse` is the feed's own knob.
+
+**Trend**: `~/.tandem/pulse.json` keeps ONE row per view per day — five integers and a total, last
+write wins, 90-day cap (`shared/pulse-journal.ts`, tested; written fire-and-forget after the queue
+response). The drawer's sparkline is the only trend in the app and reads only this. The stats
+drawer stays a snapshot; a real per-PR history is a different feature with a different store.
+
+**The menu bar** (`shared/xbar.ts`, tested + `server/pulse/routes.ts`): Tandem serves its own
+xbar / SwiftBar plugin, so `scripts/tandem-pulse.5m.sh` is one `curl`. The point is that a
+menu-bar PR plugin needs a token, a team list, a staleness rule and a definition of "needs me" —
+Tandem owns all four, so the glanceable surface and the app cannot drift apart.
+`?view=` `?team=` `?group=` override per plugin. **A true native tray is deliberately NOT built**:
+webview-bun exposes no menu API (`app.ts` bridges even Quit), so it is a Swift-helper project, and
+the served plugin gets ~90% of it today.
 
 ## Diff pane — @pierre/diffs notes
 
@@ -235,27 +315,34 @@ src/
   shared/              client↔server bridge (tsconfig.server compiles ONLY server+shared)
     api-paths.ts  config-types.ts  github-credentials.ts  review-types.ts  agent-types.ts
     finding-schema.ts (zod)  settings-types.ts  is-plain-object  runtime  user-agent
+    team-types.ts  pulse.ts (TESTED: states, blockedOn, grouping)
+    pulse-journal.ts (TESTED)  xbar.ts (TESTED: the menu-bar plugin renderer)
                      kebab-case here; gh/ below is a camelCase sub-package. `-schema` means
                      zod (chat-schema, finding-schema); plain data is named for what it holds.
     gh/              runtime-neutral GitHub core, ALL TESTED: wire.ts (raw shapes),
                      normalize.ts, queueQuery.ts, detailQuery.ts, patch.ts (buildFilePatch,
-                     splitRawDiff, diffLineIndex), generated.ts, prKey.ts (prId = "owner/repo#n")
+                     splitRawDiff, diffLineIndex), generated.ts, prKey.ts (prId = "owner/repo#n"),
+                     team.ts ({team} expansion + sharding)
   server/            Bun-only
     worker.ts (flat prefix router, port scan 5274-81, idleTimeout 0)  app.ts (webview host)
     runtime.ts  assets.ts (+generated asset-manifest.ts)  log  pathMatch  requestJson
     storage/jsonFile.ts   atomic temp+rename, 0600, PER-PATH mutation queue — the only
                           JSON persistence path; don't hand-roll another
-    config/  github/{client,queue,pr,files,submit,routes}  reviews/  views/  settings/
+    config/  github/{client,queue,pr,files,submit,routes}  reviews/  views/
+    settings/  teams/{store,routes}  pulse/{journal,routes}
     agent/   claude.ts (CLI harness)  procStream  live.ts (runs + chat)  sse.ts (replay-then-
              tail, shared)  runsIndex.ts  prewarm.ts  routes.ts
              pipeline/{run,prompts,cluster,parse,context,decide}
              chat/{turn,prompt,prose,actions,context,store,routes}
   api/               plain-fetch clients (http.ts wrapper + one file per resource, named for
-                     the resource: config, settings, queue, prs, reviews, runs, seen, views)
+                     the resource: config, settings, queue, prs, reviews, runs, seen, views,
+                     teams, pulse)
   hooks/             useQueue (60s poll + focus refetch)  usePrDetail/usePrFiles (files:
                      staleTime Infinity per sha)  usePendingReview (optimistic)  useAgentRuns
                      (30s poll, byKey index)  useRunStream (SSE)  useChat (transcript + turn
                      stream + apply)  useSettings
+                     usePulse (usePulseOptions — the ONE source of viewer + rottingDays —
+                     and usePulseHistory)  useTeams (+ useTeamActions)
                      useSavedViews (+ useViewActions: every view write + its navigation)
                      useActiveView (URL ↔ view list reconciliation)
                      useKeyboardNav (global dispatcher) — `use*` ONLY; the plain-function
@@ -271,7 +358,8 @@ src/
                      /:owner/:repo/pull/:n · /settings
                      (navigateToQueue() = back to the last-selected view AND facet)
   utils/queueStats.ts  TESTED pure stats + facets over the active view's rows
-                     (buckets, top-N folding, parse/format/match facet)
+                     (buckets, top-N folding, parse/format/match facet; `pulse` is the one
+                     facet dim needing context, hence the optional PulseOptions arg)
   components/        layout/AppHeader (the ONE header: chrome + brand + agent pill + settings
                      + theme; screens fill `children`/`actions`) queue/ pr/ agent/
                      review(tray in pr/)/ settings/ setup/  common/ (Markdown, ErrorBoundary,
@@ -281,8 +369,10 @@ src/
 ## Storage (`$TANDEM_HOME ?? ~/.tandem`, all via jsonFile.ts, all 0600)
 
 ```
-config.json    PAT (+defaultOrg)          settings.json  caps/threshold/models/repos
+config.json    PAT (+defaultOrg)          settings.json  caps/threshold/models/repos/pulse
 views.json     saved queue views          reviews.json   pending-review drafts by prId
+teams.json     named lists of GitHub logins (no defaults — a team is a claim about people)
+pulse.json     ONE row per view per day: five pulse counts + total, 90-day cap
 runs.json      AgentRun by prId@headSha + spendByDay     claude.log  harness stderr
 chats.json     ChatSession by prId@headSha[#findingId], LRU-capped at 100
 seen.json      last-seen updatedAt per prId (drives the unseen-changes dot)
@@ -305,6 +395,30 @@ Two dispatchers, one guard module (`keyboard/keyOwnership.ts`), one display regi
   ⌘↵ for itself. The chat composer is the one box that sends on plain ↵ (⇧↵ = newline, ⌘↵ still
   works): it is a chat box, and overloading ⌘↵ a third time reads as ambiguous.
 
+## Queue table cells
+
+Eight columns (`QUEUE_GRID` in `QueueRow.tsx`), and two rules hold the column edges still:
+
+- **The hover actions own the last column.** They used to share the agent cell behind a
+  `justify-between`, so the widest agent state — a findings tally, a score meter and severity
+  chips — competed for width with two buttons that are invisible most of the time. They stay
+  `invisible`, never `hidden`, so hovering still never reflows the row.
+- **Review and agent cells are always TWO lines**, whether or not the second has content:
+  `SignalsCell` renders an empty track for a PR with no reviews or comments, and `AgentCell`
+  reserves its severity-chip row in every state including "—". Before that, a one-line state and
+  a two-line state centred differently, so the two most-scanned columns slid up and down against
+  the six that never move.
+
+## Queue header zones
+
+One fixed-height row, and NOTHING in it wraps — so the rule has to be visible rather than
+emergent. `ViewTabs` is the only `flex-1` child and the only thing that scrolls (`overflow-x-auto`
+on its strip), which means every control to its right keeps the same position whether there are
+two views or twelve. A `HeaderDivider` marks where the tab strip ends and the ACTIVE VIEW's own
+controls begin — pulse pill, breakdown toggle, query toggle — and `AppHeader`'s `actions` slot
+keeps only what is about the app rather than the view (teams, views-JSON), followed by the
+agent pill and settings. Put a new control in the zone it belongs to; do not add a second row.
+
 ## Queue stats drawer (`components/queue/StatsDrawer.tsx` + `charts.tsx`)
 
 A breakdown of the ACTIVE VIEW, toggled from the header (`s`), where every mark is also a
@@ -314,12 +428,22 @@ separate feature, not a tweak to this one.
 
 **It describes the PAGE, not the view.** The queue fetches ONE page (`first: 50`) while the
 tab badge shows GitHub's `issueCount` — so a 521-match view yields 50 rows. The table has
-always been a top-50 list and that's fine; a *breakdown* is not, because it reads as a claim
+always been a top-50 list and that's fine; a _breakdown_ is not, because it reads as a claim
 about the whole view. `StatsDrawer` takes `matching` (the view's issueCount) and, when it
 exceeds the loaded rows, says so above the charts. Never drop that caveat.
 
 - **All logic is pure and tested** (`utils/queueStats.ts`): idle/size/checks/review bucketing,
   top-6 nominal folding, and facet parse/format/match. The components only lay it out.
+- **TWO BANDS, one wrapping rule each** — strips (a proportional bar plus a legend, so they need
+  width) go two-up; distributions (short bar lists, all the same shape) go four-up. Nothing spans
+  columns. The earlier single 4-column grid with `sm:col-span-2` cards made a card full-width at
+  one breakpoint and half-width at the next, and the reflow read as arbitrary. Don't reintroduce
+  a span.
+- **A nominal card with ONE distinct value is not rendered**: a repo-scoped view's "by repo"
+  would be a single 100% bar offering a filter that selects everything. Ordinal cards always
+  render — an empty bucket is information, which is why they keep their zero rows.
+- The trend card only appears once there are two days to join: the drawer caps at 60vh, and a
+  card that says "not enough history yet" is a promise, not a chart.
 - **The facet is URL state** (`?by=author:alice`) for the same reasons the view is. A facet
   implies an OPEN drawer (`QueueView.statsShown`) — closing the drawer or hitting `s` clears
   it, `esc` clears the facet alone. Switching views drops it (`useViewActions.select`), but a
@@ -344,6 +468,13 @@ exceeds the loaded rows, says so above the charts. Never drop that caveat.
 - The queue rows carry the same idea inline: the size cell's churn bar shares ONE scale (the
   largest churn on screen, computed in `QueueTable`), and the agent cell's score meter is
   violet because the score is machine-authored — it and its number never wrap apart.
+- **Pulse wears the same reserved STATUS tokens** as checks and review (you=warning,
+  rotting=error, ready=success, them/moving=muted + `--tandem-bar`) — it is the same JOB, a small
+  closed set of states each shipped with a written label, so it must not invent a palette.
+- **Icons are lucide, never emoji** (`components/queue/pulseIcons.ts`): an emoji renders
+  differently per machine, sits on its own baseline and cannot take a theme color, which would
+  break the rule that the color IS the status token. `shared/xbar.ts` keeps a glyph table because
+  a menu-bar plugin is plain text and has no other option — that is the ONLY exception.
 
 ## Design decisions (settled — surface a tradeoff before changing)
 
@@ -364,6 +495,19 @@ exceeds the loaded rows, says so above the charts. Never drop that caveat.
 - **The stats facet is URL state too** (`/?view=<id>&by=<dim>:<value>`), client-side only: it
   never rewrites the GitHub search, so it costs no rate limit and stays honest about being a
   slice of what the view already returned.
+- **A team is referenced, never inlined**: views carry `teamId` and the `{team}` token, so one
+  team change updates every view at once, and a view's query keeps saying what it does.
+- **Teams shard rather than paging**: `first: 50` is measured and stays; coverage comes from more
+  parallel searches, which is the divergence the queue already made for views.
+- **The pulse feed is a READ.** `/api/pulse` cannot write to GitHub and invokes no model.
+- **No cohort digest** (user decision 2026-08-27): a model pass over a whole queue view was built
+  and removed — it was slow enough that nobody waited for it, and the pulse counts already answer
+  what it summarised. Don't rebuild it without a faster shape.
+- **The JSON dialog exports views AND teams together**: a view carries a `teamId`, not a list of
+  logins, so shipping one without its team hands the reader a view that refuses to search. A bare
+  array still imports as views-only (old exports live in notes and chat threads), and `teams:
+null` from that path means "leave the configured teams alone" — an empty array is a real
+  instruction to clear them.
 - **View management lives on the tab** (⋯ menu / right-click / double-click to rename):
   rename · edit query · duplicate · delete (delete always confirms, then slides to the
   neighbour). Every write goes through `useViewActions`, which also owns the navigation.
@@ -418,8 +562,19 @@ exceeds the loaded rows, says so above the charts. Never drop that caveat.
   probes existence — re-verify flags on CLI major bumps.
 - **A chat chip refuses to apply**: the finding moved state since the answer (staged, dismissed,
   rerun) — the message lands on the chip, that's the re-validation working, not a bug.
+- **A team-backed view says "no members" instead of returning everything**: that is
+  `shardTeamQuery` refusing an empty expansion, not a bug. Attach a team or drop the token.
+- **`blocked on you` is always 0**: no login resolved (`/api/config/status` probe failed, or the
+  token is bad). Pulse degrades to attributing nothing to you rather than guessing — check the
+  drawer's pulse card, which says so out loud.
+- **A team review request never reads as yours.** GitHub does not return team membership on a
+  search node, so `awaitsViewer` matches direct user requests only.
+- **The sparkline is empty for a day**: the rollup is written from the queue POLL, so it needs the
+  app open at least once that day, and `settings.pulse.journalEnabled` on.
+- **`/api/pulse.xbar` 404s after an upgrade**: same pitfall as any new `/api/*` family — the Bun
+  server has to be RESTARTED to pick up new routes.
 - **`ChatPanel` must stay mounted KEYED BY SCOPE**: the remount is what clears the composer draft
   and the streaming buffer. Resetting them in an effect is exactly what the React Compiler lint
   rejects (`react-hooks/set-state-in-effect`).
-- **Chat's fence gate only hides ```json**: a reply whose LAST fence is a bare ``` block streams
+- **Chat's fence gate only hides `json**: a reply whose LAST fence is a bare ` block streams
   visibly and is then peeled off at turn-end — the persisted text is always the authoritative one.

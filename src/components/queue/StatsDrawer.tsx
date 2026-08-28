@@ -11,6 +11,13 @@
 import { useMemo } from "react";
 import { Button, cn } from "@uipath/apollo-wind";
 import { Info, X } from "lucide-react";
+import { usePulseHistory } from "../../hooks/usePulse";
+import {
+  PULSE_HEADLINE_STATES,
+  PULSE_LABELS,
+  type PulseOptions,
+} from "../../shared/pulse";
+import { PULSE_COLOR } from "./pulseIcons";
 import type { PullRequest } from "../../shared/review-types";
 import {
   computeQueueStats,
@@ -21,7 +28,13 @@ import {
   type FacetDim,
   type Slice,
 } from "../../utils/queueStats";
-import { BarList, ChartCard, StatTile, StatusStrip } from "./charts";
+import {
+  BarList,
+  ChartCard,
+  Sparklines,
+  StatTile,
+  StatusStrip,
+} from "./charts";
 
 /** One flat hue for nominal bars: author and repo are one series each, and
  * bar length already encodes the value — a ramp there would double-encode it. */
@@ -45,6 +58,13 @@ const STATUS: Record<string, string> = {
   awaiting: "var(--warning)",
   changes: "var(--error)",
   draft: "var(--foreground-muted)",
+  // Pulse wears the same reserved status tokens everywhere, from the ONE table
+  // in pulseIcons.ts — with a single deliberate override below.
+  ...PULSE_COLOR,
+  // `moving` alone differs here, and only here: elsewhere it is a text label
+  // the eye should slide off, but a chart segment painted `--foreground-muted`
+  // reads as absent rather than neutral, so it takes the neutral DATA hue.
+  moving: "var(--tandem-bar)",
 };
 
 const CHECK_LABELS: Record<string, string> = {
@@ -65,6 +85,12 @@ const REVIEW_LABELS: Record<string, string> = {
 type Props = {
   /** The whole view, before the facet — the charts' denominator. */
   rows: PullRequest[] | undefined;
+  /** Identity of the view being described — the series key of the daily
+   * rollup. Null while the view list is still resolving. */
+  viewId: string | null;
+  /** Viewer + staleness line — the pulse dimension is the one that needs more
+   * than the row itself, and everything on screen must use the same values. */
+  pulseOpts: PulseOptions;
   /** How many rows survive the active facet (what the table below shows). */
   shownCount: number;
   /**
@@ -81,13 +107,22 @@ type Props = {
 
 export function StatsDrawer({
   rows,
+  viewId,
+  pulseOpts,
   shownCount,
   matching,
   now,
   facet,
   onFacet,
 }: Props) {
-  const stats = useMemo(() => computeQueueStats(rows ?? [], now), [rows, now]);
+  const stats = useMemo(
+    () => computeQueueStats(rows ?? [], now, pulseOpts),
+    [rows, now, pulseOpts],
+  );
+  // The ONLY trend in this drawer, and it comes from the daily rollup on disk
+  // rather than the rows — see shared/pulse-journal.ts for why that boundary
+  // is drawn where it is.
+  const trend = usePulseHistory(viewId, 30).data ?? [];
 
   /** Clicking the selected mark again clears the filter. */
   const pick = (dim: FacetDim) => (slice: Slice) => {
@@ -120,7 +155,9 @@ export function StatsDrawer({
   return (
     <Shell>
       <div className="flex items-start justify-between gap-4 flex-wrap">
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+        {/* The headline row is the pulse, not the raw buckets: "3 blocked on
+            you" is a thing to do, "12 awaiting review" is a thing to read. */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
           <StatTile
             label="open PRs"
             value={stats.total}
@@ -131,11 +168,27 @@ export function StatsDrawer({
             }
           />
           <StatTile
-            label="awaiting you"
-            value={stats.awaiting}
-            sub="review required"
-            active={sameFacet(facet, { dim: "review", value: "awaiting" })}
-            onClick={toggle({ dim: "review", value: "awaiting" })}
+            label="blocked on you"
+            value={stats.blockedOnYou}
+            sub="your review is the hold-up"
+            tone={stats.blockedOnYou > 0 ? "warning" : undefined}
+            active={sameFacet(facet, { dim: "pulse", value: "blocked-on-you" })}
+            onClick={toggle({ dim: "pulse", value: "blocked-on-you" })}
+          />
+          <StatTile
+            label="rotting"
+            value={stats.rotting}
+            sub={`untouched ${pulseOpts.rottingDays ?? 7}d+`}
+            tone={stats.rotting > 0 ? "danger" : undefined}
+            active={sameFacet(facet, { dim: "pulse", value: "rotting" })}
+            onClick={toggle({ dim: "pulse", value: "rotting" })}
+          />
+          <StatTile
+            label="ready to merge"
+            value={stats.readyToMerge}
+            sub="approved and green"
+            active={sameFacet(facet, { dim: "pulse", value: "ready" })}
+            onClick={toggle({ dim: "pulse", value: "ready" })}
           />
           <StatTile
             label="failing"
@@ -144,14 +197,6 @@ export function StatsDrawer({
             tone={stats.failing > 0 ? "danger" : undefined}
             active={sameFacet(facet, { dim: "checks", value: "failing" })}
             onClick={toggle({ dim: "checks", value: "failing" })}
-          />
-          <StatTile
-            label="idle > 7d"
-            value={stats.idleOverWeek}
-            sub="untouched a week+"
-            tone={stats.idleOverWeek > 0 ? "warning" : undefined}
-            active={sameFacet(facet, { dim: "idle", value: ">7d" })}
-            onClick={toggle({ dim: "idle", value: ">7d" })}
           />
         </div>
 
@@ -186,46 +231,131 @@ export function StatsDrawer({
         </p>
       ) : null}
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-x-6 gap-y-3">
-        <ChartCard
-          title="by author"
-          hint={countHint(stats.authors.distinct, "author")}
-        >
-          <BarList
-            slices={stats.authors.slices}
+      {/* TWO BANDS, each with ONE wrapping rule — the drawer used to be a
+          single 4-column grid where some cards spanned two, which meant a
+          card was full-width at one breakpoint and half-width at the next and
+          the reflow read as arbitrary. Now: strips (a proportional bar plus a
+          legend, which needs width) go two-up; distributions (short bar
+          lists, all the same shape) go four-up. Nothing spans. */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-x-6 gap-y-3">
+        <ChartCard title="pulse">
+          <StatusStrip
+            slices={stats.pulse}
             total={stats.total}
-            scale={maxOf(stats.authors.slices)}
-            colorAt={() => NOMINAL}
-            activeKey={keyFor("author")}
+            colorOf={(k) => STATUS[k]}
+            labelOf={(k) => PULSE_LABELS[k as keyof typeof PULSE_LABELS] ?? k}
+            activeKey={keyFor("pulse")}
             dimmed={dimmed}
-            onSelect={pick("author")}
-            footnote={
-              stats.authors.hidden
-                ? `+${stats.authors.hidden} more author${stats.authors.hidden === 1 ? "" : "s"}`
-                : undefined
-            }
+            onSelect={pick("pulse")}
+          />
+          {/* Only the FAILURE case says anything. Every segment is already
+              labelled, so a subtitle restating what the card is would be
+              decoration — but "nothing can be attributed to you" changes how
+              every number above should be read. */}
+          {pulseOpts.viewerLogin ? null : (
+            <p className="text-[10px] text-yellow-600 dark:text-yellow-400 mt-1.5">
+              No login resolved — nothing can be attributed to you, so "blocked
+              on you" stays empty.
+            </p>
+          )}
+        </ChartCard>
+
+        {/* Only once there are two points to join. A card that says "not
+            enough history yet" is a promise, not a chart, and it would sit
+            here taking a slot for the whole first day of use. */}
+        {trend.length >= 2 ? (
+          <ChartCard
+            title="pulse over time"
+            hint={`${trend.length} days recorded`}
+          >
+            <Sparklines
+              days={trend.map((row) => row.day)}
+              /* Three lines, not five: a five-line sparkline at 28px is a
+                 scribble, and these are the three the header pill promotes
+                 for the same reason. */
+              series={PULSE_HEADLINE_STATES.map((key) => ({
+                key,
+                label: PULSE_LABELS[key],
+                color: STATUS[key],
+                values: trend.map((row) => row.counts[key]),
+              }))}
+            />
+          </ChartCard>
+        ) : null}
+
+        <ChartCard title="checks">
+          <StatusStrip
+            slices={stats.checks}
+            total={stats.total}
+            colorOf={(k) => STATUS[k]}
+            labelOf={(k) => CHECK_LABELS[k] ?? k}
+            activeKey={keyFor("checks")}
+            dimmed={dimmed}
+            onSelect={pick("checks")}
           />
         </ChartCard>
 
-        <ChartCard
-          title="by repo"
-          hint={countHint(stats.repos.distinct, "repo")}
-        >
-          <BarList
-            slices={stats.repos.slices}
+        <ChartCard title="review state">
+          <StatusStrip
+            slices={stats.review}
             total={stats.total}
-            scale={maxOf(stats.repos.slices)}
-            colorAt={() => NOMINAL}
-            activeKey={keyFor("repo")}
+            colorOf={(k) => STATUS[k]}
+            labelOf={(k) => REVIEW_LABELS[k] ?? k}
+            activeKey={keyFor("review")}
             dimmed={dimmed}
-            onSelect={pick("repo")}
-            footnote={
-              stats.repos.hidden
-                ? `+${stats.repos.hidden} more repo${stats.repos.hidden === 1 ? "" : "s"}`
-                : undefined
-            }
+            onSelect={pick("review")}
           />
         </ChartCard>
+      </div>
+
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-x-6 gap-y-3">
+        {/* A nominal breakdown of ONE value is not a breakdown — a repo-scoped
+            view would render a single full-width bar reading "100%", which
+            says nothing and offers a filter that selects everything. Ordinal
+            cards below always render: an empty bucket is information. */}
+        {stats.authors.distinct > 1 ? (
+          <ChartCard
+            title="by author"
+            hint={countHint(stats.authors.distinct, "author")}
+          >
+            <BarList
+              slices={stats.authors.slices}
+              total={stats.total}
+              scale={maxOf(stats.authors.slices)}
+              colorAt={() => NOMINAL}
+              activeKey={keyFor("author")}
+              dimmed={dimmed}
+              onSelect={pick("author")}
+              footnote={
+                stats.authors.hidden
+                  ? `+${stats.authors.hidden} more author${stats.authors.hidden === 1 ? "" : "s"}`
+                  : undefined
+              }
+            />
+          </ChartCard>
+        ) : null}
+
+        {stats.repos.distinct > 1 ? (
+          <ChartCard
+            title="by repo"
+            hint={countHint(stats.repos.distinct, "repo")}
+          >
+            <BarList
+              slices={stats.repos.slices}
+              total={stats.total}
+              scale={maxOf(stats.repos.slices)}
+              colorAt={() => NOMINAL}
+              activeKey={keyFor("repo")}
+              dimmed={dimmed}
+              onSelect={pick("repo")}
+              footnote={
+                stats.repos.hidden
+                  ? `+${stats.repos.hidden} more repo${stats.repos.hidden === 1 ? "" : "s"}`
+                  : undefined
+              }
+            />
+          </ChartCard>
+        ) : null}
 
         <ChartCard title="idle for" hint="since last activity">
           <BarList
@@ -250,34 +380,6 @@ export function StatsDrawer({
             onSelect={pick("size")}
           />
         </ChartCard>
-
-        <div className="sm:col-span-2">
-          <ChartCard title="checks">
-            <StatusStrip
-              slices={stats.checks}
-              total={stats.total}
-              colorOf={(k) => STATUS[k]}
-              labelOf={(k) => CHECK_LABELS[k] ?? k}
-              activeKey={keyFor("checks")}
-              dimmed={dimmed}
-              onSelect={pick("checks")}
-            />
-          </ChartCard>
-        </div>
-
-        <div className="sm:col-span-2">
-          <ChartCard title="review state">
-            <StatusStrip
-              slices={stats.review}
-              total={stats.total}
-              colorOf={(k) => STATUS[k]}
-              labelOf={(k) => REVIEW_LABELS[k] ?? k}
-              activeKey={keyFor("review")}
-              dimmed={dimmed}
-              onSelect={pick("review")}
-            />
-          </ChartCard>
-        </div>
       </div>
     </Shell>
   );
@@ -288,7 +390,11 @@ function Shell({ children }: { children: React.ReactNode }) {
     <div
       className={cn(
         "shrink-0 border-b border-border bg-background",
-        "px-4 py-3 flex flex-col gap-3 max-h-[45vh] overflow-y-auto",
+        // 60vh, not 45: the drawer's normal content (tiles plus the two
+        // bands) is ~400px, and at 45vh it clipped the bar lists mid-row so a
+        // top-6 read as a top-2. The scroll stays as the safety valve for a
+        // short window, not as the usual case.
+        "px-4 py-3 flex flex-col gap-3 max-h-[60vh] overflow-y-auto",
       )}
     >
       {children}

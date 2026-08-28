@@ -1,6 +1,7 @@
 import { useEffect, useMemo } from "react";
 import { Button, Skeleton, cn } from "@uipath/apollo-wind";
 import { useUiStore } from "../../state/uiStore";
+import type { PulseOptions } from "../../shared/pulse";
 import type { PullRequest } from "../../shared/review-types";
 import { openPrDetail } from "../../hooks/useKeyboardNav";
 import { runFor, useAgentRuns } from "../../hooks/useAgentRuns";
@@ -8,13 +9,17 @@ import { hasUnseenChanges, useSeen } from "../../hooks/useSeen";
 import { useNow } from "../../hooks/useNow";
 import { QUEUE_GRID, QueueRow } from "./QueueRow";
 
+// Trailing empty label: the hover actions own the last column, and a heading
+// over two buttons that are invisible most of the time is noise.
 const COLUMNS = [
   "pull request",
+  "pulse",
   "checks",
   "review",
   "size",
   "updated",
   "agent",
+  "",
 ];
 
 type Props = {
@@ -29,6 +34,7 @@ type Props = {
    * plenty and the filter is what emptied it — and leaves no way back.
    */
   filteredBy?: { label: string; onClear: () => void };
+  pulseOpts: PulseOptions;
 };
 
 export function QueueTable({
@@ -37,6 +43,7 @@ export function QueueTable({
   error,
   viewError,
   filteredBy,
+  pulseOpts,
 }: Props) {
   const focusedPrId = useUiStore((s) => s.focusedPrId);
   const setFocusedPr = useUiStore((s) => s.setFocusedPr);
@@ -44,6 +51,7 @@ export function QueueTable({
   const runs = useAgentRuns();
   const seen = useSeen();
   const now = useNow();
+
   // One shared scale for the size column's churn bars: the biggest PR on
   // screen fills its track and every other bar is read against it.
   const maxChurn = useMemo(
@@ -76,11 +84,26 @@ export function QueueTable({
       setFocusedPr(refs[0]?.prId ?? null);
   }, [rows, runsData, setQueueRows, setFocusedPr]);
 
+  const renderRow = (pr: PullRequest) => (
+    <QueueRow
+      key={pr.prId}
+      pr={pr}
+      run={runFor(runs.data, pr.prId, pr.headSha)}
+      unseen={hasUnseenChanges(seen.data, pr)}
+      maxChurn={maxChurn}
+      pulseOpts={pulseOpts}
+      now={now}
+      focused={pr.prId === focusedPrId}
+      onFocus={() => setFocusedPr(pr.prId)}
+      onOpen={() => openPrDetail(pr.prId)}
+    />
+  );
+
   return (
-    // Horizontal scroll floor: below ~1080px the table scrolls sideways
+    // Horizontal scroll floor: below ~1240px the table scrolls sideways
     // instead of crushing the title column into invisibility.
     <div className="flex-1 overflow-auto">
-      <div className="min-w-[1080px]">
+      <div className="min-w-[1240px]">
         <div
           className={cn(
             QUEUE_GRID,
@@ -135,19 +158,7 @@ export function QueueTable({
             </Placeholder>
           )
         ) : (
-          rows.map((pr) => (
-            <QueueRow
-              key={pr.prId}
-              pr={pr}
-              run={runFor(runs.data, pr.prId, pr.headSha)}
-              unseen={hasUnseenChanges(seen.data, pr)}
-              maxChurn={maxChurn}
-              now={now}
-              focused={pr.prId === focusedPrId}
-              onFocus={() => setFocusedPr(pr.prId)}
-              onOpen={() => openPrDetail(pr.prId)}
-            />
-          ))
+          rows.map(renderRow)
         )}
       </div>
     </div>

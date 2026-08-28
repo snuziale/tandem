@@ -9,6 +9,12 @@
 //  - Stats are always computed over the UNFILTERED rows. Clicking a bar filters
 //    the table, never the charts — a chart that collapses to its own selection
 //    can't be used to pick the next slice.
+import {
+  PULSE_STATES,
+  pulseStateOf,
+  type PulseOptions,
+  type PulseState,
+} from "../shared/pulse";
 import type { PullRequest } from "../shared/review-types";
 
 const DAY = 24 * 60 * 60 * 1000;
@@ -104,6 +110,10 @@ export const FACET_DIMS = [
   "size",
   "checks",
   "review",
+  // Whose court the ball is in (shared/pulse.ts). Unlike the others this one
+  // needs context beyond the row — the viewer's login and the team's staleness
+  // line — which is why every facet function takes an optional PulseOptions.
+  "pulse",
 ] as const;
 export type FacetDim = (typeof FACET_DIMS)[number];
 export type Facet = { dim: FacetDim; value: string };
@@ -120,6 +130,7 @@ const BUCKET_VALUES: Partial<Record<FacetDim, readonly string[]>> = {
   size: SIZE_BUCKETS,
   checks: CHECK_BUCKETS,
   review: REVIEW_BUCKETS,
+  pulse: PULSE_STATES,
 };
 
 /** `?by=author:alice`. Values never contain a colon (logins, `owner/repo`,
@@ -145,12 +156,22 @@ export function sameFacet(a: Facet | null, b: Facet | null): boolean {
   return a?.dim === b?.dim && a?.value === b?.value;
 }
 
+/**
+ * `pulse` is the one dimension a row cannot answer alone, so the options are
+ * REQUIRED rather than defaulted. A bare `{ now }` fallback is not honest
+ * degradation here: it silently answers "no row is blocked on you", so a
+ * `?by=pulse:blocked-on-you` URL would render an empty table and explain
+ * nothing. Everything on screen must read the same `usePulseOptions`.
+ */
 export function matchesFacet(
   pr: PullRequest,
   facet: Facet,
   now: number,
+  pulseOpts: PulseOptions,
 ): boolean {
   switch (facet.dim) {
+    case "pulse":
+      return pulseStateOf(pr, pulseOpts) === facet.value;
     case "author":
       return pr.author === facet.value;
     case "repo":
@@ -170,8 +191,11 @@ export function filterByFacet(
   rows: PullRequest[],
   facet: Facet | null,
   now: number,
+  pulseOpts: PulseOptions,
 ): PullRequest[] {
-  return facet ? rows.filter((pr) => matchesFacet(pr, facet, now)) : rows;
+  return facet
+    ? rows.filter((pr) => matchesFacet(pr, facet, now, pulseOpts))
+    : rows;
 }
 
 const FACET_LABELS: Record<FacetDim, string> = {
@@ -181,6 +205,7 @@ const FACET_LABELS: Record<FacetDim, string> = {
   size: "size",
   checks: "checks",
   review: "review",
+  pulse: "pulse",
 };
 
 export function facetLabel(facet: Facet): string {
@@ -203,11 +228,16 @@ export type QueueStats = {
    * of a stacked strip is invisible but still eats a 2px gap). */
   checks: Slice[];
   review: Slice[];
-  /** Headline counts, each one also a facet the tiles link to. */
-  awaiting: number;
+  /** Attention state, in PULSE_STATES order. Empty courts are DROPPED like the
+   * other status strips — a zero-width segment is invisible but still eats a
+   * gap, and the headline tiles carry the numbers that matter. */
+  pulse: Slice[];
+  /** Headline counts, each one also a facet the drawer's tiles link to. */
   failing: number;
-  idleOverWeek: number;
   totalChurn: number;
+  blockedOnYou: number;
+  rotting: number;
+  readyToMerge: number;
 };
 
 function tally<T extends string>(
@@ -248,10 +278,12 @@ function orderedSlices<T extends string>(
 export function computeQueueStats(
   rows: PullRequest[],
   now: number,
+  opts: PulseOptions,
 ): QueueStats {
   const idle = tally(rows, (pr) => idleBucket(pr, now));
   const checks = tally(rows, checkBucket);
   const review = tally(rows, reviewBucket);
+  const pulse = tally<PulseState>(rows, (pr) => pulseStateOf(pr, opts));
   return {
     total: rows.length,
     authors: topSlices(
@@ -266,9 +298,11 @@ export function computeQueueStats(
     size: orderedSlices(tally(rows, sizeBucket), SIZE_BUCKETS),
     checks: orderedSlices(checks, CHECK_BUCKETS, { dropEmpty: true }),
     review: orderedSlices(review, REVIEW_BUCKETS, { dropEmpty: true }),
-    awaiting: review.get("awaiting") ?? 0,
+    pulse: orderedSlices(pulse, PULSE_STATES, { dropEmpty: true }),
     failing: checks.get("failing") ?? 0,
-    idleOverWeek: idle.get(">7d") ?? 0,
     totalChurn: rows.reduce((sum, pr) => sum + churnOf(pr), 0),
+    blockedOnYou: pulse.get("blocked-on-you") ?? 0,
+    rotting: pulse.get("rotting") ?? 0,
+    readyToMerge: pulse.get("ready") ?? 0,
   };
 }

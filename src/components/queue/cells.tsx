@@ -1,13 +1,122 @@
-import { Badge, cn } from "@uipath/apollo-wind";
+import {
+  Badge,
+  Tooltip,
+  TooltipContent,
+  TooltipPortal,
+  TooltipTrigger,
+  cn,
+} from "@uipath/apollo-wind";
 import {
   SKIP_REASON_LABEL,
   type AgentRun,
   type Severity,
 } from "../../shared/agent-types";
+import {
+  PULSE_HINTS,
+  PULSE_LABELS,
+  isAutoMerging,
+  pulseStateOf,
+  type PulseOptions,
+} from "../../shared/pulse";
+import { Check } from "lucide-react";
 import type { PullRequest } from "../../shared/review-types";
+import { PULSE_COLOR, PULSE_ICON, SIGNAL_ICON } from "./pulseIcons";
 import { relativeAge } from "../../utils/time";
 import { AgentSpinner } from "../agent/AgentSpinner";
 import { SeverityBadge } from "../agent/SeverityBadge";
+
+/** Whose court the ball is in — the row's one-word answer to "so what?". */
+export function PulseCell({
+  pr,
+  opts,
+}: {
+  pr: PullRequest;
+  opts: PulseOptions;
+}) {
+  const state = pulseStateOf(pr, opts);
+  const Icon = PULSE_ICON[state];
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span
+          className={cn(
+            "flex items-center gap-1.5 text-xs whitespace-nowrap",
+            state === "blocked-on-you" && "font-medium",
+          )}
+          style={{ color: PULSE_COLOR[state] }}
+        >
+          <Icon className="size-3 shrink-0" aria-hidden />
+          {PULSE_LABELS[state]}
+        </span>
+      </TooltipTrigger>
+      <TooltipPortal>
+        <TooltipContent>{PULSE_HINTS[state]}</TooltipContent>
+      </TooltipPortal>
+    </Tooltip>
+  );
+}
+
+/**
+ * The xbar script's glyph vocabulary, kept almost verbatim because it is
+ * genuinely good: every mark is a COUNT of something that happened, so none of
+ * them need a legend, and a row with nothing to say renders nothing at all
+ * rather than a line of zeroes.
+ */
+export function SignalsCell({ pr }: { pr: PullRequest }) {
+  const comments = pr.commentCount + pr.threadCount;
+  const marks: Array<{
+    key: keyof typeof SIGNAL_ICON;
+    value?: number;
+    title: string;
+    className?: string;
+  }> = [];
+  if (pr.approvalCount > 0)
+    marks.push({
+      key: "approvals",
+      value: pr.approvalCount,
+      title: `${pr.approvalCount} approving review${pr.approvalCount === 1 ? "" : "s"}`,
+      className: "text-emerald-600 dark:text-emerald-400",
+    });
+  if (pr.changesRequestedCount > 0)
+    marks.push({
+      key: "changes",
+      value: pr.changesRequestedCount,
+      title: `${pr.changesRequestedCount} review${pr.changesRequestedCount === 1 ? "" : "s"} requesting changes`,
+      className: "text-red-500 dark:text-red-400",
+    });
+  if (comments > 0)
+    marks.push({
+      key: "comments",
+      value: comments,
+      title: `${comments} comment${comments === 1 ? "" : "s"} and review threads`,
+    });
+  if (isAutoMerging(pr))
+    marks.push({
+      key: "automerge",
+      title: `auto-merge armed by @${pr.autoMergeBy}`,
+    });
+  // No early return on an empty list: this line is the review cell's second
+  // row, and skipping it would let the badge above re-centre itself.
+  return (
+    <span className="flex gap-2 h-3 items-center text-[10px] text-muted-foreground font-mono">
+      {marks.map((mark) => {
+        const Icon = SIGNAL_ICON[mark.key];
+        return (
+          <span
+            key={mark.key}
+            title={mark.title}
+            className={cn("flex items-center gap-0.5", mark.className)}
+          >
+            <Icon className="size-2.5 shrink-0" aria-hidden />
+            {mark.value !== undefined ? (
+              <span className="tabular-nums">{mark.value}</span>
+            ) : null}
+          </span>
+        );
+      })}
+    </span>
+  );
+}
 
 export function ChecksCell({ pr }: { pr: PullRequest }) {
   if (pr.checkRollup === "NONE") {
@@ -61,34 +170,53 @@ export function ReviewCell({
   pr: PullRequest;
   showDraft?: boolean;
 }) {
-  if (pr.isDraft && showDraft) {
-    return (
-      <Badge variant="outline" className="border-dashed text-muted-foreground">
-        Draft
-      </Badge>
-    );
-  }
-  // Only a SUBMITTED verdict of yours counts: COMMENTED left no verdict,
-  // DISMISSED was revoked, and PENDING is a GitHub-side draft you never sent.
-  if (pr.viewerReviewState === "APPROVED" && pr.reviewDecision !== "APPROVED") {
-    return <Badge variant="success">Approved by you</Badge>;
-  }
+  // Resolve the verdict first, render once. "You requested changes" is the
+  // longest label and it does not fit the queue column, so every badge
+  // truncates — a rule that has to hold for all of them, which is easier to
+  // see when there is one <Badge> rather than seven.
+  const { variant, label, extra } = reviewBadge(pr, showDraft);
+  return (
+    <Badge variant={variant} className={cn("max-w-full truncate", extra)}>
+      {label}
+    </Badge>
+  );
+}
+
+type ReviewBadge = {
+  variant: "outline" | "success" | "error" | "warning" | "secondary";
+  label: string;
+  extra?: string;
+};
+
+const DECISION_BADGE: Record<string, ReviewBadge> = {
+  CHANGES_REQUESTED: { variant: "error", label: "Changes requested" },
+  APPROVED: { variant: "success", label: "Approved" },
+  REVIEW_REQUIRED: { variant: "warning", label: "Awaiting you" },
+};
+
+function reviewBadge(pr: PullRequest, showDraft: boolean): ReviewBadge {
+  if (pr.isDraft && showDraft)
+    return {
+      variant: "outline",
+      label: "Draft",
+      extra: "border-dashed text-muted-foreground",
+    };
+  // Only a SUBMITTED verdict of yours counts, and it is checked BEFORE the
+  // repo-wide one: COMMENTED left no verdict, DISMISSED was revoked, and
+  // PENDING is a GitHub-side draft you never sent.
+  if (pr.viewerReviewState === "APPROVED" && pr.reviewDecision !== "APPROVED")
+    return { variant: "success", label: "Approved by you" };
   if (
     pr.viewerReviewState === "CHANGES_REQUESTED" &&
     pr.reviewDecision !== "CHANGES_REQUESTED"
-  ) {
-    return <Badge variant="error">You requested changes</Badge>;
-  }
-  switch (pr.reviewDecision) {
-    case "CHANGES_REQUESTED":
-      return <Badge variant="error">Changes requested</Badge>;
-    case "APPROVED":
-      return <Badge variant="success">Approved</Badge>;
-    case "REVIEW_REQUIRED":
-      return <Badge variant="warning">Awaiting you</Badge>;
-    default:
-      return <Badge variant="secondary">No review</Badge>;
-  }
+  )
+    return { variant: "error", label: "You requested changes" };
+  return (
+    DECISION_BADGE[pr.reviewDecision ?? ""] ?? {
+      variant: "secondary",
+      label: "No review",
+    }
+  );
 }
 
 /**
@@ -181,49 +309,62 @@ const TALLY_ORDER: Severity[] = [
   "praise",
 ];
 
-// Four visual states (spec §3.1): Analyzing… (pulsing), findings tally,
-// "Nothing to flag" (as legible as a finding — it earns the trust), and
-// Skipped with its reason. Violet marks it all as machine-authored.
+/**
+ * Four visual states (spec §3.1): Analyzing… (pulsing), findings tally,
+ * "Nothing to flag" (as legible as a finding — it earns the trust), and
+ * Skipped with its reason. Violet marks it all as machine-authored.
+ *
+ * ONE SHAPE for every state: a status line, and a second line reserved for
+ * severity chips whether or not there are any. The states used to be one line
+ * or two depending on which they were, so scrolling the queue slid this
+ * column's text up and down against the five beside it that never move.
+ */
 export function AgentCell({ run }: { run: AgentRun | undefined }) {
-  if (!run) return <span className="text-xs text-muted-foreground/60">—</span>;
-
-  if (
-    run.status === "queued" ||
-    run.status === "fetching" ||
-    run.status === "analyzing"
-  ) {
-    return (
-      <span
-        className="flex items-center gap-1.5 text-xs font-medium motion-safe:animate-pulse"
-        style={{ color: "var(--tandem-agent)" }}
-      >
-        <AgentSpinner className="size-3" /> Analyzing…
+  return (
+    <span className="flex flex-col gap-1 min-w-0">
+      <span className="text-xs truncate">{statusLine(run)}</span>
+      {/* Reserved, and it never wraps: the row is a fixed h-14 and clips, so a
+          wrapping chip list would silently lose its own second row. */}
+      <span className="flex gap-1 h-4 items-center overflow-hidden">
+        {severityChips(run)}
       </span>
-    );
-  }
+    </span>
+  );
+}
 
-  if (run.status === "skipped") {
-    return (
-      <span className="text-xs text-muted-foreground">
-        Skipped · {run.skipReason ? SKIP_REASON_LABEL[run.skipReason] : ""}
-      </span>
-    );
-  }
+function statusLine(run: AgentRun | undefined): React.ReactNode {
+  if (!run) return <span className="text-muted-foreground/60">—</span>;
 
-  if (run.status === "failed") {
-    return (
-      <span className="text-xs font-medium text-red-500 dark:text-red-400">
-        Run failed
-      </span>
-    );
-  }
-
-  if (run.status === "stale") {
-    return (
-      <span className="text-xs text-yellow-600 dark:text-yellow-400">
-        Stale · new commits
-      </span>
-    );
+  switch (run.status) {
+    case "queued":
+    case "fetching":
+    case "analyzing":
+      return (
+        <span
+          className="flex items-center gap-1.5 font-medium motion-safe:animate-pulse"
+          style={{ color: "var(--tandem-agent)" }}
+        >
+          <AgentSpinner className="size-3" /> Analyzing…
+        </span>
+      );
+    case "skipped":
+      return (
+        <span className="text-muted-foreground">
+          Skipped · {run.skipReason ? SKIP_REASON_LABEL[run.skipReason] : ""}
+        </span>
+      );
+    case "failed":
+      return (
+        <span className="font-medium text-red-500 dark:text-red-400">
+          Run failed
+        </span>
+      );
+    case "stale":
+      return (
+        <span className="text-yellow-600 dark:text-yellow-400">
+          Stale · new commits
+        </span>
+      );
   }
 
   // The number and its meter are ONE unit — they must never wrap apart, or the
@@ -235,49 +376,50 @@ export function AgentCell({ run }: { run: AgentRun | undefined }) {
         {run.score}/100 <ScoreMeter score={run.score} />
       </span>
     ) : null;
-  const triage = run.findings.filter((f) => f.state !== "dismissed");
-  if (triage.length === 0) {
+  const approved = run.autoApproved ? (
+    <span className="inline-flex items-center gap-0.5 text-emerald-600 dark:text-emerald-400 whitespace-nowrap">
+      {" · "}
+      <Check className="size-3" aria-hidden /> auto-approved
+    </span>
+  ) : null;
+
+  const open = triageFindings(run).length;
+  if (open === 0) {
     return (
-      <span className="text-xs">
+      <>
         <span className="font-medium">Nothing to flag</span>
         {score}
-        <span className="text-muted-foreground">
-          {run.autoApproved ? " · " : " · safe to review fast"}
-        </span>
-        {run.autoApproved ? (
-          <span className="text-emerald-600 dark:text-emerald-400">
-            ✓ auto-approved
-          </span>
-        ) : null}
-      </span>
+        {approved ?? (
+          <span className="text-muted-foreground"> · safe to review fast</span>
+        )}
+      </>
     );
   }
   return (
-    <span className="flex flex-col gap-1 min-w-0">
-      <span
-        className="text-xs font-medium"
-        style={{ color: "var(--tandem-agent)" }}
-      >
-        {triage.length} finding{triage.length === 1 ? "" : "s"} ready
-        {score}
-        {run.autoApproved ? (
-          <span className="text-emerald-600 dark:text-emerald-400">
-            {" "}
-            · ✓ auto-approved
-          </span>
-        ) : null}
+    <>
+      <span className="font-medium" style={{ color: "var(--tandem-agent)" }}>
+        {open} finding{open === 1 ? "" : "s"} ready
       </span>
-      <span className="flex gap-1 flex-wrap">
-        {TALLY_ORDER.map((severity) => (
-          <SeverityBadge
-            key={severity}
-            severity={severity}
-            count={triage.filter((f) => f.severity === severity).length}
-          />
-        ))}
-      </span>
-    </span>
+      {score}
+      {approved}
+    </>
   );
+}
+
+function severityChips(run: AgentRun | undefined): React.ReactNode {
+  if (run?.status !== "ready") return null;
+  const triage = triageFindings(run);
+  return TALLY_ORDER.map((severity) => (
+    <SeverityBadge
+      key={severity}
+      severity={severity}
+      count={triage.filter((f) => f.severity === severity).length}
+    />
+  ));
+}
+
+function triageFindings(run: AgentRun) {
+  return run.findings.filter((f) => f.state !== "dismissed");
 }
 
 /** Merge-readiness as a meter beside its number. Violet because the score is

@@ -1,6 +1,7 @@
 // User-tunable settings served by /api/settings and persisted server-side in
 // ~/.tandem/settings.json. Defaults here are the spec's defaults.
 import type { Severity } from "./agent-types";
+import { DEFAULT_ROTTING_DAYS } from "./pulse";
 import { DEFAULT_PROMPTS, type PromptTexts } from "./prompt-defaults";
 
 export type PassModels = {
@@ -34,6 +35,26 @@ export const DEFAULT_AGENT: AgentProfile = {
     chat: "sonnet",
   },
   prompts: DEFAULT_PROMPTS,
+};
+
+/**
+ * How the queue reads a cohort: the staleness line every "rotting" mark is
+ * drawn against, the default grouping, and whether the daily rollup is kept.
+ *
+ * `rottingDays` is a SETTING and not a constant because the number is a team
+ * norm, not a fact — a repo that ships twice a day and one that ships monthly
+ * disagree about when silence becomes a problem.
+ */
+export type PulseSettings = {
+  rottingDays: number;
+  /**
+   * The view the menu-bar feed (/api/pulse.xbar) reads when the request names
+   * none. Null = every view, merged and deduped.
+   */
+  menuViewId: string | null;
+  /** Roll one row of pulse counts per view per day into ~/.tandem/pulse.json.
+   * Five integers a day; see shared/pulse-journal.ts for why it stops there. */
+  journalEnabled: boolean;
 };
 
 /** Opt-in unattended approval — the ONE exception to "the agent never writes
@@ -70,6 +91,7 @@ export type TandemSettings = {
   agents: AgentProfile[];
   defaultAgentId: string;
   autoApprove: AutoApproveSettings;
+  pulse: PulseSettings;
 };
 
 export const DEFAULT_SETTINGS: TandemSettings = {
@@ -85,6 +107,11 @@ export const DEFAULT_SETTINGS: TandemSettings = {
   agentEnabledByDefault: true,
   agents: [DEFAULT_AGENT],
   defaultAgentId: DEFAULT_AGENT.id,
+  pulse: {
+    rottingDays: DEFAULT_ROTTING_DAYS,
+    menuViewId: null,
+    journalEnabled: true,
+  },
   autoApprove: {
     enabled: false,
     minScore: 90,

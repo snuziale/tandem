@@ -16,5 +16,8 @@ export const API_PATHS = {
   AGENT_HEALTH: "/api/agent/health",
   SETTINGS: "/api/settings",
   VIEWS: "/api/views",
+  TEAMS: "/api/teams",
+  // `/api/pulse.xbar` and `/api/pulse/history` both live under this prefix.
+  PULSE: "/api/pulse",
   SEEN: "/api/seen",
 } as const;

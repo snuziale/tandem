@@ -74,6 +74,7 @@ export function sanitize(raw: unknown): TandemSettings {
         : d.agentEnabledByDefault,
     ...sanitizeAgents(raw),
     autoApprove: sanitizeAutoApprove(raw.autoApprove),
+    pulse: sanitizePulse(raw.pulse),
   };
 }
 
@@ -89,6 +90,28 @@ function sanitizeModels(raw: unknown): AgentProfile["models"] {
     analyze: pick("analyze"),
     reconcile: pick("reconcile"),
     chat: pick("chat"),
+  };
+}
+
+function sanitizePulse(raw: unknown): TandemSettings["pulse"] {
+  const d = DEFAULT_SETTINGS.pulse;
+  if (!isPlainObject(raw)) return d;
+  const days = raw.rottingDays;
+  return {
+    // A zero-day rotting line would paint the whole queue red, so the floor is
+    // one day rather than zero.
+    rottingDays:
+      typeof days === "number" && Number.isFinite(days) && days >= 1
+        ? days
+        : d.rottingDays,
+    menuViewId:
+      typeof raw.menuViewId === "string" && raw.menuViewId
+        ? raw.menuViewId
+        : null,
+    journalEnabled:
+      typeof raw.journalEnabled === "boolean"
+        ? raw.journalEnabled
+        : d.journalEnabled,
   };
 }
 

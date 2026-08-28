@@ -12,6 +12,9 @@ import {
 } from "./queueStats";
 
 const NOW = Date.parse("2026-08-22T12:00:00Z");
+// The pulse dimension needs a viewer and a staleness line; no test here
+// asserts on pulse, so the honest default is "nobody is the viewer".
+const OPTS = { now: NOW };
 const DAY = 24 * 60 * 60 * 1000;
 const ago = (days: number) => new Date(NOW - days * DAY).toISOString();
 
@@ -39,6 +42,11 @@ function pr(over: Partial<PullRequest> = {}): PullRequest {
     checkRuns: [],
     threadCount: 0,
     unresolvedThreadCount: 0,
+    approvalCount: 0,
+    changesRequestedCount: 0,
+    commentCount: 0,
+    autoMergeBy: null,
+    requestedReviewers: [],
     createdAt: ago(1),
     updatedAt: ago(0.1),
     url: "https://example.test",
@@ -149,16 +157,18 @@ describe("facets", () => {
       "checks:failing",
       "review:changes",
     ])
-      expect(matchesFacet(row, parseFacet(raw)!, NOW)).toBe(true);
-    expect(matchesFacet(row, parseFacet("author:alice")!, NOW)).toBe(false);
+      expect(matchesFacet(row, parseFacet(raw)!, NOW, OPTS)).toBe(true);
+    expect(matchesFacet(row, parseFacet("author:alice")!, NOW, OPTS)).toBe(
+      false,
+    );
   });
 
   it("filters, and a null facet is the identity", () => {
     const rows = [pr({ author: "alice" }), pr({ author: "bob" })];
-    expect(filterByFacet(rows, null, NOW)).toBe(rows);
-    expect(filterByFacet(rows, { dim: "author", value: "bob" }, NOW)).toEqual([
-      rows[1],
-    ]);
+    expect(filterByFacet(rows, null, NOW, OPTS)).toBe(rows);
+    expect(
+      filterByFacet(rows, { dim: "author", value: "bob" }, NOW, OPTS),
+    ).toEqual([rows[1]]);
   });
 });
 
@@ -169,7 +179,7 @@ describe("computeQueueStats", () => {
     pr({ author: "bob", repo: "web", updatedAt: ago(20) }),
     pr({ author: "cara", isDraft: true, additions: 2000, deletions: 0 }),
   ];
-  const stats = computeQueueStats(rows, NOW);
+  const stats = computeQueueStats(rows, NOW, OPTS);
 
   it("sorts nominal slices by count desc", () => {
     expect(stats.authors.slices.map((s) => [s.key, s.value])).toEqual([
@@ -185,7 +195,7 @@ describe("computeQueueStats", () => {
     const many = Array.from({ length: 10 }, (_, i) =>
       pr({ author: `u${i}`, prId: `o/r#${i}` }),
     );
-    const s = computeQueueStats(many, NOW);
+    const s = computeQueueStats(many, NOW, OPTS);
     expect(s.authors.slices).toHaveLength(6);
     expect(s.authors.hidden).toBe(4);
     expect(s.authors.distinct).toBe(10);
@@ -208,14 +218,12 @@ describe("computeQueueStats", () => {
 
   it("derives the headline counts", () => {
     expect(stats.total).toBe(4);
-    expect(stats.awaiting).toBe(1);
     expect(stats.failing).toBe(1);
-    expect(stats.idleOverWeek).toBe(1);
     expect(stats.totalChurn).toBe(15 + 15 + 15 + 2000);
   });
 
   it("is empty-safe", () => {
-    const empty = computeQueueStats([], NOW);
+    const empty = computeQueueStats([], NOW, OPTS);
     expect(empty.total).toBe(0);
     expect(empty.checks).toEqual([]);
     expect(empty.idle.every((s) => s.value === 0)).toBe(true);

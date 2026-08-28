@@ -9,6 +9,7 @@ export function useQueue(views: SavedView[] | undefined) {
     id: v.id,
     query: v.query,
     agentEnabled: v.agentEnabled,
+    teamId: v.teamId,
   }));
   return useQuery({
     queryKey: ["queue", inputs],

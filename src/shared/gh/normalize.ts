@@ -12,6 +12,7 @@ import { prIdOf } from "./prKey";
 import type {
   GqlCheckContext,
   GqlPrNode,
+  GqlReviewRequest,
   GqlReviewThread,
   RestPullFile,
 } from "./wire";
@@ -77,6 +78,20 @@ function statusContextStatus(state: string): CheckRun["status"] {
   }
 }
 
+/**
+ * Outstanding review requests as flat strings: a user is its login, a team is
+ * `org/slug` so it can never be mistaken for one. Team membership is not
+ * resolvable from a search response, which is why awaitsViewer() in
+ * shared/pulse.ts only ever matches a direct user request.
+ */
+export function reviewRequestOf(request: GqlReviewRequest): string | null {
+  const reviewer = request.requestedReviewer;
+  if (!reviewer) return null;
+  if (reviewer.__typename === "User") return reviewer.login;
+  const org = reviewer.organization?.login;
+  return org ? `${org}/${reviewer.slug}` : reviewer.slug;
+}
+
 /** A queue-search or detail PR node → PullRequest. Null for non-PR search hits. */
 export function normalizePr(node: GqlPrNode | null): PullRequest | null {
   if (!node || (node.__typename && node.__typename !== "PullRequest"))
@@ -108,6 +123,16 @@ export function normalizePr(node: GqlPrNode | null): PullRequest | null {
     checkRollup: rollupOf(rollup?.state),
     checkRuns: (rollup?.contexts.nodes ?? []).map(checkRunOf),
     threadCount: node.reviewThreads.totalCount,
+    // Pulse inputs. Absent on any response fetched before these fields were
+    // added (or by a caller that doesn't need them) — zero is the honest
+    // reading, and pulse.ts degrades to "moving" rather than inventing a state.
+    approvalCount: node.approvals?.totalCount ?? 0,
+    changesRequestedCount: node.changesRequested?.totalCount ?? 0,
+    commentCount: node.comments?.totalCount ?? 0,
+    autoMergeBy: node.autoMergeRequest?.enabledBy?.login ?? null,
+    requestedReviewers: (node.reviewRequests?.nodes ?? [])
+      .map(reviewRequestOf)
+      .filter((r): r is string => r !== null),
     // Accurate only when the caller fetched thread nodes (the detail query);
     // the queue search fetches totalCount alone and renders just that.
     unresolvedThreadCount: threads
