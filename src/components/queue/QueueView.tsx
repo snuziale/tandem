@@ -7,7 +7,7 @@ import {
   TooltipTrigger,
   cn,
 } from "@uipath/apollo-wind";
-import { Braces, ChartNoAxesColumn, Users } from "lucide-react";
+import { ChartNoAxesColumn } from "lucide-react";
 import { useActiveView } from "../../hooks/useActiveView";
 import { useNow } from "../../hooks/useNow";
 import { usePulseOptions } from "../../hooks/usePulse";
@@ -30,11 +30,7 @@ import { QueryBar } from "./QueryBar";
 import { QueueTable } from "./QueueTable";
 import { TeamManagerDialog } from "./TeamDialogs";
 import { StatsDrawer } from "./StatsDrawer";
-import {
-  DeleteViewDialog,
-  ViewEditorDialog,
-  ConfigJsonDialog,
-} from "./ViewDialogs";
+import { DeleteViewDialog, ViewEditorDialog } from "./ViewDialogs";
 import { ViewTabs } from "./ViewTabs";
 
 type EditorState =
@@ -49,7 +45,6 @@ export function QueueView() {
 
   const [editor, setEditor] = useState<EditorState>({ mode: "closed" });
   const [deleting, setDeleting] = useState<SavedView | null>(null);
-  const [jsonOpen, setJsonOpen] = useState(false);
   const [teamsOpen, setTeamsOpen] = useState(false);
 
   const queryBarOpen = useUiStore((s) => s.queryBarOpen);
@@ -93,48 +88,7 @@ export function QueueView() {
 
   return (
     <div className="h-dvh flex flex-col bg-background text-foreground">
-      <AppHeader
-        actions={
-          <>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  size="xs"
-                  icon
-                  variant="ghost"
-                  aria-label="Manage teams"
-                  onClick={() => setTeamsOpen(true)}
-                >
-                  <Users />
-                </Button>
-              </TooltipTrigger>
-              <TooltipPortal>
-                <TooltipContent>
-                  Teams — the logins a view's {"{team}"} token expands to
-                </TooltipContent>
-              </TooltipPortal>
-            </Tooltip>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  size="xs"
-                  icon
-                  variant="ghost"
-                  aria-label="Configuration as JSON"
-                  onClick={() => setJsonOpen(true)}
-                >
-                  <Braces />
-                </Button>
-              </TooltipTrigger>
-              <TooltipPortal>
-                <TooltipContent>
-                  View / export / import views and teams as JSON
-                </TooltipContent>
-              </TooltipPortal>
-            </Tooltip>
-          </>
-        }
-      >
+      <AppHeader>
         <ViewTabs
           views={views ?? []}
           counts={queue.data?.counts ?? {}}
@@ -278,24 +232,9 @@ export function QueueView() {
           onConfirm={() => actions.remove(deleting.id)}
         />
       ) : null}
-      {jsonOpen ? (
-        <ConfigJsonDialog
-          views={views ?? []}
-          teams={teams ?? []}
-          open
-          onClose={() => setJsonOpen(false)}
-          onApply={(config) => {
-            actions.replaceAll(config.views);
-            // Null means the payload never mentioned teams (an old
-            // views-only export) — leave the ones already configured alone.
-            if (config.teams) teamActions.replaceAll(config.teams);
-          }}
-        />
-      ) : null}
       {teamsOpen ? (
         <TeamManagerDialog
           teams={teams ?? []}
-          open
           onClose={() => setTeamsOpen(false)}
           onSave={teamActions.upsert}
           onDelete={teamActions.remove}

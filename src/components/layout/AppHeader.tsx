@@ -8,7 +8,7 @@ import {
   cn,
 } from "@uipath/apollo-wind";
 import { useAgentRuns } from "../../hooks/useAgentRuns";
-import { navigate, navigateToQueue } from "../../routes";
+import { navigateToQueue, navigateToSettings } from "../../routes";
 import { useThemeStore, type ThemePreference } from "../../state/themeStore";
 
 const THEME_ICON: Record<ThemePreference, typeof Sun> = {
@@ -101,16 +101,13 @@ function IconAction({
  * padding, border and the app-level zone on the right live here, so no screen
  * hand-rolls a second copy that then drifts.
  *
- * `children` = the screen's own middle zone (it gets the flexible space);
- * `actions` = the screen's own buttons, placed left of the app-level group.
+ * `children` = the screen's own middle zone, and the only slot there is: the
+ * app-level group on the right is the same on every screen. A screen's own
+ * controls belong in its middle zone (the queue's live to the right of a
+ * `HeaderDivider` inside it) or in Settings, never as a second right-hand
+ * group competing with the ⚙.
  */
-export function AppHeader({
-  children,
-  actions,
-}: {
-  children?: React.ReactNode;
-  actions?: React.ReactNode;
-}) {
+export function AppHeader({ children }: { children?: React.ReactNode }) {
   const preference = useThemeStore((s) => s.preference);
   const cyclePreference = useThemeStore((s) => s.cyclePreference);
   const ThemeIcon = THEME_ICON[preference];
@@ -131,18 +128,9 @@ export function AppHeader({
         <div className="flex-1" />
       )}
       <div className="flex items-center gap-1 shrink-0">
-        {actions ? (
-          <>
-            {actions}
-            <HeaderDivider />
-          </>
-        ) : null}
         <AgentStatusPill />
         <HeaderDivider />
-        <IconAction
-          label="Settings"
-          onClick={() => navigate({ name: "settings" })}
-        >
+        <IconAction label="Settings" onClick={() => navigateToSettings()}>
           <Settings />
         </IconAction>
         <IconAction label={`Theme: ${preference}`} onClick={cyclePreference}>

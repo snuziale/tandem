@@ -1,5 +1,5 @@
 // History-API routing (Sift pattern): `/` queue, `/?view=<id>` queue on a saved
-// view, `/:owner/:repo/pull/:number` PR detail, `/settings`. The server
+// view, `/:owner/:repo/pull/:number` PR detail, `/settings/<section>`. The server
 // SPA-falls-back every non-asset path to index.html, so deep links work in both
 // dev and the native app.
 //
@@ -24,14 +24,40 @@ export type Route =
       facet: string | null;
     }
   | { name: "pr"; owner: string; repo: string; number: number; prId: PrId }
-  | { name: "settings" };
+  | { name: "settings"; section: SettingsSection };
+
+/**
+ * The settings screen's sections, in rail order. URL state for the same
+ * reasons the queue's view is: a section is linkable, back moves between
+ * sections instead of leaving the screen, and the ⚙ always lands on the same
+ * first page rather than wherever the last visit left an internal useState.
+ */
+export const SETTINGS_SECTIONS = [
+  "github",
+  "teams",
+  "views",
+  "pulse",
+  "agent",
+  "profiles",
+  "auto-approve",
+  "about",
+] as const;
+export type SettingsSection = (typeof SETTINGS_SECTIONS)[number];
+export const DEFAULT_SETTINGS_SECTION: SettingsSection = "github";
+
+function settingsSectionOf(raw: string | undefined): SettingsSection {
+  const match = SETTINGS_SECTIONS.find((s) => s === raw);
+  return match ?? DEFAULT_SETTINGS_SECTION;
+}
 
 /** Query params carrying the queue's selected view and its stats facet. */
 const VIEW_PARAM = "view";
 const FACET_PARAM = "by";
 
 export function routeOfLocation(pathname: string, search = ""): Route {
-  if (pathname === "/settings") return { name: "settings" };
+  const settings = /^\/settings(?:\/([a-z-]+))?\/?$/.exec(pathname);
+  if (settings)
+    return { name: "settings", section: settingsSectionOf(settings[1]) };
   const pr = /^\/([^/]+)\/([^/]+)\/pull\/(\d+)$/.exec(pathname);
   if (pr) {
     const owner = decodeURIComponent(pr[1]);
@@ -63,7 +89,7 @@ export function pathOfRoute(route: Route): string {
       return search ? `/?${search}` : "/";
     }
     case "settings":
-      return "/settings";
+      return `/settings/${route.section}`;
     case "pr":
       return `/${encodeURIComponent(route.owner)}/${encodeURIComponent(route.repo)}/pull/${route.number}`;
   }
@@ -86,6 +112,14 @@ export function navigate(route: Route, options?: { replace?: boolean }): void {
 export function navigateToQueue(): void {
   const { lastViewId, lastFacet } = useUiStore.getState();
   navigate({ name: "queue", viewId: lastViewId, facet: lastFacet });
+}
+
+/** The ⚙ and every other "open settings" affordance, so none of them has to
+ * know which section is first. */
+export function navigateToSettings(
+  section: SettingsSection = DEFAULT_SETTINGS_SECTION,
+): void {
+  navigate({ name: "settings", section });
 }
 
 /** Resolve the initial route and follow back/forward. Mount once (App). */

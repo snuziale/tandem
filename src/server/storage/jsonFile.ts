@@ -22,13 +22,16 @@ import { basename, dirname, join } from "node:path";
 // one temp home per test), so the map stays small.
 const queues = new Map<string, Promise<void>>();
 
-function storageDir(): string {
+/** The directory every file below lives in. Resolved per call, so a
+ * `$TANDEM_HOME` change takes effect — and exported because About tells the
+ * user where their data is, which must be this answer and not a guess. */
+export function storageHome(): string {
   return process.env.TANDEM_HOME ?? join(homedir(), ".tandem");
 }
 
 /** Path of a file in the storage dir. Resolved per call, so a `$TANDEM_HOME` change takes effect. */
 export function storagePath(name: string): string {
-  return join(storageDir(), name);
+  return join(storageHome(), name);
 }
 
 /**

@@ -13,6 +13,10 @@ type Props = {
   mode: "create" | "update";
   onSaved: () => void;
   onCancel?: () => void;
+  /** Button scale. The setup screen is a first-run page and keeps the default
+   * (large) buttons; Settings passes "xs" so this form matches every other
+   * action on that screen. */
+  size?: "xs" | "default";
 };
 
 type TestState =
@@ -27,7 +31,11 @@ export function CredentialsForm({
   mode,
   onSaved,
   onCancel,
+  size = "default",
 }: Props) {
+  // One place decides the button scale for the whole form — apollo's own
+  // default is what "default" means, so it stays undefined rather than named.
+  const buttonSize = size === "xs" ? "xs" : undefined;
   const [values, setValues] = useState<Record<string, string>>(() => ({
     ...(initialValues ?? {}),
   }));
@@ -97,7 +105,9 @@ export function CredentialsForm({
                 setTest({ kind: "idle" });
               }}
               placeholder={placeholder}
-              className="h-9 text-sm"
+              // Matches the settings screen's field height when embedded
+              // there; the first-run page keeps the roomier control.
+              className={cn("text-sm", size === "xs" ? "h-8" : "h-9")}
               autoComplete="off"
             />
           </div>
@@ -121,7 +131,10 @@ export function CredentialsForm({
           Test connection
         </Button>
         {test.kind === "result" && test.result.ok ? (
-          <span className="text-xs text-emerald-500 flex items-center gap-1">
+          <span
+            className="text-xs flex items-center gap-1"
+            style={{ color: "var(--success)" }}
+          >
             <CheckCircle2 className="w-3.5 h-3.5" /> reviews will post as @
             {test.result.login}
           </span>
@@ -142,11 +155,20 @@ export function CredentialsForm({
         )}
       >
         {onCancel ? (
-          <Button type="button" variant="ghost" onClick={onCancel}>
+          <Button
+            type="button"
+            variant="ghost"
+            size={buttonSize}
+            onClick={onCancel}
+          >
             Cancel
           </Button>
         ) : null}
-        <Button type="submit" disabled={saving || missingRequired}>
+        <Button
+          type="submit"
+          size={buttonSize}
+          disabled={saving || missingRequired}
+        >
           {saving ? <Loader2 className="animate-spin" /> : null}
           {submitLabel}
         </Button>

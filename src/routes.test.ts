@@ -8,7 +8,19 @@ describe("routes", () => {
       viewId: null,
       facet: null,
     });
-    expect(routeOfLocation("/settings")).toEqual({ name: "settings" });
+    expect(routeOfLocation("/settings")).toEqual({
+      name: "settings",
+      section: "github",
+    });
+    expect(routeOfLocation("/settings/profiles")).toEqual({
+      name: "settings",
+      section: "profiles",
+    });
+    // An unknown section is not a 404 — it falls back to the first page.
+    expect(routeOfLocation("/settings/nope")).toEqual({
+      name: "settings",
+      section: "github",
+    });
     expect(routeOfLocation("/acme/web/pull/234")).toEqual({
       name: "pr",
       owner: "acme",

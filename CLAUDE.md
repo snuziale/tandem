@@ -52,9 +52,9 @@ browser → /api/* → Vite proxy (dev) → Bun server (src/server/worker.ts)
                                             context expansion) ·
                                             approve · submit  ← the only two GitHub writes
   /api/reviews/:prId  reviews/routes.ts  local pending-review draft (GET/PUT/DELETE)
-  /api/views       views/routes.ts       saved queue views (created/edited/imported from the
-                                         queue UI; the JSON dialog round-trips views AND teams
-                                         together — utils/configJson.ts validates imports)
+  /api/views       views/routes.ts       saved queue views (created/edited on the queue's tabs;
+                                         Settings › Views round-trips views AND teams together —
+                                         utils/configJson.ts validates imports)
   /api/teams       teams/routes.ts       named lists of GitHub logins (GET/PUT, like views)
   /api/pulse[...]  pulse/routes.ts       .xbar → menu-bar plugin text · /history → daily rollup
                                          · plain GET → JSON. All read-only.
@@ -188,7 +188,10 @@ needs them as much as the client does.
 of GitHub logins. That is the entire type. A richer one was built first — display names, emails,
 managers, repos, a `gh-team`/`org-members` sync, a paste-and-filter importer — and every field
 beyond the login was carried around without being read, so it was cut (user decision 2026-08-27).
-Don't add a field back without a consumer.
+Don't add a field back without a consumer. Teams are edited in **Settings › Teams**; the editor
+itself is `components/teams/TeamsPanel.tsx`, and `queue/TeamDialogs.tsx` is only a dialog frame
+around that same panel for ONE path — the view editor, where discovering mid-query that the team
+doesn't exist yet must not throw away the half-written view.
 
 A view references a team (`SavedView.teamId`) and reaches it through ONE token, `{team}`, which
 stands in for a person wherever a person can go:
@@ -431,15 +434,19 @@ src/
   keyboard/          keyOwnership.ts (isTypingTarget/hasOpenDialog)  shortcuts.ts (? sheet registry —
                      manually synced with the dispatchers)
   routes.ts          History-API routing: /?view=<id>[&by=<dim>:<value>] ·
-                     /:owner/:repo/pull/:n · /settings
-                     (navigateToQueue() = back to the last-selected view AND facet)
+                     /:owner/:repo/pull/:n · /settings/<section>
+                     (navigateToQueue() = back to the last-selected view AND facet;
+                     navigateToSettings() = the rail's first page)
   utils/queueStats.ts  TESTED pure stats + facets over the active view's rows
                      (buckets, top-N folding, parse/format/match facet; `pulse` is the one
                      facet dim needing context, hence the optional PulseOptions arg)
   components/        layout/AppHeader (the ONE header: chrome + brand + agent pill + settings
                      + theme; screens fill `children`/`actions`) queue/ pr/ agent/
-                     review(tray in pr/)/ settings/ setup/  common/ (Markdown, ErrorBoundary,
-                     ShortcutsHelp) — every component lives in a subdirectory, none at the root
+                     review(tray in pr/)/ teams/ (TeamsPanel, framed by the settings
+                     section AND the view editor's dialog)/ settings/ (SettingsView
+                     shell + fields.tsx + one file per sections/) setup/
+                     common/ (Markdown, ErrorBoundary, ShortcutsHelp) — every component
+                     lives in a subdirectory, none at the root
 ```
 
 ## Storage (`$TANDEM_HOME ?? ~/.tandem`, all via jsonFile.ts, all 0600)
@@ -494,9 +501,12 @@ One fixed-height row, and NOTHING in it wraps — so the rule has to be visible 
 emergent. `ViewTabs` is the only `flex-1` child and the only thing that scrolls (`overflow-x-auto`
 on its strip), which means every control to its right keeps the same position whether there are
 two views or twelve. A `HeaderDivider` marks where the tab strip ends and the ACTIVE VIEW's own
-controls begin — pulse pill, breakdown toggle, query toggle — and `AppHeader`'s `actions` slot
-keeps only what is about the app rather than the view (teams, views-JSON), followed by the
-agent pill and settings. Put a new control in the zone it belongs to; do not add a second row.
+controls begin — pulse pill, breakdown toggle, query toggle — followed by the agent pill and
+settings. `AppHeader` has NO `actions` slot as of 2026-08-28 — the queue was its last caller, and
+teams and the views/teams JSON round-trip moved into Settings, because neither is a thing you do
+to the queue you happen to be looking at. A screen's own controls go in its middle zone
+(`children`); the right-hand group is app-level and identical everywhere. Put a new control in
+the zone it belongs to; do not add a second row, and prefer Settings over a ninth icon here.
 
 ## Query help (`components/queue/QueryHelp.tsx`)
 
@@ -597,11 +607,31 @@ exceeds the loaded rows, says so above the charts. Never drop that caveat.
 - **No cohort digest** (user decision 2026-08-27): a model pass over a whole queue view was built
   and removed — it was slow enough that nobody waited for it, and the pulse counts already answer
   what it summarised. Don't rebuild it without a faster shape.
-- **The JSON dialog exports views AND teams together**: a view carries a `teamId`, not a list of
+- **Import / export ships views AND teams together** (Settings › Views): a view carries a `teamId`, not a list of
   logins, so shipping one without its team hands the reader a view that refuses to search. A bare
   array still imports as views-only (old exports live in notes and chat threads), and `teams:
 null` from that path means "leave the configured teams alone" — an empty array is a real
   instruction to clear them.
+- **Settings is a RAIL of eight sections, and the section is URL state** (`/settings/<section>`,
+  2026-08-28): four groups — Connection (GitHub PAT + claude CLI), Queue (teams, views, pulse),
+  Agent (review policy, profiles, auto-approve), App (about). The seam is Queue vs Agent: pulse
+  invokes no model and spends nothing, while auto-approve is the only page that can write to
+  GitHub — which is why it is its own destination rather than a fourth card under the agent's
+  switches. Back lives in the app header (`SettingsBreadcrumb`), exactly where the PR screen
+  puts it; the body never grows a second breadcrumb. Every field saves on commit — there is no
+  page-level Save, which is what makes navigating between eight sections safe. Content is
+  centred at `max-w-6xl` with fields keeping their own caps (`fields.tsx`).
+- **One vocabulary for the whole settings screen** (`components/settings/fields.tsx`):
+  `SectionHeading` · `Panel` (title + hint + `aside`) · `FieldGrid` · `ToggleRow` ·
+  `Number/Text/PromptField` · `Note` · `EmptyState` · `FormActions`. Nothing floats between
+  panels — a loose paragraph on the page background has no owner, so explanations are `Note`s
+  INSIDE the panel they explain. Buttons obey four rules, written at the top of that file:
+  panel-scoped actions live in the panel's `aside` at `size="xs"` (primary=default,
+  secondary=outline, destructive=ghost+`text-destructive`+Trash2); a form's submit sits
+  bottom-left at `size="xs"`, with a destructive action on what that form edits at the far
+  right of the same row; row-level actions are `size="2xs" variant="ghost"`; labels are
+  sentence case. `CredentialsForm` takes `size="xs"` so the setup screen keeps its roomier
+  first-run buttons while Settings matches everything around it.
 - **View management lives on the tab** (⋯ menu / right-click / double-click to rename):
   rename · edit query · duplicate · delete (delete always confirms, then slides to the
   neighbour). Every write goes through `useViewActions`, which also owns the navigation.

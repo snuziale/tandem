@@ -4,6 +4,7 @@ import { API_PATHS } from "../../shared/api-paths";
 import { isPlainObject } from "../../shared/is-plain-object";
 import { testGitHubCredentials } from "../github/client";
 import { parseJsonBody } from "../requestJson";
+import { storageHome } from "../storage/jsonFile";
 import { loadConfig, saveConfig, configPath, type Config } from "./store";
 import { validateConfig } from "./validate";
 
@@ -46,6 +47,7 @@ async function handleStatus(): Promise<Response> {
     login: cfg ? await resolveLogin() : null,
     fields: GITHUB_CREDENTIAL_FIELDS,
     configPath: configPath(),
+    homePath: storageHome(),
     currentValues: cfg ? redactedCurrentValues(cfg) : undefined,
   } satisfies ConfigStatus);
 }

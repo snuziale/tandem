@@ -19,12 +19,10 @@ import {
   Label,
   Switch,
   Textarea,
-  toast,
 } from "@uipath/apollo-wind";
 import { hasTeamToken, TEAM_TOKEN } from "../../shared/gh/team";
 import type { SavedView } from "../../shared/review-types";
 import type { Team } from "../../shared/team-types";
-import { formatConfigJson, parseConfigJson } from "../../utils/configJson";
 import { appendQualifier, hasScopeQualifier } from "../../utils/searchQuery";
 import { QueryHelpButton } from "./QueryHelp";
 
@@ -210,87 +208,6 @@ export function ViewEditorDialog({
           <Button disabled={!canSave} onClick={save}>
             {view ? "Save view" : "Add view"}
           </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// The whole queue configuration as JSON: view, copy (export/share), paste
-// (import), apply. Views AND teams — a view carries a `teamId`, so shipping
-// one without its team hands the reader a view that refuses to search.
-
-type JsonProps = {
-  views: SavedView[];
-  teams: Team[];
-  open: boolean;
-  onClose: () => void;
-  onApply: (config: { views: SavedView[]; teams: Team[] | null }) => void;
-};
-
-export function ConfigJsonDialog({
-  views,
-  teams,
-  open,
-  onClose,
-  onApply,
-}: JsonProps) {
-  const [draft, setDraft] = useState(() => formatConfigJson(views, teams));
-  const [error, setError] = useState<string | null>(null);
-
-  const apply = () => {
-    const parsed = parseConfigJson(draft);
-    if ("error" in parsed) {
-      setError(parsed.error);
-      return;
-    }
-    onApply(parsed);
-    onClose();
-  };
-
-  return (
-    <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
-      {/* sm: variant, or apollo's own `sm:max-w-lg` wins the cascade — see
-          TeamDialogs for the same trap. */}
-      <DialogContent className="sm:max-w-2xl">
-        <DialogHeader>
-          <DialogTitle>Configuration as JSON</DialogTitle>
-          <DialogDescription>
-            The views in{" "}
-            <code className="font-mono text-[11px]">~/.tandem/views.json</code>{" "}
-            and the teams in{" "}
-            <code className="font-mono text-[11px]">~/.tandem/teams.json</code>.
-            Copy it to share; paste a teammate's to import. Applying replaces
-            ALL views, and all teams when the payload lists any.
-          </DialogDescription>
-        </DialogHeader>
-        <Textarea
-          value={draft}
-          onChange={(e) => {
-            setDraft(e.target.value);
-            setError(null);
-          }}
-          spellCheck={false}
-          className="min-h-72 text-xs font-mono"
-        />
-        {error ? <p className="text-xs text-destructive">{error}</p> : null}
-        <DialogFooter className="gap-2">
-          <Button
-            variant="outline"
-            className="mr-auto"
-            onClick={() => {
-              void navigator.clipboard
-                .writeText(draft)
-                .then(() => toast.success("Configuration copied"));
-            }}
-          >
-            Copy JSON
-          </Button>
-          <Button variant="ghost" onClick={onClose}>
-            Cancel
-          </Button>
-          <Button onClick={apply}>Apply</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

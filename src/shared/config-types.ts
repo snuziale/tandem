@@ -26,6 +26,9 @@ export type ConfigStatus = {
   login: string | null;
   fields: ReadonlyArray<CredentialField>;
   configPath: string;
+  // The directory config.json and every other Tandem file sits in. Sent
+  // rather than derived from configPath: the server owns `$TANDEM_HOME`.
+  homePath: string;
   // Non-secret field values from the currently-stored config (secrets are
   // always empty). Absent when `configured` is false.
   currentValues?: Record<string, string>;
