@@ -36,6 +36,10 @@ export type GqlPrNode = {
   url: string;
   /** Only fetched by the detail query; absent from the queue search. */
   body?: string;
+  /** GitHub's own rendering, fetched alongside `body` by the detail query.
+   * Read for ONE thing: it is the only place an attachment URL appears in a
+   * form a browser can load (shared/gh/attachments.ts). */
+  bodyHTML?: string;
   author: { login: string } | null;
   repository: { name: string; owner: { login: string } };
   headRefName: string;
@@ -87,6 +91,8 @@ export type GqlReviewThread = {
       id: string;
       author: { login: string } | null;
       body: string;
+      /** As on the PR node — attachments only. */
+      bodyHTML?: string;
       createdAt: string;
     }>;
   };

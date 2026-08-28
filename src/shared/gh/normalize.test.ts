@@ -221,12 +221,36 @@ function thread(overrides: Partial<GqlReviewThread> = {}): GqlReviewThread {
   };
 }
 
+const REF = { owner: "acme", repo: "app", number: 7 };
+
 describe("normalizeThread", () => {
   it("maps thread and comments", () => {
-    const t = normalizeThread(thread());
+    const t = normalizeThread(thread(), REF);
     expect(t.side).toBe("RIGHT");
     expect(t.comments[0].author).toBe("bob");
     expect(t.startLine).toBeUndefined();
+  });
+
+  // A comment's screenshot has to reach the proxy for the same reason the
+  // description's does — attachments.ts covers the rewrite itself.
+  it("points a comment attachment at the proxy", () => {
+    const uuid = "2c13a3d3-f781-463b-b12f-cb6caae4195d";
+    const signed = `https://private-user-images.githubusercontent.com/1/640284898-${uuid}.png?jwt=a.b.c`;
+    const base = thread();
+    base.comments.nodes[0].body = `look: https://github.com/user-attachments/assets/${uuid}`;
+    base.comments.nodes[0].bodyHTML = `<img src="${signed}" />`;
+    expect(normalizeThread(base, REF).comments[0].bodyMarkdown).toBe(
+      `look: /api/prs/acme/app/7/asset/${uuid}`,
+    );
+  });
+
+  it("leaves a comment alone without bodyHTML to resolve against", () => {
+    const base = thread();
+    base.comments.nodes[0].body =
+      "https://github.com/user-attachments/assets/2c13a3d3-f781-463b-b12f-cb6caae4195d";
+    expect(normalizeThread(base, REF).comments[0].bodyMarkdown).toBe(
+      base.comments.nodes[0].body,
+    );
   });
 });
 

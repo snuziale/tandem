@@ -18,9 +18,29 @@ import { rehypeGithubAlerts } from "./mdAlerts";
 //
 // Plugin ORDER matters: raw → sanitize → our own decorations.
 // Styles live under `.tandem-md` in index.css — compact, review-density.
+//
+// The default schema follows GitHub's MARKDOWN sanitizer, which has no
+// `video` — GitHub renders an attachment's player itself rather than letting
+// an author write the tag. We do write it (shared/gh/attachments.ts turns a
+// bare attachment link into one, which is the whole reason a demo recording
+// shows up at all), and a hand-written <video><source> is legitimate in a
+// description too, so both are allowed back in. Nothing else is widened: no
+// script, no event handlers, no javascript: URLs, exactly as before.
+const SCHEMA = {
+  ...defaultSchema,
+  tagNames: [...(defaultSchema.tagNames ?? []), "video"],
+  attributes: {
+    ...defaultSchema.attributes,
+    video: ["src", "poster", "controls", "loop", "muted", "playsInline"],
+    // `source` is already allowed, but only for srcSet — a <picture>. A
+    // <video>'s child needs the other two.
+    source: [...(defaultSchema.attributes?.source ?? []), "src", "type"],
+  },
+};
+
 const REHYPE = [
   rehypeRaw,
-  [rehypeSanitize, defaultSchema],
+  [rehypeSanitize, SCHEMA],
   rehypeGithubAlerts,
 ] as const;
 

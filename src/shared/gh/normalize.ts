@@ -7,8 +7,13 @@ import type {
   PullRequest,
   ReviewThread,
 } from "../review-types";
+import {
+  attachmentProxyBase,
+  attachmentSourcesFromHtml,
+  rewriteAttachmentUrls,
+} from "./attachments";
 import { isGeneratedPath } from "./generated";
-import { prIdOf } from "./prKey";
+import { prIdOf, type PrRef } from "./prKey";
 import type {
   GqlCheckContext,
   GqlPrNode,
@@ -107,7 +112,14 @@ export function normalizePr(node: GqlPrNode | null): PullRequest | null {
     repo,
     number: node.number,
     title: node.title,
-    bodyMarkdown: node.body ?? "",
+    // Attachment URLs are rewritten HERE so every reader downstream — the
+    // description, a thread card, the agent's prompt context — sees the one
+    // form that loads. See shared/gh/attachments.ts.
+    bodyMarkdown: withAttachments(node.body ?? "", node.bodyHTML, {
+      owner,
+      repo,
+      number: node.number,
+    }),
     author: node.author?.login ?? "ghost",
     headRef: node.headRefName,
     baseRef: node.baseRefName,
@@ -144,7 +156,7 @@ export function normalizePr(node: GqlPrNode | null): PullRequest | null {
   };
 }
 
-export function normalizeThread(t: GqlReviewThread): ReviewThread {
+export function normalizeThread(t: GqlReviewThread, ref: PrRef): ReviewThread {
   return {
     id: t.id,
     path: t.path,
@@ -156,10 +168,25 @@ export function normalizeThread(t: GqlReviewThread): ReviewThread {
     comments: t.comments.nodes.map((c) => ({
       id: c.id,
       author: c.author?.login ?? "ghost",
-      bodyMarkdown: c.body,
+      bodyMarkdown: withAttachments(c.body, c.bodyHTML, ref),
       createdAt: c.createdAt,
     })),
   };
+}
+
+/** Point a body's attachments at the proxy; a no-op without GitHub's own
+ * rendering to resolve them against. */
+function withAttachments(
+  markdown: string,
+  html: string | undefined,
+  ref: PrRef,
+): string {
+  if (!html) return markdown;
+  return rewriteAttachmentUrls(
+    markdown,
+    attachmentSourcesFromHtml(html),
+    attachmentProxyBase(ref.owner, ref.repo, ref.number),
+  );
 }
 
 export function normalizeFile(f: RestPullFile): FileChange {

@@ -299,9 +299,18 @@ body.future-dark {
   border-radius: 4px;
   padding: 0.1em 0.4em;
 }
-.tandem-md img {
+.tandem-md img,
+.tandem-md video {
   max-width: 100%;
   border-radius: 6px;
+}
+/* A demo recording is the point of the description it sits in — give it real
+   height, but never more than the pane. */
+.tandem-md video {
+  display: block;
+  max-height: 30vh;
+  margin: 0.5em 0;
+  background: #000;
 }
 .tandem-md hr {
   border: none;

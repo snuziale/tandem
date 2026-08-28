@@ -11,6 +11,7 @@ query TandemPrDetail($owner: String!, $name: String!, $number: Int!) {
       title
       url
       body
+      bodyHTML
       author { login }
       repository { name owner { login } }
       headRefName
@@ -53,6 +54,7 @@ query TandemPrDetail($owner: String!, $name: String!, $number: Int!) {
               id
               author { login }
               body
+              bodyHTML
               createdAt
             }
           }
@@ -75,6 +77,23 @@ query TandemPrDetail($owner: String!, $name: String!, $number: Int!) {
             }
           }
         }
+      }
+    }
+  }
+}`;
+
+// Everything a rendered body can reference, and nothing else. The attachment
+// proxy resolves ONE uuid per request, so this runs on the image path and is
+// kept deliberately lean — no checks, no diff, no thread metadata. See
+// shared/gh/attachments.ts for why bodyHTML is the only place a loadable
+// attachment URL exists.
+export const PR_ATTACHMENTS_QUERY = `
+query TandemPrAttachments($owner: String!, $name: String!, $number: Int!) {
+  repository(owner: $owner, name: $name) {
+    pullRequest(number: $number) {
+      bodyHTML
+      reviewThreads(first: 100) {
+        nodes { comments(first: 30) { nodes { bodyHTML } } }
       }
     }
   }

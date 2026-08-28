@@ -34,6 +34,6 @@ export async function fetchPrDetail(
   if (!pr) return null;
   return {
     pr,
-    threads: node.reviewThreads.nodes.map(normalizeThread),
+    threads: node.reviewThreads.nodes.map((t) => normalizeThread(t, ref)),
   };
 }

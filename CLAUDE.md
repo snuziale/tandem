@@ -50,6 +50,7 @@ browser → /api/* → Vite proxy (dev) → Bun server (src/server/worker.ts)
   /api/prs/:o/:r/:n[...]  github/routes.ts  detail (GraphQL) · files (REST+fallback) ·
                                             blob (one file at a commit, for diff-pane
                                             context expansion) ·
+                                            asset (an attachment's bytes — see below) ·
                                             approve · submit  ← the only two GitHub writes
   /api/reviews/:prId  reviews/routes.ts  local pending-review draft (GET/PUT/DELETE)
   /api/views       views/routes.ts       saved queue views (created/edited on the queue's tabs;
@@ -176,6 +177,30 @@ not the product here, so an unparseable tail degrades to prose-only instead of f
   `anchorMoved` comments refused (409). Success clears the draft.
 - Blocker gate (guard rail, not a block): quick-approve disabled + `a` refused while an undismissed
   blocker exists; `shift+A` overrides; APPROVE submit blocked the same way.
+
+**Attachments are proxied, and that is not optional** (`shared/gh/attachments.ts` TESTED +
+`server/github/assets.ts`). GitHub puts `github.com/user-attachments/assets/<uuid>` in the raw
+markdown `body` — a URL a browser can NEVER load. It is authenticated by a github.com SESSION
+COOKIE (plus SAML for an SSO org): an `<img>` from the app sends none (cross-site, the cookie is
+SameSite=Lax) and a PAT cannot ride on an `<img>` at all. Unauthenticated it 404s; with a bearer
+PAT it answers a sign-in page.
+
+- **`bodyHTML` is the only place a loadable URL exists** — GitHub rewrites the asset to a signed
+  `private-user-images.githubusercontent.com/...?jwt=` URL needing no auth whatsoever. So the
+  detail query fetches `bodyHTML` beside `body`, for the PR and every thread comment, and reads
+  exactly two things off it: the signed URL and whether GitHub rendered an image or a video.
+- **The JWT lives 300 SECONDS**, which is why the signed URL is never handed to the client. The
+  uuid is the durable name; `/api/prs/:o/:r/:n/asset/:uuid` re-resolves per request (map cached
+  per PR for 120s, comfortably inside the JWT's life) and streams the bytes, forwarding `Range` so
+  a video can seek. Don't "simplify" this by putting the signed URL in the markdown — a pane open
+  five minutes would go blank.
+- The rewrite happens in `normalize.ts`, so EVERY reader downstream (description, thread card,
+  agent prompt context) sees the working form. A uuid `bodyHTML` didn't resolve is left exactly as
+  written — which is also what makes this a no-op on any response fetched without `bodyHTML`.
+- **A bare attachment URL on its own line becomes the element itself**, `<video controls>` or
+  `<img>`, because that is what GitHub does with one and the markdown cannot say which it is.
+  Hence `Markdown.tsx` widens the sanitize schema: hast-util-sanitize follows GitHub's MARKDOWN
+  allowlist, which has no `video` at all.
 
 ## Teams and pulse (the cohort half)
 
@@ -398,6 +423,7 @@ src/
                      kebab-case here; gh/ below is a camelCase sub-package. `-schema` means
                      zod (chat-schema, finding-schema); plain data is named for what it holds.
     gh/              runtime-neutral GitHub core, ALL TESTED: wire.ts (raw shapes),
+                     attachments.ts (the uuid↔signed-URL join + markdown rewrite),
                      normalize.ts, queueQuery.ts, detailQuery.ts, patch.ts (buildFilePatch,
                      splitRawDiff, diffLineIndex, clampCommentRange, patchLineText),
                      generated.ts, prKey.ts (prId = "owner/repo#n"),
@@ -670,6 +696,10 @@ null` from that path means "leave the configured teams alone" — an empty array
   many approvals a PR has. The badge (`ReviewCell`) and `reviewBucket` therefore read
   `viewerLatestReview` too and let YOUR verdict win — otherwise a PR you approved yourself
   renders "No review". Keep those two in step.
+- **A description image or demo video renders as a broken box**: something bypassed the attachment
+  proxy. Either the response was fetched without `bodyHTML` (nothing to resolve against, so the
+  markdown is left untouched by design) or a `<video>` lost its tag to the sanitizer. Never "fix"
+  it by pointing the markup back at `github.com/user-attachments` — that URL cannot load from here.
 - **Approving your own PR 422s** — GitHub policy, surfaced verbatim (client.ts merges `errors[]`
   into the message; keep that, review submission errors live there).
 - **bun-types must stay ~1.3.x** until webview-bun handles bun 1.4's `bigint` FFI Pointer type.

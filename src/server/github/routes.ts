@@ -8,6 +8,7 @@ import type { PendingComment } from "../../shared/review-types";
 import { deleteReview, loadReview } from "../reviews/store";
 import { loadConfig } from "../config/store";
 import { parseJsonBody } from "../requestJson";
+import { handlePrAsset } from "./assets";
 import { GitHubError } from "./client";
 import { fetchFileAtRef, fetchPrFiles } from "./files";
 import { fetchPrDetail } from "./pr";
@@ -56,6 +57,10 @@ export async function handlePrs(req: Request): Promise<Response> {
       return new Response(contents, {
         headers: { "content-type": "text/plain; charset=utf-8" },
       });
+    }
+    if (action.startsWith("/asset/") && req.method === "GET") {
+      // The ONLY way a browser can load a PR attachment — see assets.ts.
+      return await handlePrAsset(cfg, ref, action.slice("/asset/".length), req);
     }
     if (action === "/approve" && req.method === "POST") {
       const result = await quickApprove(cfg.github, ref);
