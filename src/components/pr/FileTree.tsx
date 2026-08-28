@@ -204,6 +204,7 @@ export function FileTree({
               // The search input takes over the header row while open.
               <Input
                 autoFocus
+                size="xs"
                 ref={searchInputRef}
                 value={searchValue}
                 onChange={(e) => applySearch(e.target.value)}

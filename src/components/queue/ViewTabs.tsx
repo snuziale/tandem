@@ -254,6 +254,7 @@ function NameEditor({
   return (
     <Input
       autoFocus
+      size="xs"
       defaultValue={name}
       aria-label="View name"
       spellCheck={false}
