@@ -14,7 +14,16 @@
 import { cn } from "@uipath/apollo-wind";
 import type { Slice } from "../../utils/queueStats";
 
-/** One card in the drawer grid. `hint` is the subtitle, not a legend. */
+/**
+ * One card in the drawer grid. `hint` is the subtitle, not a legend.
+ *
+ * Boxed at the same weight as `StatTile` (`border-border/60`), because the
+ * drawer's headline row is already a row of bordered tiles — unboxed charts
+ * under boxed tiles read as two different surfaces stacked. The border also
+ * does the work the grid can't: cards in a row stretch to a common height
+ * anyway, but with nothing drawn around them a short bar list next to a tall
+ * one just looks like uneven whitespace rather than a smaller card.
+ */
 export function ChartCard({
   title,
   hint,
@@ -25,7 +34,7 @@ export function ChartCard({
   children: React.ReactNode;
 }) {
   return (
-    <section className="min-w-0 flex flex-col gap-2">
+    <section className="min-w-0 flex flex-col gap-2 rounded-md border border-border/60 px-3 py-2.5">
       <header className="flex items-baseline justify-between gap-2">
         <h3 className="text-[10px] uppercase tracking-wider text-muted-foreground font-mono">
           {title}
@@ -164,8 +173,11 @@ export function StatusStrip({
     return <p className="text-xs text-muted-foreground/70">—</p>;
   return (
     <div className="flex flex-col gap-2">
-      {/* gap-[2px] IS the separator — the surface shows through between fills. */}
-      <div className="flex gap-[2px] h-2.5 max-w-[30rem]">
+      {/* gap-[2px] IS the separator — the surface shows through between fills.
+          Fills the card, like every other mark in the drawer: this used to
+          carry a max-w-[30rem] from when strips shared a 4-column grid, and
+          left the bar dead-ending mid-card next to a full-width sparkline. */}
+      <div className="flex gap-[2px] h-2.5">
         {slices.map((slice) => {
           const active = activeKey === slice.key;
           return (

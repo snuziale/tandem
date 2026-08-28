@@ -236,8 +236,20 @@ export function StatsDrawer({
           card was full-width at one breakpoint and half-width at the next and
           the reflow read as arbitrary. Now: strips (a proportional bar plus a
           legend, which needs width) go two-up; distributions (short bar
-          lists, all the same shape) go four-up. Nothing spans. */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-x-6 gap-y-3">
+          lists, all the same shape) go four-up. Nothing spans.
+
+          Now that the cards are BOXED, an empty cell is a visible void rather
+          than harmless whitespace — so the strip band takes its column count
+          from how many cards it actually has: three strips go three-up and
+          fill one row, and the fourth (trend) drops them to a full 2x2. Both
+          land flush. The distribution band below always has four slots and
+          only ever sheds from the front, so its gap is trailing. */}
+      <div
+        className={cn(
+          "grid grid-cols-1 gap-3",
+          trend.length >= 2 ? "lg:grid-cols-2" : "lg:grid-cols-3",
+        )}
+      >
         <ChartCard title="pulse">
           <StatusStrip
             slices={stats.pulse}
@@ -308,7 +320,7 @@ export function StatsDrawer({
         </ChartCard>
       </div>
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-x-6 gap-y-3">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         {/* A nominal breakdown of ONE value is not a breakdown — a repo-scoped
             view would render a single full-width bar reading "100%", which
             says nothing and offers a filter that selects everything. Ordinal
