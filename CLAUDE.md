@@ -167,6 +167,10 @@ not the product here, so an unparseable tail degrades to prose-only instead of f
   `suggestion`). Accepting a finding stages `**title**\n\nbody` + suggestion with `findingId` set —
   that drives the tray's human/agent breakdown and finding-state transitions. Removing an
   agent-staged comment returns the finding to `proposed`.
+- **A comment can span LINES, and the anchor is always the LAST one** — `line` with an optional
+  `startLine`, exactly GitHub's `line`/`start_line`, so the card hangs under the end of the range.
+  Everything below the UI already spoke this (threads, findings and `restCommentOf` all carry
+  it); the pane is what learned to produce it. See the diff-pane note on selection.
 - **Submit posts the server-side draft**, not a client payload: `POST …/submit {verdict, summary}`
   → suggestion fences composed, `commit_id` = draft sha, per-comment 422s surfaced, drafts with
   `anchorMoved` comments refused (409). Success clears the draft.
@@ -298,6 +302,54 @@ One controlled `CodeView` hosts every file (`components/pr/DiffPane.tsx`):
   rejects a comment there, so `onLineClick` bails on `isCommentableLine` (`annotations.ts`,
   where this pane's library↔app vocabulary lives) — otherwise the comment stages fine and
   dies with a per-comment 422 at submit.
+- **Multi-line comments are the LIBRARY's selection, not a gesture of ours**
+  (`enableLineSelection` + `enableGutterUtility`): a drag starts on the line-NUMBER column only,
+  so selecting text in the code still works, shift-click extends, and the ⊕ the library parks on
+  the hovered number is the same gesture with a handle — and the reason anyone discovers it.
+  Both paths commit through ONE callback (`onLineSelected` → `commitSelection` → the pure
+  `commentAnchorOf`, tested); the ⊕ needs
+  `onGutterUtilityClick` present to arm, which is why that one is an empty function.
+  `onLineNumberClick` is empty for the mirror-image reason — a number click IS the one-line
+  selection, and letting it fall through to `onLineClick` would open the composer twice.
+- **A dragged range is clamped against the PATCH, never trusted** (`clampCommentRange`,
+  `shared/gh/patch.ts`, tested): it keeps the contiguous run of patch lines ending at the anchor.
+  Expanded context and the gap between hunks are both simply absent from the patch, so a
+  selection dragged into either stops at the hunk edge — which is also what GitHub requires,
+  since it rejects a range spanning a hunk boundary. A split-view drag that crossed sides is not
+  one comment: it falls back to the line the pointer ended on. That translation — side
+  defaulting, the crossed-drag rule, the clamp — is `commentAnchorOf` in `annotations.ts`, not
+  the component, so it is testable. The clamp also re-checks a staged range after new commits
+  (`prewarm.ts`), because `start_line` moving is a moved anchor. The index it reads is built once
+  per parse and rides in `diffByPath` beside the patch it came from.
+- **Selection is uncontrolled, and `composerTarget` is what it mirrors.** No `selectedLines`
+  prop: the library paints a drag itself with no React work per pointermove, and an effect writes
+  the committed state back through the handle, so the highlight outlives the drag and dies with
+  the composer. That one slot is lent out by precedence — composer, then the focused staged
+  comment or human thread (`uiStore.focusedCommentId`, set by clicking the card; click it again
+  to give the selection back), then the focused finding — so a card that spans lines shows its
+  HEIGHT rather than just its anchor, whoever authored it. At most one of `focusedCommentId` /
+  `focusedFindingId` is ever set: their setters clear each other, and opening a composer clears
+  both, because two cards wearing a focused border would be a lie about a single selection.
+  A thread with a null `line` is outdated against this diff and claims nothing. Ranges are in
+  `versionOf` and in the fold map (`annoSpan`): extending one has to re-render the card (the
+  library hands the render prop the annotation IT holds), and a folded middle would leave a card
+  pointing at half its own evidence.
+- **⌥↑/⌥↓ move the TOP of an open composer's range**, never the anchor — the card would jump out
+  from under the cursor mid-sentence. ⇧↑/⇧↓ is deliberately not used: it selects text in the box.
+  The card owns those keys, so it has to own FOCUS: @pierre/diffs does NOT preventDefault the
+  line-number pointerdown, so a drag focuses the CodeView root (the library puts `tabIndex = -1`
+  on it — that is our scroll container), and the arrow keys scroll the diff instead. Dragging on
+  an already-open composer is the case that bites, since the card never remounts to re-run
+  `autoFocus`. `ComposerCard` reclaims focus on every range change, but only when it actually
+  left the card, and returns it to whichever box last had it.
+  Ticking "suggested change" seeds the box with the range's own text (`patchLineText`, tested),
+  since a suggestion IS a replacement for those lines. That seed is DERIVED, not copied into
+  state: the box shows `edited ?? sourceText`, so it follows the range for free until someone
+  types in it. The handler sits on the CARD, not the body textarea, so ⌥ arrows still work from
+  inside the suggestion box — the one place the re-seed is for.
+- **One convention, one place**: the anchor is the END line and `startLine` is absent when there
+  is only one. `spanOf`/`startLineOf` (`annotations.ts`) are the only spelling of it — `annoSpan`,
+  the selection mirror, the composer's label and the staged card all read them.
 - **The parsed `fileDiff`'s IDENTITY is load-bearing**: the loader hydrates that exact object
   in place and the library keys expansion state to it (`fileDiff !== this.fileDiff` resets the
   file), so the parse must hold still while the patch text does — `parsePatchFiles` has no
@@ -344,7 +396,8 @@ src/
                      zod (chat-schema, finding-schema); plain data is named for what it holds.
     gh/              runtime-neutral GitHub core, ALL TESTED: wire.ts (raw shapes),
                      normalize.ts, queueQuery.ts, detailQuery.ts, patch.ts (buildFilePatch,
-                     splitRawDiff, diffLineIndex), generated.ts, prKey.ts (prId = "owner/repo#n"),
+                     splitRawDiff, diffLineIndex, clampCommentRange, patchLineText),
+                     generated.ts, prKey.ts (prId = "owner/repo#n"),
                      team.ts ({team} expansion + sharding)
   server/            Bun-only
     worker.ts (flat prefix router, port scan 5274-81, idleTimeout 0)  app.ts (webview host)

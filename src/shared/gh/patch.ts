@@ -4,7 +4,7 @@
 // splitRawDiff handles the fallback path: the whole-PR unified diff fetched
 // with `Accept: application/vnd.github.diff` (used when the files API omits
 // patches or the PR exceeds its 300-file window), split back per file.
-import type { FileChange } from "../review-types";
+import type { DiffSide, FileChange } from "../review-types";
 
 /** A complete single-file unified patch, or null when there is nothing to
  * render (binary or patch withheld by the API). */
@@ -61,7 +61,8 @@ export function countDiffLines(
   return files.reduce((sum, f) => sum + f.additions + f.deletions, 0);
 }
 
-/** The `@@ -old[,n] +new[,n] @@` line. One copy: three walkers below read it. */
+/** The `@@ -old[,n] +new[,n] @@` line. One copy: `diffLineIndex` and
+ * `parsePatchHunks` below both read it. */
 const HUNK_HEADER = /^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/;
 
 export type DiffLineIndex = {
@@ -99,6 +100,68 @@ export function diffLineIndex(patch: string): DiffLineIndex {
     }
   }
   return { left, right };
+}
+
+/**
+ * Trim a selected line range down to what GitHub will actually accept as ONE
+ * multi-line review comment: a contiguous run of lines the patch contains,
+ * ending at the anchor.
+ *
+ * Two things fall out of that walk without being special-cased. Expanded
+ * context is not in the patch (it was fetched from the blob), so a selection
+ * dragged into it stops at the hunk edge instead of staging a comment that
+ * dies with a per-comment 422 at submit. And the lines BETWEEN hunks are not
+ * in the patch either, so a range can never span a hunk boundary — which
+ * GitHub rejects for the same reason.
+ *
+ * Returns null when the anchor itself is not commentable; the caller opens no
+ * composer at all, matching `isCommentableLine` on a plain line click.
+ */
+export function clampCommentRange(
+  index: DiffLineIndex,
+  side: DiffSide,
+  start: number,
+  end: number,
+): { start: number; end: number } | null {
+  const lines = side === "LEFT" ? index.left : index.right;
+  if (!lines.has(end)) return null;
+  const floor = Math.min(start, end);
+  let first = end;
+  while (first > floor && lines.has(first - 1)) first--;
+  return { start: first, end };
+}
+
+/**
+ * The text of lines `start`..`end` on one side of a patch, prefixes stripped
+ * and newline-joined — what a ```suggestion fence starts as, since a
+ * suggestion IS a replacement for exactly those lines. Null when any line in
+ * the range is outside the patch.
+ *
+ * Read from the patch the pane is CURRENTLY rendering, so a hide-whitespace
+ * fold hands back the stand-in context line's post-change text — the text on
+ * screen, which is the text the reader thinks they are editing.
+ */
+export function patchLineText(
+  patch: string,
+  side: DiffSide,
+  start: number,
+  end: number,
+): string | null {
+  if (end < start) return null;
+  const left = side === "LEFT";
+  const drop = left ? "add" : "del";
+  const byLine = new Map<number, string>();
+  for (const hunk of parsePatchHunks(patch).hunks)
+    for (const line of hunk.body)
+      if (line.kind !== drop)
+        byLine.set(left ? line.oldNo : line.newNo, line.text.slice(1));
+  const out: string[] = [];
+  for (let n = start; n <= end; n++) {
+    const text = byLine.get(n);
+    if (text === undefined) return null;
+    out.push(text);
+  }
+  return out.join("\n");
 }
 
 /** Line numbers something is anchored to (threads, staged comments, findings,

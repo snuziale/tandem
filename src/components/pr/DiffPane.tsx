@@ -1,5 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef } from "react";
-import { parsePatchFiles, type FileDiffMetadata } from "@pierre/diffs";
+import {
+  parsePatchFiles,
+  type CodeViewLineSelection,
+  type FileDiffMetadata,
+  type SelectedLineRange,
+} from "@pierre/diffs";
 import {
   CodeView,
   type CodeViewDiffItem,
@@ -11,23 +16,32 @@ import { useQueryClient } from "@tanstack/react-query";
 import type { Finding } from "../../shared/agent-types";
 import {
   buildFilePatch,
+  clampCommentRange,
+  diffLineIndex,
   hasHunks,
   hideWhitespaceChanges,
+  patchLineText,
+  type DiffLineIndex,
   type KeepLines,
 } from "../../shared/gh/patch";
 import type {
+  DiffSide,
   FileChange,
   PendingComment,
   PrId,
   ReviewThread,
 } from "../../shared/review-types";
 import { resolveTheme, useThemeStore } from "../../state/themeStore";
-import { useUiStore } from "../../state/uiStore";
+import { useUiStore, type ComposerTarget } from "../../state/uiStore";
 import { FindingCard } from "../agent/FindingCard";
 import {
+  annoSpan,
   annotationSideOf,
+  commentAnchorOf,
   diffSideOf,
   isCommentableLine,
+  spanOf,
+  startLineOf,
   type TandemAnno,
 } from "./annotations";
 import { DiffFileHeader } from "./DiffFileHeader";
@@ -58,7 +72,9 @@ type Props = {
   onAddComment: (comment: Omit<PendingComment, "localId">) => void;
   onUpdateComment: (localId: string, patch: Partial<PendingComment>) => void;
   onRemoveComment: (localId: string) => void;
-  codeViewRef: React.Ref<DiffPaneHandle>;
+  /** React writes this; the pane reads it too — it owns the diff's line
+   * selection while PrDetailView owns scrollTo. One ref, two readers. */
+  codeViewRef: React.RefObject<DiffPaneHandle | null>;
 };
 
 const EMPTY_ANNOS: DiffLineAnnotation<TandemAnno>[] = [];
@@ -74,8 +90,13 @@ const EXPANSION_LINE_COUNT = 20;
 function keepLinesOf(annotations: DiffLineAnnotation<TandemAnno>[]): KeepLines {
   const left = new Set<number>();
   const right = new Set<number>();
-  for (const a of annotations)
-    (a.side === "deletions" ? left : right).add(a.lineNumber);
+  for (const a of annotations) {
+    const set = a.side === "deletions" ? left : right;
+    // A RANGE keeps every line it covers, not just its anchor: fold the middle
+    // of a comment on 42-48 away and the card points at half its own evidence.
+    const { start, end } = annoSpan(a);
+    for (let n = start; n <= end; n++) set.add(n);
+  }
   return { left, right };
 }
 
@@ -94,8 +115,13 @@ function versionOf(
   let h = (collapsed ? 1 : 0) + (hideWhitespace ? 2 : 0);
   for (let i = 0; i < headSha.length; i++)
     h = (h * 31 + headSha.charCodeAt(i)) | 0;
-  for (const a of annotations)
+  for (const a of annotations) {
     h = (h * 31 + a.lineNumber * 2 + (a.side === "additions" ? 1 : 0)) | 0;
+    // The SPAN is part of the position: extending a range moves nothing the
+    // library laid out, but the card has to re-render with the new metadata,
+    // and the library only hands the render prop the annotation it is holding.
+    h = (h * 31 + annoSpan(a).start) | 0;
+  }
   return ((h | 0) >>> 0) + annotations.length;
 }
 
@@ -167,7 +193,7 @@ export function DiffPane({
       push(composerTarget.path, {
         side: annotationSideOf(composerTarget.side),
         lineNumber: composerTarget.line,
-        metadata: { kind: "composer" },
+        metadata: { kind: "composer", target: composerTarget },
       });
     }
     return map;
@@ -198,7 +224,7 @@ export function DiffPane({
   const { diffByPath, whitespaceOnlyPaths } = useMemo(() => {
     const diffs = new Map<
       string,
-      { fileDiff: FileDiffMetadata; patch: string }
+      { fileDiff: FileDiffMetadata; patch: string; index: DiffLineIndex }
     >();
     const whitespaceOnly = new Set<string>();
     for (const file of files) {
@@ -213,7 +239,10 @@ export function DiffPane({
         patch,
         `${headSha}:${file.path}:${hideWhitespace ? "w" : "a"}`,
       )[0]?.files[0];
-      if (fileDiff) diffs.set(file.path, { fileDiff, patch });
+      // The index rides along: every range gesture clamps against it, and it
+      // is derived from exactly the patch this memo just built.
+      if (fileDiff)
+        diffs.set(file.path, { fileDiff, patch, index: diffLineIndex(patch) });
     }
     return { diffByPath: diffs, whitespaceOnlyPaths: whitespaceOnly };
   }, [files, hideWhitespace, keepByPath, headSha]);
@@ -269,6 +298,125 @@ export function DiffPane({
     [queryClient, prId, headSha],
   );
 
+  /**
+   * The library keeps exactly ONE selected line range for the whole view, and
+   * that is the right budget: it marks what you are talking about right now.
+   * The composer's range owns it while a composer is open; otherwise the
+   * focused finding lights up its own span, which is the only way a range
+   * finding shows its height instead of just its anchor line.
+   *
+   * Selection is UNCONTROLLED (no `selectedLines` prop): the library paints a
+   * drag itself, with no React work per pointermove. This only writes the
+   * committed state back, so the highlight survives the drag ending and dies
+   * with the composer.
+   */
+  const focusedFindingId = useUiStore((s) => s.focusedFindingId);
+  const focusedCommentId = useUiStore((s) => s.focusedCommentId);
+  const selection = useMemo<CodeViewLineSelection | null>(() => {
+    // The composer wins; otherwise whichever card the reader is pointed at.
+    // Every claimant is reduced to one {path, side, startLine, end} shape, so
+    // the span rule is applied once and a RANGE card of any kind shows its
+    // height rather than just its anchor line. `end` is null for a thread that
+    // is outdated against this diff — nothing to highlight.
+    const anchored = (
+      a: { path: string; side: DiffSide; startLine?: number } | undefined,
+      end: number | null | undefined,
+    ): CodeViewLineSelection | null => {
+      if (!a || end == null) return null;
+      const span = spanOf(a.startLine, end);
+      return {
+        id: a.path,
+        range: { ...span, side: annotationSideOf(a.side) },
+      };
+    };
+    const composer = composerTarget ?? undefined;
+    const comment = pendingComments.find((c) => c.localId === focusedCommentId);
+    const thread = threads.find((t) => t.id === focusedCommentId);
+    const finding = findings.find((f) => f.id === focusedFindingId);
+    return (
+      anchored(composer, composer?.line) ??
+      anchored(comment, comment?.line) ??
+      anchored(thread, thread?.line) ??
+      anchored(finding, finding?.endLine)
+    );
+  }, [
+    composerTarget,
+    pendingComments,
+    threads,
+    findings,
+    focusedCommentId,
+    focusedFindingId,
+  ]);
+  useEffect(() => {
+    codeViewRef.current?.setSelectedLines(selection);
+  }, [selection, codeViewRef]);
+
+  /**
+   * The diff text under a composer's range — what a suggestion starts as.
+   * Called during render (it is a value prop, not a callback the library
+   * holds), so it reads `diffByPath` directly and needs no stable identity.
+   */
+  const sourceTextOf = (target: ComposerTarget) => {
+    const patch = diffByPath.get(target.path)?.patch;
+    if (!patch) return null;
+    const { start, end } = spanOf(target.startLine, target.line);
+    return patchLineText(patch, target.side, start, end);
+  };
+
+  /**
+   * Grow (-1) or shrink (+1) an open composer's range from the TOP. The anchor
+   * never moves: the card would jump out from under the cursor mid-sentence,
+   * and "the problem actually starts further up" is the direction people
+   * reach for. The composer re-reads the new range's text off `sourceText` on
+   * the render this triggers, so there is nothing to hand back.
+   *
+   * Reads the patch off the ref for the same reason `commitSelection` does:
+   * this lands long after render, and a fresh identity would push a
+   * setOptions through the library on every annotation edit.
+   */
+  const extendComposerRange = useCallback(
+    (delta: -1 | 1) => {
+      const target = useUiStore.getState().composerTarget;
+      const parsed = target && diffsRef.current.get(target.path);
+      if (!target || !parsed) return;
+      const { start: first } = spanOf(target.startLine, target.line);
+      const range = clampCommentRange(
+        parsed.index,
+        target.side,
+        Math.min(target.line, first + delta),
+        target.line,
+      );
+      if (!range || range.start === first) return;
+      setComposerTarget({
+        ...target,
+        startLine: startLineOf(range.start, range.end),
+      });
+    },
+    [setComposerTarget],
+  );
+
+  /**
+   * A committed line selection becomes the composer's target. Reads the patch
+   * off the ref for the same reason `loadDiffFiles` does — this lands long
+   * after render, and a fresh identity here would push a setOptions through
+   * the library on every annotation edit. The selection's own rules (side
+   * defaulting, a crossed split-view drag, the clamp) live in
+   * `commentAnchorOf`, where they are testable.
+   */
+  const commitSelection = useCallback(
+    (range: SelectedLineRange | null, path: string) => {
+      if (!range) {
+        setComposerTarget(null);
+        return;
+      }
+      const parsed = diffsRef.current.get(path);
+      if (!parsed) return;
+      const anchor = commentAnchorOf(range, parsed.index);
+      if (anchor) setComposerTarget({ path, ...anchor });
+    },
+    [setComposerTarget],
+  );
+
   const options = useMemo<CodeViewReactOptions<TandemAnno>>(
     () => ({
       diffStyle,
@@ -297,8 +445,32 @@ export function DiffPane({
           side: diffSideOf(props.annotationSide),
         });
       },
+      // Multi-line comments. The library's selection starts on the line-NUMBER
+      // column only, so dragging it picks a range while dragging over the code
+      // still selects text; shift-click extends an existing range. The ⊕ the
+      // library parks on the hovered number is the same gesture with a
+      // handle — and the part that makes the feature discoverable at all.
+      enableLineSelection: true,
+      enableGutterUtility: true,
+      // The mere presence of this arms the ⊕ drag. Both gestures then commit
+      // through onLineSelected, so there is one place a range becomes a
+      // comment target.
+      onGutterUtilityClick: () => {},
+      onLineSelected: (range, context) => {
+        if (context.type !== "diff") return;
+        commitSelection(range, context.item.id);
+      },
+      // A number-column click IS the one-line case of a selection — letting it
+      // fall through to onLineClick would open the composer twice.
+      onLineNumberClick: () => {},
     }),
-    [diffStyle, themePreference, setComposerTarget, loadDiffFiles],
+    [
+      diffStyle,
+      themePreference,
+      setComposerTarget,
+      loadDiffFiles,
+      commitSelection,
+    ],
   );
 
   if (items.length === 0) {
@@ -341,22 +513,25 @@ export function DiffPane({
           case "thread":
             return <ThreadCard thread={meta.thread} />;
           case "composer":
-            return composerTarget ? (
+            return (
               <ComposerCard
-                target={composerTarget}
+                target={meta.target}
+                sourceText={sourceTextOf(meta.target)}
+                onExtendRange={extendComposerRange}
                 onCancel={() => setComposerTarget(null)}
                 onSubmit={(body, suggestion) => {
                   onAddComment({
-                    path: composerTarget.path,
-                    line: composerTarget.line,
-                    side: composerTarget.side,
+                    path: meta.target.path,
+                    line: meta.target.line,
+                    startLine: meta.target.startLine,
+                    side: meta.target.side,
                     body,
                     suggestion,
                   });
                   setComposerTarget(null);
                 }}
               />
-            ) : null;
+            );
           case "pending":
             return (
               <PendingCard

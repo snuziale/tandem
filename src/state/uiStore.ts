@@ -10,7 +10,14 @@ export type QueueRowRef = { prId: PrId; url: string; blockerTitle?: string };
 export type DiffStyle = "unified" | "split";
 export type ComposerTarget = {
   path: string;
+  /**
+   * The ANCHOR line — the last line of the range, and where the card hangs.
+   * GitHub's review API works the same way: `line` is the end, `start_line`
+   * the beginning, so a comment on 42-48 sits under 48.
+   */
   line: number;
+  /** First line of a multi-line range; absent for a single line. */
+  startLine?: number;
   side: "LEFT" | "RIGHT";
 };
 /** react-resizable-panels' Layout: panel id → size, in the library's own units. */
@@ -52,9 +59,18 @@ type UiState = {
   composerTarget: ComposerTarget | null;
   setComposerTarget: (target: ComposerTarget | null) => void;
 
+  // What the reader is pointed at in the diff. At most ONE of these is set —
+  // the setters clear each other — because the pane has exactly one line
+  // selection to lend them, and two "focused" cards would be a lie about it.
+  // A finding's focus means more than the highlight (chat scope, j/k, the
+  // agent pane), which is why it keeps its own name.
   // Finding triage focus/editing on the detail screen (j/k · y/e/x).
   focusedFindingId: string | null;
   setFocusedFinding: (id: string | null) => void;
+  /** A staged comment (`PendingComment.localId`) or a human thread
+   * (`ReviewThread.id`) the reader clicked — lights up its span. */
+  focusedCommentId: string | null;
+  setFocusedComment: (id: string | null) => void;
   editingFindingId: string | null;
   setEditingFinding: (id: string | null) => void;
 
@@ -125,10 +141,21 @@ export const useUiStore = create<UiState>()(
       setQueueRows: (rows) => set({ queueRows: rows }),
 
       composerTarget: null,
-      setComposerTarget: (target) => set({ composerTarget: target }),
+      // Opening a composer takes the selection, so it also takes the focus —
+      // a card left wearing a focused border it no longer owns reads as a bug.
+      setComposerTarget: (target) =>
+        set(
+          target
+            ? { composerTarget: target, focusedCommentId: null }
+            : { composerTarget: target },
+        ),
 
       focusedFindingId: null,
-      setFocusedFinding: (id) => set({ focusedFindingId: id }),
+      setFocusedFinding: (id) =>
+        set({ focusedFindingId: id, focusedCommentId: null }),
+      focusedCommentId: null,
+      setFocusedComment: (id) =>
+        set({ focusedCommentId: id, focusedFindingId: null }),
       editingFindingId: null,
       setEditingFinding: (id) => set({ editingFindingId: id }),
 

@@ -115,7 +115,8 @@ export function PrDetailView({ prId }: { prId: PrId }) {
   // Opening the PR clears its "unseen changes" marker in the queue.
   useMarkSeen(prId, detail.data?.pr.updatedAt);
 
-  const codeViewRef = useRef<DiffPaneHandle>(null);
+  // Shared with the pane, which reads it for the diff's line selection.
+  const codeViewRef = useRef<DiffPaneHandle | null>(null);
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const files = filesQuery.data;
 

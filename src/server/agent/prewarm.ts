@@ -13,7 +13,11 @@
 // flags draft comments whose anchors vanished. Nothing is ever silently
 // deleted; the new sha is auto-enqueued only when auto-run is on.
 import type { AgentRun, SkipReason } from "../../shared/agent-types";
-import { diffLineIndex, type DiffLineIndex } from "../../shared/gh/patch";
+import {
+  clampCommentRange,
+  diffLineIndex,
+  type DiffLineIndex,
+} from "../../shared/gh/patch";
 import { parsePrId } from "../../shared/gh/prKey";
 import type { PrId, PullRequest } from "../../shared/review-types";
 import type { Config } from "../config/store";
@@ -171,8 +175,16 @@ async function flagMovedAnchors(cfg: Config, pr: PullRequest): Promise<void> {
 
   const comments = draft.comments.map((comment) => {
     const index = indexByPath.get(comment.path);
-    const side = comment.side === "LEFT" ? index?.left : index?.right;
-    const anchored = !!side && side.has(comment.line);
+    const first = comment.startLine ?? comment.line;
+    // A RANGE has to survive whole. GitHub validates `start_line` as well, and
+    // requires the run between it and the anchor to be one contiguous stretch
+    // of the diff — which is exactly what clampCommentRange returns, so a
+    // range that came back trimmed at the top did move. (Its `end` is the
+    // anchor verbatim; null is the anchor itself having gone.)
+    const anchored =
+      index !== undefined &&
+      clampCommentRange(index, comment.side, first, comment.line)?.start ===
+        first;
     return { ...comment, anchorMoved: anchored ? undefined : true };
   });
   await saveReview({ ...draft, comments, headSha: pr.headSha });

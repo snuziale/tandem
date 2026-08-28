@@ -2,10 +2,12 @@ import { describe, expect, it } from "vitest";
 import type { FileChange } from "../review-types";
 import {
   buildFilePatch,
+  clampCommentRange,
   countDiffLines,
   diffLineIndex,
   hasHunks,
   hideWhitespaceChanges,
+  patchLineText,
   reversePatch,
   splitRawDiff,
 } from "./patch";
@@ -129,6 +131,91 @@ describe("diffLineIndex", () => {
     expect(idx.left.has(51)).toBe(true);
     expect(idx.right.has(51)).toBe(true);
     expect(idx.right.has(2)).toBe(false);
+  });
+});
+
+describe("clampCommentRange", () => {
+  // Two hunks with a gap: 10-13 on the right, then 50-51. Everything between
+  // is outside the patch, exactly like expanded context.
+  const patch = [
+    "@@ -10,3 +10,4 @@",
+    " ctx",
+    "-gone",
+    "+new1",
+    "+new2",
+    " ctx2",
+    "@@ -50,2 +50,2 @@",
+    " x",
+    "-y",
+    "+z",
+  ].join("\n");
+  const idx = diffLineIndex(patch);
+
+  it("keeps a range that lives entirely inside one hunk", () => {
+    expect(clampCommentRange(idx, "RIGHT", 11, 13)).toEqual({
+      start: 11,
+      end: 13,
+    });
+  });
+
+  it("normalizes an upward drag — the anchor is always the end", () => {
+    expect(clampCommentRange(idx, "RIGHT", 13, 13)).toEqual({
+      start: 13,
+      end: 13,
+    });
+  });
+
+  it("stops at the hunk edge instead of spanning the gap", () => {
+    // 51 is real, 50 is real, 49 and below are not in the patch at all.
+    expect(clampCommentRange(idx, "RIGHT", 20, 51)).toEqual({
+      start: 50,
+      end: 51,
+    });
+  });
+
+  it("refuses a range whose anchor is outside the patch", () => {
+    expect(clampCommentRange(idx, "RIGHT", 30, 40)).toBeNull();
+  });
+
+  it("reads the LEFT side against old-file numbering", () => {
+    // old: 10 ctx, 11 gone, 12 ctx2
+    expect(clampCommentRange(idx, "LEFT", 10, 12)).toEqual({
+      start: 10,
+      end: 12,
+    });
+    expect(clampCommentRange(idx, "LEFT", 10, 13)).toBeNull();
+  });
+});
+
+describe("patchLineText", () => {
+  const patch = [
+    "diff --git a/x.ts b/x.ts",
+    "--- a/x.ts",
+    "+++ b/x.ts",
+    "@@ -10,3 +10,4 @@",
+    " ctx",
+    "-gone",
+    "+new1",
+    "+new2",
+    " ctx2",
+  ].join("\n");
+
+  it("returns the new-side text of a range, prefixes stripped", () => {
+    expect(patchLineText(patch, "RIGHT", 11, 13)).toBe("new1\nnew2\nctx2");
+  });
+
+  it("returns the old-side text for LEFT", () => {
+    expect(patchLineText(patch, "LEFT", 10, 12)).toBe("ctx\ngone\nctx2");
+  });
+
+  it("does not mistake the ---/+++ headers for body lines", () => {
+    // Both would land on line 0/1 if the walker counted before the first hunk.
+    expect(patchLineText(patch, "RIGHT", 10, 10)).toBe("ctx");
+  });
+
+  it("is null when any line of the range is outside the patch", () => {
+    expect(patchLineText(patch, "RIGHT", 13, 14)).toBeNull();
+    expect(patchLineText(patch, "RIGHT", 12, 11)).toBeNull();
   });
 });
 

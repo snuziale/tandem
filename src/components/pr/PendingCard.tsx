@@ -2,7 +2,9 @@ import { useState } from "react";
 import { Button, Textarea, cn } from "@uipath/apollo-wind";
 import { Pencil, Trash2 } from "lucide-react";
 import type { PendingComment } from "../../shared/review-types";
+import { useUiStore } from "../../state/uiStore";
 import { Markdown } from "../common/Markdown";
+import { focusCardProps, spanOf } from "./annotations";
 
 type Props = {
   comment: PendingComment;
@@ -16,11 +18,16 @@ export function PendingCard({ comment, onUpdate, onRemove }: Props) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(comment.body);
   const agentAuthored = comment.findingId !== undefined;
+  const span = spanOf(comment.startLine, comment.line);
+  const focusedCommentId = useUiStore((s) => s.focusedCommentId);
+  const focused = focusedCommentId === comment.localId;
 
   return (
     <div
+      {...focusCardProps(comment.localId, focused)}
       className={cn(
-        "my-1 mx-2 rounded border border-border bg-background border-l-2",
+        "my-1 mx-2 rounded border bg-background border-l-2",
+        focused ? "border-primary" : "border-border",
         comment.anchorMoved && "border-yellow-400/60",
       )}
       style={{
@@ -36,6 +43,11 @@ export function PendingCard({ comment, onUpdate, onRemove }: Props) {
           >
             {agentAuthored ? "agent · staged" : "your comment · staged"}
           </span>
+          {span.start !== span.end ? (
+            <span>
+              lines {span.start}–{span.end}
+            </span>
+          ) : null}
           {comment.anchorMoved ? (
             <span className="text-yellow-400">
               anchor moved — fix before submit
