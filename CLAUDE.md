@@ -413,7 +413,10 @@ Two dispatchers, one guard module (`keyboard/keyOwnership.ts`), one display regi
   j/k/Enter/o/a/A(override)/r/s/esc//. Reads state via `getState()` snapshots — the listener
   never re-binds.
 - `PrDetailView` binds its own detail keys (esc, [ ], j/k findings, y/e/x, c chat, v, w, r, a,
-  o) — same snapshot pattern via a ref updated in an effect. Composer/tray own ⌘↵ (stage vs submit) — the
+  o) — same snapshot pattern via a ref updated in an effect. **`esc` closes the composer and
+  nothing more** (user decision 2026-08-27): it used to fall through to leaving the PR, which read
+  as losing your place. Esc dismisses what is in front of you; leaving is "← Queue" or browser
+  back. Composer/tray own ⌘↵ (stage vs submit) — the
   tray's is a WINDOW listener that bails on `isTypingTarget`, which is why a text box can claim
   ⌘↵ for itself. The chat composer is the one box that sends on plain ↵ (⇧↵ = newline, ⌘↵ still
   works): it is a chat box, and overloading ⌘↵ a third time reads as ambiguous.
@@ -487,8 +490,8 @@ exceeds the loaded rows, says so above the charts. Never drop that caveat.
   it, `esc` clears the facet alone. Switching views drops it (`useViewActions.select`), but a
   round trip into a PR does NOT: `uiStore.setRoute` mirrors every queue route's facet into
   `lastFacet` (the one funnel navigate/popstate/initial-resolve all pass through) and
-  `navigateToQueue()` restores it, so "← Queue" and the detail screen's `esc` land back on the
-  filtered queue. Session-only, unlike `lastViewId` — a cold launch starts unfiltered.
+  `navigateToQueue()` restores it, so "← Queue" lands back on the filtered queue.
+  Session-only, unlike `lastViewId` — a cold launch starts unfiltered.
 - **Charts read the UNFILTERED rows; only the table narrows.** A chart that collapsed onto its
   own selection couldn't be used to pick the next slice. `QueueView` passes `allRows` to the
   drawer and `filterByFacet(...)` to the table.

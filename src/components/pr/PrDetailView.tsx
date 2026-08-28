@@ -286,13 +286,15 @@ export function PrDetailView({ prId }: { prId: PrId }) {
 
       switch (e.key) {
         case "Escape": {
-          e.preventDefault();
-          // First Esc closes an open composer; the next one leaves the PR.
+          // Esc closes an open composer and nothing else. It used to fall
+          // through to leaving the PR, which read as losing your place: Esc
+          // is "dismiss the thing in front of me", and with no composer open
+          // there is nothing in front of you. "← Queue" and the browser's
+          // back both still leave.
           if (useUiStore.getState().composerTarget) {
+            e.preventDefault();
             useUiStore.getState().setComposerTarget(null);
-            return;
           }
-          navigateToQueue();
           return;
         }
         case "[":

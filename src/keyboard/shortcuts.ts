@@ -25,7 +25,7 @@ export const SHORTCUT_GROUPS: ShortcutGroup[] = [
   {
     title: "PR detail",
     items: [
-      ["esc", "close composer, then back to queue"],
+      ["esc", "close the composer"],
       ["[ / ]", "previous / next file"],
       ["j / k", "next / previous agent finding"],
       ["y", "add focused finding to review"],
