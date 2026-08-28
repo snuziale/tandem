@@ -50,6 +50,17 @@ export function FileTree({
   // need at render time is read through this ref so it never goes stale.
   const stateRef = useRef({ files, viewedFiles, agentPaths });
 
+  // `item.select()` fires onSelectionChange exactly like a click does, so the
+  // effect below that makes the tree FOLLOW an external selection would echo
+  // that selection straight back out as if the reader had picked it. That
+  // round trip is not cosmetic: `onSelect` is `selectFile`, which scrolls the
+  // diff to the file HEADER — so clicking an agent finding scrolled to its
+  // line and was then yanked back to the top of the file, and only a second
+  // click (with selectedPath already set, so this effect no-ops) landed on
+  // the line. The flag is a ref because the model is built once and its
+  // callbacks close over the first render.
+  const applyingExternal = useRef(false);
+
   const paths = useMemo(() => files.map((f) => f.path), [files]);
 
   const { model } = useFileTree({
@@ -64,6 +75,7 @@ export function FileTree({
     fileTreeSearchMode: "hide-non-matches",
     gitStatus: gitStatusOf(files),
     onSelectionChange: (selected) => {
+      if (applyingExternal.current) return;
       const path = selected[selected.length - 1];
       if (!path) return;
       // Single selection, whoever asked: a modifier-click or range select
@@ -182,11 +194,16 @@ export function FileTree({
   useEffect(() => {
     if (!selectedPath || selectedPath === lastExternal.current) return;
     lastExternal.current = selectedPath;
-    for (const path of model.getSelectedPaths())
-      if (path !== selectedPath) model.getItem(path)?.deselect();
-    const item = model.getItem(selectedPath);
-    if (item && !item.isSelected()) item.select();
-    model.scrollToPath(selectedPath, { offset: "nearest" });
+    applyingExternal.current = true;
+    try {
+      for (const path of model.getSelectedPaths())
+        if (path !== selectedPath) model.getItem(path)?.deselect();
+      const item = model.getItem(selectedPath);
+      if (item && !item.isSelected()) item.select();
+      model.scrollToPath(selectedPath, { offset: "nearest" });
+    } finally {
+      applyingExternal.current = false;
+    }
   }, [model, selectedPath]);
 
   const [count] = useState(() => files.length);
