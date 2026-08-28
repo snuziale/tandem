@@ -28,6 +28,11 @@ import {
   Button,
   Input,
   Label,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
   Switch,
   Textarea,
   cn,
@@ -250,10 +255,17 @@ export function TextField({
   );
 }
 
-/** A one-of-many field. A native `<select>` on purpose — it is a short closed
- * list, and the platform control needs no popover, no keyboard handling and no
- * portal — but it wears the same label and control height as the boxes above,
- * so a settings field looks like a settings field wherever it appears. */
+/** Radix spells "nothing is selected" as `""` and therefore REFUSES it as an
+ * item value — but `""` is exactly how a caller spells a real option that
+ * means "no filter" ("All views, merged"). The swap is absorbed here so the
+ * prop type stays a plain `T` and no caller has to know Radix exists. */
+const EMPTY_VALUE = "__empty__";
+
+/** A one-of-many field. Built on apollo's `Select` rather than a native
+ * `<select>`: the platform control paints its own popup from the OS, so it was
+ * the one field on the settings screen that ignored the app's theme, its type
+ * scale and its dark mode. Sized `h-8` to match the boxes above it — the
+ * library's trigger is `h-9`, a settings row and a half. */
 export function SelectField<T extends string>({
   label,
   value,
@@ -268,17 +280,27 @@ export function SelectField<T extends string>({
   return (
     <div className="space-y-1.5">
       <Label className="text-xs">{label}</Label>
-      <select
-        value={value}
-        onChange={(e) => onChange(e.target.value as T)}
-        className="h-8 w-full rounded-md border border-input bg-background px-2 text-sm"
+      <Select
+        value={value === "" ? EMPTY_VALUE : value}
+        onValueChange={(v) => onChange((v === EMPTY_VALUE ? "" : v) as T)}
       >
-        {options.map((option) => (
-          <option key={option.value} value={option.value}>
-            {option.label}
-          </option>
-        ))}
-      </select>
+        {/* The visible Label is not `htmlFor`-linked: the trigger is a
+            `<button>`, which `<label for>` does not associate with. */}
+        <SelectTrigger className="h-8 w-full px-2 text-sm" aria-label={label}>
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {options.map((option) => (
+            <SelectItem
+              key={option.value}
+              value={option.value === "" ? EMPTY_VALUE : option.value}
+              className="text-sm"
+            >
+              {option.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
     </div>
   );
 }

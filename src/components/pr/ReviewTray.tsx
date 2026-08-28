@@ -176,7 +176,12 @@ export function ReviewTray({
       </div>
 
       <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
-        <DialogContent>
+        {/* `sm:max-w-*`, not `max-w-*`: apollo's DialogContent already carries
+            `sm:max-w-lg`, and a responsive variant wins the cascade over a
+            plain utility however they are ordered. This dialog is where the
+            review SUMMARY gets written — the one piece of prose in the whole
+            submit path — so it gets a paragraph's width, not a label's. */}
+        <DialogContent className="sm:max-w-2xl w-[min(42rem,92vw)]">
           <DialogHeader>
             <DialogTitle>Submit review</DialogTitle>
             <DialogDescription>
@@ -190,7 +195,7 @@ export function ReviewTray({
             value={review?.summaryBody ?? ""}
             onChange={(e) => onSummary(e.target.value)}
             placeholder="Review summary (optional)…"
-            className="min-h-20 text-sm"
+            className="min-h-32 text-sm"
           />
           <DialogFooter>
             <Button variant="ghost" onClick={() => setConfirmOpen(false)}>

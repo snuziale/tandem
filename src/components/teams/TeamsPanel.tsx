@@ -90,7 +90,7 @@ export function TeamsPanel({
     <>
       <div
         className={cn(
-          "grid grid-cols-[13rem_minmax(0,1fr)] gap-5 min-h-0",
+          "grid grid-cols-[16rem_minmax(0,1fr)] gap-6 min-h-0",
           className,
         )}
       >

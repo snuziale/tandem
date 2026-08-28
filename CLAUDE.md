@@ -733,9 +733,12 @@ null` from that path means "leave the configured teams alone" — an empty array
   centred at `max-w-6xl` with fields keeping their own caps (`fields.tsx`).
 - **One vocabulary for the whole settings screen** (`components/settings/fields.tsx`):
   `SectionHeading` · `Panel` (title + hint + `aside`) · `FieldGrid` · `ToggleRow` ·
-  `Number/Text/PromptField` · `Note` · `EmptyState` · `FormActions`. Nothing floats between
-  panels — a loose paragraph on the page background has no owner, so explanations are `Note`s
-  INSIDE the panel they explain. Buttons obey four rules, written at the top of that file:
+  `Number/Text/PromptField` · `SelectField` · `Note` · `EmptyState` · `FormActions`. Dropdowns
+  are apollo's `Select`, never a native `<select>` — the platform control paints its popup from
+  the OS, so it was the one field that ignored the app's theme, its type scale and dark mode; its
+  trigger defaults to `h-9`, and every field here is `h-8`. Nothing floats between panels — a
+  loose paragraph on the page background has no owner, so explanations are `Note`s INSIDE the
+  panel they explain. Buttons obey four rules, written at the top of that file:
   panel-scoped actions live in the panel's `aside` at `size="xs"` (primary=default,
   secondary=outline, destructive=ghost+`text-destructive`+Trash2); a form's submit sits
   bottom-left at `size="xs"`, with a destructive action on what that form edits at the far
@@ -856,6 +859,17 @@ picks by `process.platform` at init-script build time.
 - **`claude` CLI flags** (`--safe-mode --tools '' --permission-mode dontAsk`, plus
   `--include-partial-messages` for chat) verified against 2.1.239; `checkClaudeAvailable` only
   probes existence — re-verify flags on CLI major bumps.
+- **A Radix `Select` refuses an empty item value.** `""` is how Radix spells "nothing is
+  selected", so a real option meaning "no filter" (Pulse's "All views, merged", the view editor's
+  "None") throws if handed `value=""`. Both call sites swap in a sentinel at the boundary and map
+  it back on change, so `""` is still what the caller passes and what reaches disk — check
+  `settings.json`/`views.json` for a leaked `__empty__`/`__none__` if one is ever added by hand.
+- **A dialog ignores its `max-w-`**: apollo's `DialogContent` carries `sm:max-w-lg`, and a
+  responsive variant beats a plain utility however tailwind-merge orders them — so a widening
+  class MUST be written `sm:max-w-3xl`, plus a `w-[min(48rem,92vw)]` to re-cap a viewport that is
+  past the `sm` breakpoint but narrower than the max. `AlertDialogContent` is the exception: its
+  default is a bare `max-w-lg`, so a plain override works there. A bare `max-w-xl` on the
+  shortcuts sheet was inert for its whole life.
 - **A chat chip refuses to apply**: the finding moved state since the answer (staged, dismissed,
   rerun) — the message lands on the chip, that's the re-validation working, not a bug.
 - **A team-backed view says "no members" instead of returning everything**: that is

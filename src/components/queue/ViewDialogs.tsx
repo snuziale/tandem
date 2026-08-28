@@ -17,6 +17,11 @@ import {
   DialogTitle,
   Input,
   Label,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
   Switch,
   Textarea,
 } from "@uipath/apollo-wind";
@@ -28,6 +33,11 @@ import { QueryHelpButton } from "./QueryHelp";
 
 // ---------------------------------------------------------------------------
 // Create / edit one saved view.
+
+/** Radix spells "nothing is selected" as `""` and so refuses it as an item
+ * value — but `""` is what a `SavedView` carries for "no team". The sentinel
+ * lives on the wire between them, never in the view. */
+const NO_TEAM = "__none__";
 
 type EditorProps = {
   /** Null = create a new view. */
@@ -74,7 +84,12 @@ export function ViewEditorDialog({
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
-      <DialogContent>
+      {/* `sm:max-w-*`, not `max-w-*`: apollo's DialogContent already carries
+          `sm:max-w-lg`, and a responsive variant wins the cascade over a plain
+          utility no matter what order they are written in. The query is a
+          monospace one-liner that routinely runs past 32rem — at the default
+          width it wrapped three times and stopped reading as a query. */}
+      <DialogContent className="sm:max-w-3xl w-[min(48rem,92vw)]">
         <DialogHeader>
           <DialogTitle>{view ? "Edit view" : "New view"}</DialogTitle>
           <DialogDescription>
@@ -85,18 +100,58 @@ export function ViewEditorDialog({
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4 py-1">
-          <div className="space-y-1.5">
-            <Label htmlFor="view-name" className="text-xs">
-              Name
-            </Label>
-            <Input
-              id="view-name"
-              autoFocus
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="acme/web only"
-              className="h-8 text-sm"
-            />
+          {/* The two short fields share a row. Neither is improved by 45rem of
+              input, and stacking them pushed the query — the field that DOES
+              want the width — below the fold. */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-start">
+            <div className="space-y-1.5">
+              <Label htmlFor="view-name" className="text-xs">
+                Name
+              </Label>
+              <Input
+                id="view-name"
+                autoFocus
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="acme/web only"
+                className="h-8 text-sm"
+              />
+            </div>
+            <div className="space-y-1.5">
+              {/* Not `htmlFor`-linked: apollo's trigger is a `<button>`, which
+                  `<label for>` does not associate with. */}
+              <Label className="text-xs">Team</Label>
+              <div className="flex items-center gap-2">
+                <Select
+                  value={teamId || NO_TEAM}
+                  onValueChange={(v) => setTeamId(v === NO_TEAM ? "" : v)}
+                >
+                  <SelectTrigger
+                    className="h-8 flex-1 min-w-0 px-2 text-sm"
+                    aria-label="Team"
+                  >
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={NO_TEAM} className="text-sm">
+                      None
+                    </SelectItem>
+                    {teams.map((team) => (
+                      <SelectItem
+                        key={team.id}
+                        value={team.id}
+                        className="text-sm"
+                      >
+                        {team.name} ({team.members.length})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Button size="xs" variant="outline" onClick={onManageTeams}>
+                  Manage
+                </Button>
+              </div>
+            </div>
           </div>
           <div className="space-y-1.5">
             <div className="flex items-center justify-between">
@@ -131,65 +186,42 @@ export function ViewEditorDialog({
               </p>
             ) : null}
           </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="view-team" className="text-xs">
-              Team
-            </Label>
-            <div className="flex items-center gap-2">
-              <select
-                id="view-team"
-                value={teamId}
-                onChange={(e) => setTeamId(e.target.value)}
-                className="h-8 flex-1 rounded-md border border-input bg-background px-2 text-sm"
-              >
-                <option value="">None</option>
-                {teams.map((team) => (
-                  <option key={team.id} value={team.id}>
-                    {team.name} ({team.members.length})
-                  </option>
-                ))}
-              </select>
-              <Button size="xs" variant="outline" onClick={onManageTeams}>
-                Manage
-              </Button>
-            </div>
-            {/* Only ever a hint, never a validation error: a query without the
-                token is a perfectly good view, and a token without a team
-                fails loudly at search time rather than searching all of
-                GitHub. */}
-            <p className="text-[11px] text-muted-foreground leading-relaxed">
-              {usesTeam ? (
-                teamId ? (
-                  <>
-                    <code className="font-mono text-[10px]">{TEAM_TOKEN}</code>{" "}
-                    in the query above expands to this team's logins, chunked
-                    into parallel searches so a big team is not truncated to one
-                    page.
-                  </>
-                ) : (
-                  <span className="text-yellow-600 dark:text-yellow-400">
-                    This query uses{" "}
-                    <code className="font-mono text-[10px]">{TEAM_TOKEN}</code>{" "}
-                    but no team is selected — the view will refuse to search.
-                  </span>
-                )
-              ) : (
+          {/* The team HINT sits under the query, not under the select it
+              belongs to: it is a sentence about the `{team}` token in the text
+              above it, and hanging a five-line paragraph off a half-width
+              column made that row twice the height of the name beside it.
+              Only ever a hint, never a validation error — a query without the
+              token is a perfectly good view, and a token without a team fails
+              loudly at search time rather than searching all of GitHub. */}
+          <p className="text-[11px] text-muted-foreground leading-relaxed">
+            {usesTeam ? (
+              teamId ? (
                 <>
-                  Optional. Put{" "}
                   <code className="font-mono text-[10px]">{TEAM_TOKEN}</code> in
-                  the query wherever a person goes —{" "}
-                  <code className="font-mono text-[10px]">
-                    {"author:{team}"}
-                  </code>
-                  ,{" "}
-                  <code className="font-mono text-[10px]">
-                    {"review-requested:{team}"}
-                  </code>
-                  , or on its own for authors.
+                  the query above expands to this team's logins, chunked into
+                  parallel searches so a big team is not truncated to one page.
                 </>
-              )}
-            </p>
-          </div>
+              ) : (
+                <span className="text-yellow-600 dark:text-yellow-400">
+                  This query uses{" "}
+                  <code className="font-mono text-[10px]">{TEAM_TOKEN}</code>{" "}
+                  but no team is selected — the view will refuse to search.
+                </span>
+              )
+            ) : (
+              <>
+                Optional. Put{" "}
+                <code className="font-mono text-[10px]">{TEAM_TOKEN}</code> in
+                the query wherever a person goes —{" "}
+                <code className="font-mono text-[10px]">{"author:{team}"}</code>
+                ,{" "}
+                <code className="font-mono text-[10px]">
+                  {"review-requested:{team}"}
+                </code>
+                , or on its own for authors.
+              </>
+            )}
+          </p>
           <div className="flex items-start justify-between gap-6 pt-1">
             <div>
               <div className="text-sm">Agent pre-warm eligible</div>
