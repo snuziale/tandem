@@ -65,13 +65,18 @@ because they disagree.
   propose it and let them click.`,
 };
 
-export function promptTextsOf(raw: unknown): PromptTexts {
+/** `defaults` is what a missing or blank block falls back to. A profile built
+ * from a preset defaults to ITS lens (shared/agent-presets.ts), not to the
+ * general reviewer's text — otherwise the settings field, which measures
+ * "customized" against the preset, would call an untouched block edited. */
+export function promptTextsOf(
+  raw: unknown,
+  defaults: PromptTexts = DEFAULT_PROMPTS,
+): PromptTexts {
   const source = (raw ?? {}) as Partial<Record<keyof PromptTexts, unknown>>;
   const pick = (key: keyof PromptTexts) => {
     const value = source[key];
-    return typeof value === "string" && value.trim()
-      ? value
-      : DEFAULT_PROMPTS[key];
+    return typeof value === "string" && value.trim() ? value : defaults[key];
   };
   return {
     rules: pick("rules"),

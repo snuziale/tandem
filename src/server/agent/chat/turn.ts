@@ -60,7 +60,14 @@ export async function startChatTurn(
   await clearStuckStatus(sessionId);
 
   const settings = await loadSettings();
-  const agent = agentById(settings, opts.agentId);
+  // The profile that produced the findings answers about them — asking "why
+  // did you flag this?" of an architecture run should reach the architecture
+  // reviewer. Read from the RUN RECORD, not from the client: runs are
+  // server-owned, and the pane's copy of one comes from a 30s poll. An
+  // explicit agentId still wins, for an "ask another lens" affordance that
+  // does not exist yet.
+  const run = await getRun(scope.prId, scope.headSha);
+  const agent = agentById(settings, opts.agentId ?? run?.agentId);
   // Chat spends from the same daily ceiling as runs — one budget, one story.
   const spent = await spendToday();
   if (settings.dailyCostUsd > 0 && spent >= settings.dailyCostUsd)

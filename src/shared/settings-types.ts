@@ -20,6 +20,11 @@ export type AgentProfile = {
   id: string;
   name: string;
   description?: string;
+  /** The starter preset this profile was created from (shared/agent-presets.ts),
+   * if any. Copied text is the profile's own from then on — this is kept only
+   * so a prompt field's "reset to default" returns to the LENS it came from
+   * rather than to the general reviewer's wording. */
+  presetId?: string;
   models: PassModels;
   prompts: PromptTexts;
 };

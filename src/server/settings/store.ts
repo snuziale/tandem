@@ -1,6 +1,7 @@
 // Tandem settings, ~/.tandem/settings.json. Missing file = defaults; unknown
 // keys are dropped on save. Values merge over DEFAULT_SETTINGS so adding a
 // setting never requires a migration.
+import { promptDefaultsFor } from "../../shared/agent-presets";
 import { isPlainObject } from "../../shared/is-plain-object";
 import { promptTextsOf } from "../../shared/prompt-defaults";
 import {
@@ -129,15 +130,20 @@ function sanitizeAgents(
         !entry.name.trim()
       )
         continue;
+      const presetId =
+        typeof entry.presetId === "string" && entry.presetId
+          ? entry.presetId
+          : undefined;
       agents.push({
         id: entry.id,
         name: entry.name,
+        presetId,
         description:
           typeof entry.description === "string" && entry.description
             ? entry.description
             : undefined,
         models: sanitizeModels(entry.models),
-        prompts: promptTextsOf(entry.prompts),
+        prompts: promptTextsOf(entry.prompts, promptDefaultsFor(presetId)),
       });
     }
   }

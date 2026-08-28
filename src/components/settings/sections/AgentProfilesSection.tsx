@@ -6,14 +6,31 @@
 // which is exactly why it is its own page rather than the fifth card in a
 // scroll.
 import { useState } from "react";
-import { Button, ToggleGroup, ToggleGroupItem } from "@uipath/apollo-wind";
+import {
+  Button,
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+  ToggleGroup,
+  ToggleGroupItem,
+} from "@uipath/apollo-wind";
 import { Plus, Trash2 } from "lucide-react";
+import {
+  AGENT_PRESETS,
+  presetById,
+  profileFromPreset,
+  promptsFromPreset,
+  type AgentPreset,
+} from "../../../shared/agent-presets";
 import {
   DEFAULT_PROMPTS,
   type PromptTexts,
 } from "../../../shared/prompt-defaults";
 import {
   DEFAULT_AGENT,
+  agentById,
   type AgentProfile,
   type TandemSettings,
 } from "../../../shared/settings-types";
@@ -57,6 +74,8 @@ export function AgentProfilesSection({
   // fallback covers a profile deleted out from under `editingId`.
   const agent =
     settings.agents.find((a) => a.id === editingId) ?? settings.agents[0];
+  const preset = presetById(agent.presetId);
+  const promptDefaults = preset ? promptsFromPreset(preset) : DEFAULT_PROMPTS;
 
   const patchAgent = (patch: Partial<AgentProfile>) => {
     onPatch({
@@ -66,14 +85,18 @@ export function AgentProfilesSection({
     });
   };
 
-  const addAgent = () => {
+  // A preset is COPIED, never referenced: from here on the text belongs to
+  // the profile, so tuning it is tuning this profile and an app upgrade never
+  // rewrites a prompt someone edited. Models come from the CONFIGURED default
+  // profile rather than the shipped constant — a lens changes what to look at,
+  // so it should start on whatever the user's general reviewer already runs.
+  // Names are free to collide: `id` is the identity everywhere.
+  const addAgent = (starter?: AgentPreset) => {
     const id = crypto.randomUUID().slice(0, 8);
-    const next: AgentProfile = {
-      ...DEFAULT_AGENT,
-      id,
-      name: "New agent",
-      description: undefined,
-    };
+    const models = agentById(settings, settings.defaultAgentId).models;
+    const next: AgentProfile = starter
+      ? profileFromPreset(starter, id, models)
+      : { ...DEFAULT_AGENT, id, name: "New agent", description: undefined };
     onPatch({ agents: [...settings.agents, next] });
     setEditingId(id);
   };
@@ -96,8 +119,11 @@ export function AgentProfilesSection({
       <SectionHeading title="Agent profiles">
         Reviewer profiles: each has its own models and prompt blocks. The
         default (★) runs automatically and on a plain rerun; any profile can be
-        picked from the PR's rerun menu. Data blocks and the strict-JSON output
-        contracts stay code-owned — findings that break the rules are dropped by
+        picked from the PR's rerun menu. New profile starts from a LENS —
+        correctness, architecture, React or performance — which is the shared
+        review rules plus what that reviewer looks at; every block stays
+        editable afterwards. Data blocks and the strict-JSON output contracts
+        stay code-owned — findings that break the rules are dropped by
         validation regardless of prompt edits.
       </SectionHeading>
 
@@ -147,13 +173,42 @@ export function AgentProfilesSection({
               </ToggleGroupItem>
             ))}
           </ToggleGroup>
-          <Button size="xs" variant="ghost" onClick={addAgent}>
-            <Plus /> New profile
-          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button size="xs" variant="ghost">
+                <Plus /> New profile
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="max-w-sm">
+              {AGENT_PRESETS.map((starter) => (
+                <DropdownMenuItem
+                  key={starter.id}
+                  onSelect={() => addAgent(starter)}
+                  className="flex-col items-start gap-0.5"
+                >
+                  <span className="text-xs font-medium">{starter.name}</span>
+                  <span className="text-[11px] text-muted-foreground leading-snug">
+                    {starter.description}
+                  </span>
+                </DropdownMenuItem>
+              ))}
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onSelect={() => addAgent()}>
+                <span className="text-xs">Blank profile</span>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </Panel>
 
-      <Panel title="Identity">
+      <Panel
+        title="Identity"
+        hint={
+          preset
+            ? `Started from the ${preset.name} preset — a prompt block's "reset to default" returns to that lens, not to the general reviewer's text.`
+            : undefined
+        }
+      >
         <FieldGrid>
           <TextField
             label="Name"
@@ -196,7 +251,7 @@ export function AgentProfilesSection({
             label={label}
             hint={hint}
             value={agent.prompts[key]}
-            defaultValue={DEFAULT_PROMPTS[key]}
+            defaultValue={promptDefaults[key]}
             onCommit={(value) =>
               patchAgent({ prompts: { ...agent.prompts, [key]: value } })
             }

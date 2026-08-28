@@ -417,6 +417,15 @@ async function maybeAutoApprove(
 ): Promise<void> {
   const gate = settings.autoApprove;
   if (!gate.enabled) return;
+  // ONLY the default profile can approve. A specialized lens legitimately
+  // finds nothing outside its own subject — a performance sweep over a PR with
+  // no performance problems scores high because it looked at one thing, not
+  // because the change is sound. Letting that post an APPROVE would widen the
+  // one sanctioned exception to "the agent never writes to GitHub" every time
+  // someone adds a profile. `undefined` is a pre-profiles run: back then the
+  // only reviewer WAS the default one.
+  if (run.agentId !== undefined && run.agentId !== settings.defaultAgentId)
+    return;
   const pr = detail.pr;
   if (pr.isDraft) return;
   if (run.score === undefined || run.score < gate.minScore) return;

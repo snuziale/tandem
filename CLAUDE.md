@@ -15,9 +15,12 @@ SPA, Apollo Wind, TanStack Query, Zustand.
    GitHub, and it exposes exactly two operations: submit-review and quick-approve, both
    human-triggered. The claude CLI runs with `--safe-mode --tools ''` — no write tools exist.
    **One sanctioned exception, explicitly opt-in**: `settings.autoApprove` (default OFF) lets
-   `maybeAutoApprove` in `pipeline/run.ts` post an empty APPROVE when EVERY gate holds — pass-3
-   score ≥ threshold, zero undismissed blocker/risk findings, checks green (unless waived), not a
-   draft, and no human draft in progress. Never widen those gates silently.
+   `maybeAutoApprove` in `pipeline/run.ts` post an empty APPROVE when EVERY gate holds — the run
+   came from the DEFAULT agent profile, pass-3 score ≥ threshold, zero undismissed blocker/risk
+   findings, checks green (unless waived), not a draft, and no human draft in progress. Never
+   widen those gates silently. The profile gate is why a lens can never approve: a specialized
+   profile scores high by looking at ONE subject, so a performance sweep finding no performance
+   problems is not a statement that the change is sound.
 2. **Pre-warming hides latency — but automatic runs are OPT-IN** (user decision 2026-08-21,
    overriding the spec's default). `settings.autoRunEnabled` is false by default: the queue sweep
    only does maintenance (staleness marking, draft re-anchoring); model runs start from the rerun
@@ -101,7 +104,19 @@ profile carries its own per-pass models and prompt instruction blocks, so agents
 run any profile; prewarm/plain reruns use the default. Legacy top-level `models`/`prompts`
 migrate into the default profile on load (settings/store.ts sanitizeAgents). Defaults live in
 `shared/prompt-defaults.ts` (per-field reset in Settings); `{findingCap}`/`{nitCap}` interpolate
-in reconcile. A profile carries a fourth model + prompt for the chat pass (see below). The data blocks and JSON output contracts in `pipeline/prompts.ts` stay code-owned —
+in reconcile.
+
+**A profile starts from a LENS, not a blank box** (`shared/agent-presets.ts`, TESTED): four
+presets — correctness, architecture, React, performance — each a focus sentence, a concrete
+checklist and ONE guard naming that lens's characteristic noise ("never propose a rewrite of code
+the PR only touched", "name the N at which it hurts"). A preset EXTENDS the shared defaults, it
+never replaces them: the line-anchoring contract, the caps and the score definition stay written
+once in `prompt-defaults.ts`, so a lens can only say what to look AT. The preset is COPIED into
+`settings.agents` when the profile is created — text belongs to the profile from then on, and an
+upgrade never rewrites a tuned prompt. `presetId` rides along so that ONE question — what are this
+profile's prompt defaults — has one answer (`promptDefaultsFor`): a prompt field's "reset to
+default" and its "customized" badge read it, and `sanitizeAgents` rehydrates a missing block from
+it, so an untouched preset block is never rendered as edited. A profile carries a fourth model + prompt for the chat pass (see below). The data blocks and JSON output contracts in `pipeline/prompts.ts` stay code-owned —
 they must match the zod schemas, and parse.ts re-enforces the rules regardless of prompt edits.
 Pass 3 also emits a 0-100 merge-readiness `score` (stored on the run, shown in queue + pane) —
 the auto-approve gate reads it.
@@ -141,6 +156,13 @@ Ask the agent about the PR, or about ONE finding: why it flagged something, whet
 believes it, how to reword the comment. Interactive, but the same read-only pass as the pipeline
 (`--safe-mode --tools ''`), and it changes nothing on its own.
 
+- **The answering PROFILE follows the run, and the SERVER reads it.** `startChatTurn` resolves it
+  as `opts.agentId ?? (await getRun(prId, headSha))?.agentId`, so asking "why did you flag this?"
+  of an architecture run reaches the architecture reviewer — without the client shipping back a
+  fact the run record already holds (the pane's copy comes from a 30s poll). The wire field stays
+  as an override for an "ask another lens" affordance that does not exist yet. Scope is unchanged:
+  the conversation is still keyed by (PR, sha, finding), so a rerun under another profile does not
+  fork it.
 - **Scope is the identity.** `chatKeyOf(prId, headSha[, findingId])` is the session id, the storage
   key, and the URL segment — so opening a finding's thread is a plain GET with no create call, and
   a new head sha is a new conversation. The pane's focused finding IS the scope (`ChatPanel` is
