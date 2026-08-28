@@ -6,6 +6,7 @@ import { useAgentHealth } from "../../../hooks/useAgentHealth";
 import { useAgentRuns } from "../../../hooks/useAgentRuns";
 import { SHORTCUT_GROUPS } from "../../../keyboard/shortcuts";
 import { PROXY_USER_AGENT } from "../../../shared/user-agent";
+import { Shortcut } from "../../common/Kbd";
 import { Panel, SectionHeading } from "../fields";
 
 /** Everything Tandem writes to disk, in the order it matters. Descriptions
@@ -100,11 +101,24 @@ export function AboutSection() {
           {SHORTCUT_GROUPS.map((group) => (
             <div key={group.title} className="space-y-1.5">
               <h3 className="text-xs font-semibold">{group.title}</h3>
-              <dl className="grid grid-cols-[8rem_minmax(0,1fr)] gap-y-1 text-[11px]">
-                {group.items.map(([keys, action]) => (
-                  <div key={keys} className="contents">
-                    <dt className="font-mono text-muted-foreground">{keys}</dt>
-                    <dd className="text-muted-foreground">{action}</dd>
+              <dl className="grid grid-cols-[8rem_minmax(0,1fr)] gap-x-2 gap-y-1.5 text-[11px]">
+                {group.items.map((item) => (
+                  <div
+                    key={item.keys.join("+") + item.action}
+                    className="contents"
+                  >
+                    {/* Right-aligned keys, same as the ? sheet: the two
+                        surfaces print the SAME registry, so they read the
+                        same. */}
+                    <dt className="flex items-baseline justify-end gap-1.5">
+                      <Shortcut keys={item.keys} />
+                      {item.gesture ? (
+                        <span className="text-muted-foreground text-right">
+                          {item.gesture}
+                        </span>
+                      ) : null}
+                    </dt>
+                    <dd className="text-muted-foreground">{item.action}</dd>
                   </div>
                 ))}
               </dl>

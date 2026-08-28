@@ -13,6 +13,7 @@ import {
 } from "@uipath/apollo-wind";
 import { CircleAlert, CircleCheck, Trash2 } from "lucide-react";
 import { useAgentHealth } from "../../../hooks/useAgentHealth";
+import { Shortcut } from "../../common/Kbd";
 import { useAgentRuns } from "../../../hooks/useAgentRuns";
 import type { TandemSettings } from "../../../shared/settings-types";
 import {
@@ -86,7 +87,13 @@ export function AgentPolicySection({
       <Panel title="When it runs">
         <ToggleRow
           label="Run automatically (pre-warm)"
-          hint="Off: the agent only runs when you press rerun (r) on a PR. On: PRs entering agent-enabled views are analyzed in the background."
+          hint={
+            <>
+              Off: the agent only runs when you press rerun{" "}
+              <Shortcut keys="r" /> on a PR. On: PRs entering agent-enabled
+              views are analyzed in the background.
+            </>
+          }
           checked={settings.autoRunEnabled}
           onChange={(v) => onPatch({ autoRunEnabled: v })}
         />

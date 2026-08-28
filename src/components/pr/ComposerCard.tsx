@@ -3,6 +3,7 @@ import { Button, Checkbox, Label, Textarea } from "@uipath/apollo-wind";
 import type { ComposerTarget } from "../../state/uiStore";
 import { spanOf } from "./annotations";
 import { ALT } from "../../keyboard/platform";
+import { Shortcut } from "../common/Kbd";
 
 type Props = {
   target: ComposerTarget;
@@ -134,8 +135,10 @@ export function ComposerCard({
         />
       ) : null}
       <div className="flex items-center justify-between gap-2">
-        <span className="text-[10px] text-muted-foreground font-mono">
-          drag the line numbers, or {ALT}↑ / {ALT}↓, for a range
+        <span className="text-[10px] text-muted-foreground font-mono inline-flex items-baseline gap-1">
+          drag the line numbers, or
+          <Shortcut keys={[`${ALT}+↑`, `${ALT}+↓`]} />
+          for a range
         </span>
         <div className="flex items-center gap-2">
           <Button size="xs" variant="ghost" onClick={onCancel}>

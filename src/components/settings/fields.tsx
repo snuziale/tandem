@@ -151,7 +151,8 @@ export function ToggleRow({
   onChange,
 }: {
   label: string;
-  hint?: string;
+  /** A node, not a string: a hint that names a key renders it as a <kbd>. */
+  hint?: React.ReactNode;
   checked: boolean;
   onChange: (v: boolean) => void;
 }) {

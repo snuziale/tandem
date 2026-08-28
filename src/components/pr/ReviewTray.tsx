@@ -22,6 +22,7 @@ import type {
   ReviewVerdict,
 } from "../../shared/review-types";
 import { MOD } from "../../keyboard/platform";
+import { Shortcut } from "../common/Kbd";
 
 type Props = {
   prId: PrId;
@@ -169,8 +170,8 @@ export function ReviewTray({
           }
           onClick={() => setConfirmOpen(true)}
         >
-          Submit review{" "}
-          <span className="ml-1.5 text-[10px] opacity-70">{MOD}↵</span>
+          Submit review
+          <Shortcut keys={`${MOD}+↵`} className="ml-1.5 opacity-70" />
         </Button>
       </div>
 

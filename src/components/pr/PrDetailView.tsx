@@ -49,6 +49,7 @@ import { DiffPane, type DiffPaneHandle } from "./DiffPane";
 import { FileTree } from "./FileTree";
 import { PrBreadcrumb, PrHeader } from "./PrHeader";
 import { ReviewTray } from "./ReviewTray";
+import { Shortcut } from "../common/Kbd";
 
 const NO_FILES: string[] = [];
 
@@ -513,8 +514,9 @@ export function PrDetailView({ prId }: { prId: PrId }) {
                     <TooltipPortal>
                       <TooltipContent>
                         {hideWhitespace
-                          ? "Show whitespace changes (w)"
-                          : "Hide whitespace changes (w)"}
+                          ? "Show whitespace changes"
+                          : "Hide whitespace changes"}
+                        <Shortcut keys="w" className="ml-1.5" />
                       </TooltipContent>
                     </TooltipPortal>
                   </Tooltip>

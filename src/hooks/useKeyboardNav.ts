@@ -3,10 +3,12 @@
 // time; handlers are plain functions over a ctx object. Keys that must work
 // inside a dialog are bound in that dialog, never here (the guard chain bails
 // when any dialog is open).
-import { useEffect } from "react";
+import { createElement, useEffect } from "react";
 import { useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { toast } from "@uipath/apollo-wind";
 import { hasOpenDialog, isTypingTarget } from "../keyboard/keyOwnership";
+import { SHIFT } from "../keyboard/platform";
+import { ShortcutHint } from "../components/common/Kbd";
 import { navigate } from "../routes";
 import { parsePrId } from "../shared/gh/prKey";
 import { useUiStore } from "../state/uiStore";
@@ -75,7 +77,12 @@ const QUEUE_HANDLERS: Record<string, (ctx: NavCtx) => void> = {
     ctx.e.preventDefault();
     if (row.blockerTitle) {
       toast.warning(`Agent found a blocker: ${row.blockerTitle}`, {
-        description: "shift+A approves anyway.",
+        // A node, not a string: the override is a KEY, and it is printed the
+        // same way everywhere else in the app (components/common/Kbd.tsx).
+        description: createElement(ShortcutHint, {
+          keys: `${SHIFT}+A`,
+          text: "approves anyway.",
+        }),
       });
       return;
     }

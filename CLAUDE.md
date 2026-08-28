@@ -517,6 +517,30 @@ Two dispatchers, one guard module (`keyboard/keyOwnership.ts`), one display regi
   ⌘↵ for itself. The chat composer is the one box that sends on plain ↵ (⇧↵ = newline, ⌘↵ still
   works): it is a chat box, and overloading ⌘↵ a third time reads as ambiguous.
 
+**A key is ALWAYS a `<kbd>`, and there is one of them** (`components/common/Kbd.tsx`). Every
+surface that names a shortcut renders through `Shortcut` — the `?` sheet, Settings › About's copy
+of it, tooltips (`Back to queue ⎋`), inline affordances (`rerun r`, `Submit review ⌘↵`), the chat
+composer's send hint, a settings hint, and a toast (`ShortcutHint`, built with `createElement`
+because the dispatcher has no JSX). "press r" as bare prose reads as a sentence, not as something
+you can hit.
+
+- The chip is drawn in `currentColor`, never a named token: it appears on the page background AND
+  inside a tooltip's inverted surface, and a fixed border/text color is legible on exactly one of
+  those. Sized in `em` so it tracks 10px hints and 13px sheet rows without a size prop. The
+  `.tandem-md kbd` rule in `index.css` is the same chip for a `<kbd>` in PR markdown — keep them
+  in step.
+- **`MOD`/`ALT`/`SHIFT` are BARE** (`keyboard/platform.ts`): no trailing `+`. Whether a chord is
+  spelled solid (⌘↵) or with a plus (Ctrl+Enter) is a rendering convention and lives in `Kbd`,
+  which prints the `+` only off macOS. A chord is written `${MOD}+↵`.
+- **`shortcuts.ts` separates keys from prose**: `{ keys, gesture?, action }`. A key renders as a
+  chip and a mouse gesture does not, so the sheet can never print "click a line" inside a key cap;
+  an `action` never names a key either, so an alternative spelling goes in `keys` and stays styled.
+  Both readers (the `?` sheet and About) right-align that column — ragged chips read as a list of
+  words rather than of keys.
+- A hint on a DISABLED control needs the tooltip on a wrapper (`QueueRow`'s Approve): a disabled
+  button fires no pointer events for a tooltip — or a native `title` — to hang on. That is also
+  why nothing prints a shortcut into a `title` attribute: it cannot be styled.
+
 ## Queue table cells
 
 Eight columns (`QUEUE_GRID` in `QueueRow.tsx`), and two rules hold the column edges still:

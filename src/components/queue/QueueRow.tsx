@@ -9,6 +9,8 @@ import {
 } from "@uipath/apollo-wind";
 import { Check, ExternalLink } from "lucide-react";
 import { approvePrAction, openPrExternal } from "../../actions/queue";
+import { SHIFT } from "../../keyboard/platform";
+import { Shortcut } from "../common/Kbd";
 import type { AgentRun } from "../../shared/agent-types";
 import type { PulseOptions } from "../../shared/pulse";
 import type { PullRequest } from "../../shared/review-types";
@@ -134,22 +136,36 @@ export function QueueRow({
       {/* invisible (not hidden): the actions always occupy their column, so
           hovering never reflows the row. */}
       <div className="invisible group-hover:visible flex items-center justify-end gap-1">
-        <Button
-          size="2xs"
-          variant="outline"
-          disabled={pr.isDraft || !!blocker}
-          title={
-            blocker
-              ? `Agent found a blocker: ${blocker.title} (shift+A overrides)`
-              : undefined
-          }
-          onClick={(e) => {
-            e.stopPropagation();
-            void approvePrAction(queryClient, pr.prId);
-          }}
-        >
-          <Check /> Approve
-        </Button>
+        <Tooltip>
+          {/* The trigger is the WRAPPER, not the button: the blocked state is
+              exactly when this hint matters, and a disabled button fires no
+              pointer events for a tooltip (or a native title) to hang on. */}
+          <TooltipTrigger asChild>
+            <span className="inline-flex">
+              <Button
+                size="2xs"
+                variant="outline"
+                disabled={pr.isDraft || !!blocker}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  void approvePrAction(queryClient, pr.prId);
+                }}
+              >
+                <Check /> Approve
+              </Button>
+            </span>
+          </TooltipTrigger>
+          {blocker ? (
+            <TooltipPortal>
+              <TooltipContent className="max-w-xs">
+                Agent found a blocker: {blocker.title}
+                <span className="block mt-1 opacity-80">
+                  <Shortcut keys={`${SHIFT}+A`} /> approves anyway
+                </span>
+              </TooltipContent>
+            </TooltipPortal>
+          ) : null}
+        </Tooltip>
         <Button
           size="2xs"
           icon

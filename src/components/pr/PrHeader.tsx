@@ -24,6 +24,7 @@ import { navigateToQueue } from "../../routes";
 import type { PrState, PullRequest } from "../../shared/review-types";
 import { HeaderDivider } from "../layout/AppHeader";
 import { Markdown } from "../common/Markdown";
+import { Shortcut } from "../common/Kbd";
 import { ReviewCell } from "../queue/cells";
 import { ChecksSummary } from "./ChecksSummary";
 
@@ -50,7 +51,9 @@ export function PrBreadcrumb({ pr }: { pr?: PullRequest }) {
           </Button>
         </TooltipTrigger>
         <TooltipPortal>
-          <TooltipContent>Back to queue (esc)</TooltipContent>
+          <TooltipContent>
+            Back to queue <Shortcut keys="esc" className="ml-1.5" />
+          </TooltipContent>
         </TooltipPortal>
       </Tooltip>
       {pr ? (
@@ -78,7 +81,9 @@ export function PrBreadcrumb({ pr }: { pr?: PullRequest }) {
               </Button>
             </TooltipTrigger>
             <TooltipPortal>
-              <TooltipContent>Open on GitHub (o)</TooltipContent>
+              <TooltipContent>
+                Open on GitHub <Shortcut keys="o" className="ml-1.5" />
+              </TooltipContent>
             </TooltipPortal>
           </Tooltip>
           <HeaderDivider />

@@ -48,6 +48,7 @@ import { GitHubSection } from "./sections/GitHubSection";
 import { PulseSection } from "./sections/PulseSection";
 import { TeamsSection } from "./sections/TeamsSection";
 import { ViewsSection } from "./sections/ViewsSection";
+import { Shortcut } from "../common/Kbd";
 
 /**
  * What each routable section is CALLED, keyed by its id. A `Record` over the
@@ -221,7 +222,9 @@ function SettingsBreadcrumb({ section }: { section: SectionId }) {
           </Button>
         </TooltipTrigger>
         <TooltipPortal>
-          <TooltipContent>Back to queue (esc)</TooltipContent>
+          <TooltipContent>
+            Back to queue <Shortcut keys="esc" className="ml-1.5" />
+          </TooltipContent>
         </TooltipPortal>
       </Tooltip>
       <span className="shrink-0">Settings</span>

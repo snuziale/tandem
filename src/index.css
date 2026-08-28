@@ -291,13 +291,26 @@ body.future-dark {
   border-bottom: 1px solid var(--color-border);
 }
 
+/* A <kbd> in PR markdown is the SAME chip the app draws for its own shortcuts
+   (components/common/Kbd.tsx) — currentColor so it works on any surface, a
+   heavier bottom edge for the only key-cap depth that survives under 12px.
+   Keep the two in step; a description that says <kbd>r</kbd> should not look
+   like a different app from the button beside it. */
 .tandem-md kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: 0.8em;
-  border: 1px solid var(--color-border);
+  font-size: 0.85em;
+  font-weight: 500;
+  line-height: 1.4;
+  min-width: 1.5em;
+  padding: 0.15em 0.35em;
+  border: 1px solid color-mix(in oklab, currentColor 25%, transparent);
   border-bottom-width: 2px;
   border-radius: 4px;
-  padding: 0.1em 0.4em;
+  background: color-mix(in oklab, currentColor 8%, transparent);
+  white-space: nowrap;
 }
 .tandem-md img,
 .tandem-md video {

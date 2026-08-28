@@ -16,6 +16,8 @@ import type { ChatAction, ChatMessage } from "../../shared/chat-types";
 import type { Finding } from "../../shared/agent-types";
 import type { PrId } from "../../shared/review-types";
 import { Markdown } from "../common/Markdown";
+import { Shortcut } from "../common/Kbd";
+import { SHIFT } from "../../keyboard/platform";
 
 type Props = {
   prId: PrId;
@@ -161,11 +163,16 @@ export function ChatPanel({ prId, headSha, finding, onClearScope }: Props) {
           className="min-h-14 text-sm"
         />
         <div className="flex items-center gap-2 mt-1">
-          <span className="text-[10px] font-mono text-muted-foreground flex-1">
-            ↵ send · ⇧↵ newline
-            {chat.session && chat.session.tokensUsed > 0
-              ? ` · ${Math.round(chat.session.tokensUsed / 1000)}k tok`
-              : ""}
+          <span className="text-[10px] font-mono text-muted-foreground flex-1 inline-flex items-baseline gap-1">
+            <Shortcut keys="↵" /> send
+            <span className="opacity-50 mx-0.5">·</span>
+            <Shortcut keys={`${SHIFT}+↵`} /> newline
+            {chat.session && chat.session.tokensUsed > 0 ? (
+              <>
+                <span className="opacity-50 mx-0.5">·</span>
+                <span>{Math.round(chat.session.tokensUsed / 1000)}k tok</span>
+              </>
+            ) : null}
           </span>
           <Button
             size="2xs"

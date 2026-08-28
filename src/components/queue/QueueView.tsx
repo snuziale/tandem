@@ -32,6 +32,7 @@ import { TeamManagerDialog } from "./TeamDialogs";
 import { StatsDrawer } from "./StatsDrawer";
 import { DeleteViewDialog, ViewEditorDialog } from "./ViewDialogs";
 import { ViewTabs } from "./ViewTabs";
+import { Shortcut } from "../common/Kbd";
 
 type EditorState =
   { mode: "closed" } | { mode: "new" } | { mode: "edit"; view: SavedView };
@@ -133,7 +134,8 @@ export function QueueView() {
           </TooltipTrigger>
           <TooltipPortal>
             <TooltipContent>
-              {statsShown ? "Hide" : "Show"} the breakdown of this view (s)
+              {statsShown ? "Hide" : "Show"} the breakdown of this view
+              <Shortcut keys="s" className="ml-1.5" />
             </TooltipContent>
           </TooltipPortal>
         </Tooltip>
@@ -159,7 +161,8 @@ export function QueueView() {
           </TooltipTrigger>
           <TooltipPortal>
             <TooltipContent>
-              {queryBarOpen ? "Hide" : "Show / edit"} the view's raw query (/)
+              {queryBarOpen ? "Hide" : "Show / edit"} the view's raw query
+              <Shortcut keys="/" className="ml-1.5" />
             </TooltipContent>
           </TooltipPortal>
         </Tooltip>

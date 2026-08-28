@@ -27,6 +27,7 @@ import {
   type LiveWork,
 } from "../../shared/agent-types";
 import { parsePrId } from "../../shared/gh/prKey";
+import { Shortcut } from "../common/Kbd";
 
 import {
   fileNames,
@@ -276,9 +277,13 @@ function AgentTray({ onNavigate }: { onNavigate: () => void }) {
         {live.length === 0 ? (
           <div className="px-3 py-3 text-[11px] leading-relaxed text-muted-foreground">
             Nothing running.{" "}
-            {settings.data?.autoRunEnabled
-              ? "New commits in an agent-enabled view start a run automatically."
-              : "Runs are manual — open a PR and press r."}
+            {settings.data?.autoRunEnabled ? (
+              "New commits in an agent-enabled view start a run automatically."
+            ) : (
+              <>
+                Runs are manual — open a PR and press <Shortcut keys="r" />.
+              </>
+            )}
           </div>
         ) : null}
 

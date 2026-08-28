@@ -24,6 +24,7 @@ import type { TandemSettings } from "../../shared/settings-types";
 import { useUiStore } from "../../state/uiStore";
 import { formatDuration, formatSpend } from "../../utils/agentFormat";
 import { Markdown } from "../common/Markdown";
+import { Shortcut } from "../common/Kbd";
 import { ChatPanel } from "./ChatPanel";
 import { SeverityBadge } from "./SeverityBadge";
 
@@ -109,7 +110,7 @@ export function AgentPane({
           disabled={rerun.isPending || isActive(run)}
           onClick={() => rerun.mutate(undefined)}
         >
-          rerun <span className="opacity-60">r</span>
+          rerun <Shortcut keys="r" className="ml-1 opacity-70" />
         </Button>
         {agents.length > 1 ? (
           <DropdownMenu>
