@@ -53,14 +53,26 @@ function summarize(pr: PullRequest) {
 }
 
 /**
+ * The chip shell the trigger shares with the header's description toggle: same
+ * height, gutter and outline, so the meta row's two controls read as controls
+ * and the facts between them read as facts. Only the CONTENT carries status
+ * color — the reserved check tokens stay on the dot and label, never on the
+ * border, or "outlined" would start to mean something.
+ */
+const CHIP =
+  "flex items-center gap-1.5 h-6 px-1.5 shrink-0 rounded-md border border-input font-mono text-[11px]";
+
+/**
  * Checks as ONE summary line. The per-check dot strip it replaced spent a whole
  * header row on eight truncated names — the names only matter once something is
  * red, and then you want all of them, which is what the popover is for.
  */
 export function ChecksSummary({ pr }: { pr: PullRequest }) {
   if (pr.checkRollup === "NONE" || pr.checkRuns.length === 0) {
+    // Still a chip, just an inert one: the row's right edge must not shift
+    // between a PR with checks and one without.
     return (
-      <span className="flex items-center gap-1.5 text-muted-foreground">
+      <span className={cn(CHIP, "text-muted-foreground opacity-50")}>
         <span className="inline-block w-1.5 h-1.5 rounded-full bg-muted-foreground/40" />
         no checks
       </span>
@@ -78,7 +90,11 @@ export function ChecksSummary({ pr }: { pr: PullRequest }) {
         <button
           type="button"
           className={cn(
-            "flex items-center gap-1.5 rounded-sm px-1 -mx-1 font-medium hover:bg-muted/60",
+            CHIP,
+            // PopoverTrigger owns data-state on its child and nothing else
+            // wraps this one, so the open state can latch the fill the way
+            // the description toggle's pressed state does.
+            "font-medium cursor-pointer hover:bg-muted/60 data-[state=open]:bg-foreground/10 data-[state=open]:border-foreground/40",
             tone,
           )}
         >

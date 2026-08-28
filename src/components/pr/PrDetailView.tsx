@@ -45,7 +45,6 @@ import type {
 import { useUiStore } from "../../state/uiStore";
 import { AgentPane } from "../agent/AgentPane";
 import { AppHeader } from "../layout/AppHeader";
-import { DescriptionCollapse } from "./DescriptionCollapse";
 import { DiffPane, type DiffPaneHandle } from "./DiffPane";
 import { FileTree } from "./FileTree";
 import { PrBreadcrumb, PrHeader } from "./PrHeader";
@@ -426,7 +425,6 @@ export function PrDetailView({ prId }: { prId: PrId }) {
   return (
     <Shell pr={pr}>
       <PrHeader pr={pr} />
-      <DescriptionCollapse body={pr.bodyMarkdown} />
       <div className="flex-1 min-h-0 flex">
         {filesQuery.isPending ? (
           <div className="flex-1 flex items-center justify-center">

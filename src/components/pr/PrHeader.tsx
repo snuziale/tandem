@@ -1,6 +1,7 @@
 import { useState } from "react";
 import {
   Button,
+  Toggle,
   Tooltip,
   TooltipContent,
   TooltipPortal,
@@ -16,32 +17,47 @@ import {
   GitPullRequest,
   GitPullRequestClosed,
   GitPullRequestDraft,
+  Text,
 } from "lucide-react";
 import { openPrExternal } from "../../actions/queue";
 import { navigateToQueue } from "../../routes";
 import type { PrState, PullRequest } from "../../shared/review-types";
+import { HeaderDivider } from "../layout/AppHeader";
+import { Markdown } from "../common/Markdown";
 import { ReviewCell } from "../queue/cells";
 import { ChecksSummary } from "./ChecksSummary";
 
 /**
- * The PR breadcrumb, rendered into the app header's screen slot — the detail
- * screen's vertical space belongs to the diff, and this row was only ever one
- * line of chrome.
+ * The PR breadcrumb AND title, rendered into the app header's screen slot —
+ * the detail screen's vertical space belongs to the diff, and the title was
+ * costing a whole row of it. Breadcrumb first (fixed-ish width, so it anchors
+ * the row), then the title in the flexible space.
  */
 export function PrBreadcrumb({ pr }: { pr?: PullRequest }) {
   return (
-    <div className="flex items-center gap-2 text-xs text-muted-foreground font-mono min-w-0">
-      <button
-        type="button"
-        className="flex items-center gap-1 hover:text-foreground shrink-0"
-        onClick={navigateToQueue}
-      >
-        <ArrowLeft className="w-3 h-3" /> Queue
-      </button>
+    <div className="flex items-center gap-2 text-xs text-muted-foreground font-mono min-w-0 flex-1">
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            size="2xs"
+            icon
+            variant="ghost"
+            className="cursor-pointer"
+            aria-label="Back to queue"
+            onClick={navigateToQueue}
+          >
+            <ArrowLeft />
+          </Button>
+        </TooltipTrigger>
+        <TooltipPortal>
+          <TooltipContent>Back to queue (esc)</TooltipContent>
+        </TooltipPortal>
+      </Tooltip>
       {pr ? (
         <>
-          <span>/</span>
-          <span className="truncate">
+          {/* Capped rather than free-growing: the title is what this row is
+              for, and a long org/repo must not eat it. */}
+          <span className="truncate max-w-[30ch]">
             {pr.owner}/{pr.repo}
           </span>
           <span>/</span>
@@ -54,6 +70,7 @@ export function PrBreadcrumb({ pr }: { pr?: PullRequest }) {
                 size="2xs"
                 icon
                 variant="ghost"
+                className="cursor-pointer"
                 aria-label="Open on GitHub"
                 onClick={() => openPrExternal(pr.url)}
               >
@@ -62,6 +79,21 @@ export function PrBreadcrumb({ pr }: { pr?: PullRequest }) {
             </TooltipTrigger>
             <TooltipPortal>
               <TooltipContent>Open on GitHub (o)</TooltipContent>
+            </TooltipPortal>
+          </Tooltip>
+          <HeaderDivider />
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <h1 className="font-sans text-[13px] font-semibold text-foreground truncate min-w-0 flex-1">
+                {pr.title}
+              </h1>
+            </TooltipTrigger>
+            <TooltipPortal>
+              {/* The truncation is the point of the layout, so the full title
+                  has to be reachable without leaving the screen. */}
+              <TooltipContent className="max-w-lg font-sans">
+                {pr.title}
+              </TooltipContent>
             </TooltipPortal>
           </Tooltip>
         </>
@@ -139,6 +171,7 @@ function CopyRef({ branch }: { branch: string }) {
           size="2xs"
           icon
           variant="ghost"
+          className="cursor-pointer"
           aria-label="Copy branch name"
           onClick={() => {
             void navigator.clipboard.writeText(branch).then(() => {
@@ -159,14 +192,78 @@ function CopyRef({ branch }: { branch: string }) {
   );
 }
 
+/** PR templates ship as HTML comments — a body that is only comments is empty. */
+function descriptionOf(body: string) {
+  const text = body.replace(/<!--[\s\S]*?-->/g, "").trim();
+  if (!text) return null;
+  return { text, paragraphs: text.split(/\n{2,}/).length };
+}
+
+/**
+ * The description toggle. It leads the meta row rather than joining the stats
+ * on the right: it is a control, not a fact about the PR, and the row's left
+ * edge is the one position that doesn't move as the stats change width. Kept
+ * mounted (disabled) when there is no description so the row never reflows
+ * between PRs.
+ */
+function DescriptionToggle({
+  paragraphs,
+  open,
+  onToggle,
+}: {
+  paragraphs: number | null;
+  open: boolean;
+  onToggle: (open: boolean) => void;
+}) {
+  const label =
+    paragraphs === null
+      ? "No description"
+      : `${open ? "Hide" : "Show"} description · ${paragraphs} paragraph${
+          paragraphs === 1 ? "" : "s"
+        }`;
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        {/* A Toggle, not a Button: latched is the state worth seeing, and the
+            fill is what changes — the control keeps its width. Styled off
+            aria-pressed, NOT data-state: the tooltip trigger owns data-state
+            on its child, so the toggle's own on/off never reaches the DOM
+            (same reason as the `ws` toggle in the diff toolbar). */}
+        <Toggle
+          size="xs"
+          variant="outline"
+          pressed={open}
+          disabled={paragraphs === null}
+          onPressedChange={onToggle}
+          aria-label={label}
+          className="h-6 px-1.5 gap-1 min-w-0 shrink-0 font-mono text-[11px] cursor-pointer disabled:cursor-default aria-pressed:bg-foreground/10 aria-pressed:border-foreground/40 aria-pressed:text-foreground future:aria-pressed:text-foreground"
+        >
+          <Text className="w-3 h-3" />
+          {paragraphs ?? 0}
+        </Toggle>
+      </TooltipTrigger>
+      <TooltipPortal>
+        <TooltipContent>{label}</TooltipContent>
+      </TooltipPortal>
+    </Tooltip>
+  );
+}
+
 export function PrHeader({ pr }: { pr: PullRequest }) {
   const commits = pr.commitCount ?? 1;
+  // Local, and closed on every PR: the description is something you consult
+  // once, not a pane preference.
+  const [descOpen, setDescOpen] = useState(false);
+  const description = descriptionOf(pr.bodyMarkdown);
+
   return (
-    <div className="border-b border-border px-4 py-2.5 space-y-2">
-      <h1 className="text-lg font-semibold tracking-tight leading-snug">
-        {pr.title}
-      </h1>
-      <div className="flex items-center gap-2 text-xs flex-wrap">
+    <div className="border-b border-border shrink-0">
+      <div className="flex items-center gap-2 px-4 py-2.5 text-xs flex-wrap">
+        <DescriptionToggle
+          paragraphs={description?.paragraphs ?? null}
+          open={descOpen}
+          onToggle={setDescOpen}
+        />
         <StatePill pr={pr} />
         <span className="text-muted-foreground">
           <span className="font-medium text-foreground">@{pr.author}</span>{" "}
@@ -188,6 +285,17 @@ export function PrHeader({ pr }: { pr: PullRequest }) {
           <ChecksSummary pr={pr} />
         </div>
       </div>
+      {descOpen && description ? (
+        // Fills the pane, starting at the same gutter as the meta row — PR
+        // descriptions carry tables, code fences and checklists, and a narrow
+        // centred column wraps all three badly. Capped only so an ultrawide
+        // window doesn't produce 300-character prose lines.
+        <div className="border-t border-border px-4 py-3 max-h-[45dvh] overflow-y-auto">
+          <Markdown className="min-w-0 max-w-[1400px]">
+            {description.text}
+          </Markdown>
+        </div>
+      ) : null}
     </div>
   );
 }
