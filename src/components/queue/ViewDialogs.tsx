@@ -121,7 +121,13 @@ export function ViewEditorDialog({
               {/* Not `htmlFor`-linked: apollo's trigger is a `<button>`, which
                   `<label for>` does not associate with. */}
               <Label className="text-xs">Team</Label>
-              <div className="flex items-center gap-2">
+              {/* 12px sits deliberately between the two gaps around it: 8px read
+                  as cramped once the button grew to the select's full height and
+                  the two became adjacent 40px boxes, while the row's own 16px
+                  column gap would put Manage exactly as far from the select as
+                  the select is from the Name field — reading as a third peer
+                  rather than as that select's own action. */}
+              <div className="flex items-center gap-3">
                 <Select
                   value={teamId || NO_TEAM}
                   onValueChange={(v) => setTeamId(v === NO_TEAM ? "" : v)}
@@ -147,7 +153,12 @@ export function ViewEditorDialog({
                     ))}
                   </SelectContent>
                 </Select>
-                <Button size="xs" variant="outline" onClick={onManageTeams}>
+                {/* Default size, not `xs`: apollo's fields carry a `future:h-10`
+                    that beats any plain `h-*` we write, so an `xs` (h-8) button
+                    beside the select floated with 4px of dead space above and
+                    below it. The dialog's own Cancel / Save are default size —
+                    this is the third button on the same surface. */}
+                <Button variant="outline" onClick={onManageTeams}>
                   Manage
                 </Button>
               </div>
