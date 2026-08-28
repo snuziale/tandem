@@ -5,6 +5,12 @@
 # <xbar.desc>Open PRs by whose court the ball is in, served by a running Tandem.</xbar.desc>
 # <xbar.dependencies>tandem</xbar.dependencies>
 #
+# macOS only — not because the feed is, but because the HOST is: xbar and
+# SwiftBar are macOS menu-bar apps with no Windows or Linux equivalent to port
+# this to. `/api/pulse.xbar` itself is plain text over HTTP and works from
+# anywhere, so a Windows reader is `curl` (or `Invoke-RestMethod`) against the
+# same URL — there is just no menu bar to hang it in.
+#
 # Copy (or symlink) this into your xbar / SwiftBar plugins folder. The whole
 # plugin is one curl: Tandem already holds the token, the team, the staleness
 # line and the definition of "needs me", so the menu bar reads the SAME pulse

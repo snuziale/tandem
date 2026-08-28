@@ -29,6 +29,11 @@ export type ConfigStatus = {
   // The directory config.json and every other Tandem file sits in. Sent
   // rather than derived from configPath: the server owns `$TANDEM_HOME`.
   homePath: string;
+  // Whether the server can actually enforce 0600 on the files below homePath.
+  // False on Windows, where chmod is a no-op and they inherit the user
+  // profile's ACL instead — About states which of the two is true rather than
+  // repeating a POSIX promise the platform does not keep.
+  posixFileModes: boolean;
   // Non-secret field values from the currently-stored config (secrets are
   // always empty). Absent when `configured` is false.
   currentValues?: Record<string, string>;

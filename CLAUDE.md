@@ -29,13 +29,18 @@ SPA, Apollo Wind, TanStack Query, Zustand.
 ## Running / verifying
 
 ```bash
-pnpm dev:all        # Bun server + Vite (or `pnpm start` + `pnpm dev` in two terminals)
+pnpm dev:all        # native window + Vite (or `pnpm start` + `pnpm dev` in two terminals)
+pnpm dev:web        # same pair, headless (`pnpm serve` + vite) — no host webview needed
 pnpm test           # pure logic: normalizers, queue query, patch index, parse/caps, decide, routes
 pnpm typecheck      # gen manifest + tsc -b (3 projects: app / node / server)
 pnpm lint
-pnpm build:app      # macOS .app via bun build --compile (scripts/build-app.ts)
+pnpm build:app      # macOS .app; a bare executable on Windows/Linux (scripts/build-app.ts)
 TANDEM_HOME=/tmp/x pnpm start   # scratch home — don't pollute ~/.tandem while testing
 ```
+
+`start` hosts the server inside `app.ts`'s webview; `serve` runs `worker.ts`
+alone. They are the SAME server — the window is the only difference, and it
+renders the last `pnpm build`, not Vite's HMR output.
 
 Dev needs BOTH processes: the Vite proxy forwards ALL `/api/*` to the Bun server (first free port
 from 5274, `$TANDEM_SERVER_PORT`). There is no env-driven auth in the Vite config — credentials
@@ -430,7 +435,8 @@ src/
                      team.ts ({team} expansion + sharding)
   server/            Bun-only
     worker.ts (flat prefix router, port scan 5274-81, idleTimeout 0)  app.ts (webview host)
-    runtime.ts  assets.ts (+generated asset-manifest.ts)  log  pathMatch  requestJson
+    runtime.ts  platform.ts (IS_WINDOWS/IS_DARWIN)  assets.ts (+generated
+    asset-manifest.ts)  log  pathMatch  requestJson
     storage/jsonFile.ts   atomic temp+rename, 0600, PER-PATH mutation queue — the only
                           JSON persistence path; don't hand-roll another
     config/  github/{client,queue,pr,files,submit,routes}  reviews/  views/
@@ -675,10 +681,68 @@ null` from that path means "leave the configured teams alone" — an empty array
 - **Chat is keyed by scope, not by thread list**: one conversation per (PR, sha[, finding]), no
   thread picker, no naming. The pane's focus decides what you are talking about.
 
+## Cross-platform (macOS · Windows · Linux)
+
+The dev loop and the server run on all three; only the packaging and the
+menu-bar plugin are macOS-shaped. Four rules keep it that way — each one is a
+thing that was actually broken.
+
+- **Never let a native path separator become a string the app reads back.**
+  The asset manifest puts `relative()` output into BOTH an import specifier and
+  a URL key, so it POSIX-normalizes — on Windows `'../../dist/assets\index.js'`
+  is a JS literal whose `\i` is a bare `i`, and 300-odd imports silently point
+  at nothing while the build stays green. That logic lives in
+  `scripts/asset-manifest.ts` (TESTED) rather than in the generator beside its
+  I/O, which is the only reason CI can execute it. Any generator that
+  interpolates a path owes the same normalization.
+- **The claude CLI is resolved, not named** (`claudeBin()` in `agent/claude.ts`):
+  on Windows it is an npm shim (`claude.cmd`), which CreateProcess cannot run
+  from a bare `"claude"` argv[0]. `Bun.which` applies PATHEXT and Bun's spawn
+  routes a `.cmd` through cmd.exe with its own escaping — which is why we hand
+  it a path and never build a `cmd /c` line ourselves. That would re-parse our
+  arguments and undo the discrete-argv rule that keeps model names uninjectable.
+- **`rename` over an open file is not atomic on Windows.** `jsonFile.ts` retries
+  EPERM/EACCES/EBUSY ten times at 20ms, win32 only — two servers can share one
+  `$TANDEM_HOME`, so a reader mid-read is a real collision, not a theoretical
+  one. POSIX takes the first branch and never sleeps.
+- **`chmod` is a no-op on Windows**, so 0600 is a promise the platform doesn't
+  keep. `/api/config/status` reports `posixFileModes` and Settings › About says
+  which of the two is true. Don't restore the flat "0600" claim anywhere.
+
+`server/platform.ts` (`IS_WINDOWS` / `IS_DARWIN`) is where the OS is NAMED, the
+way `runtime.ts` names the compiled-binary check; the behavior stays at each
+call site, because each asks a different question. The client half is
+`keyboard/platform.ts` and cannot share code with it — one reads `process`, the
+other `navigator`.
+
+Two things stay macOS-only, both because the HOST is: the `.app` bundle
+(`sips`/`iconutil`/`codesign` — `build-app.ts` falls through to a bare
+`tandem.exe`/`tandem` elsewhere), and the xbar / SwiftBar plugin, which has no
+Windows equivalent to port to. `/api/pulse.xbar` itself is plain text over HTTP
+and answers any client. The native window needs a host webview — WKWebView,
+WebView2, WebKitGTK; `app.ts` imports `webview-bun` DYNAMICALLY so a missing one
+prints the install link and points at `pnpm serve` instead of dying in `dlopen`.
+`SizeHint` can't ride along on that import (a `const enum` has no runtime
+binding), hence the inlined `SIZE_HINT_NONE`.
+
+Modifier keys: every dispatcher already accepts `metaKey || ctrlKey`; only the
+LABEL is per-platform (`keyboard/platform.ts` → `MOD`, `ALT`, `IS_MAC`). The
+native quit bridge in `app.ts` is the one binding that must pick a side, and it
+picks by `process.platform` at init-script build time.
+
 ## Pitfalls
 
 - **A new `/api/*` family 404s in dev**: the Vite proxy forwards ALL of `/api` — but the Bun server
   must be RESTARTED to pick up new routes (no HMR server-side).
+- **A shell one-liner in `package.json` is a Windows break.** `clean` is
+  `bun scripts/clean.ts`, not `rm -rf`; cmd.exe and PowerShell have neither.
+- **CI's `[ubuntu-latest, windows-latest]` matrix runs, it does not prove.** It
+  executes the path-separator rule (via `scripts/asset-manifest.test.ts`) and
+  type-checks the rest; the rename retry and the CLI shim resolution have no
+  test driving them, so a regression there ships green. `ci.yml` says so.
+- **`.gitattributes` pins `eol=lf`.** Without it git's Windows default checks the
+  tree out as CRLF and prettier (no config here, so `endOfLine: "lf"`) reports
+  every file as dirty.
 - **CodeView doesn't scroll / scrollTo dead**: container lost `overflow-y-auto` or bounded height.
 - **Annotations don't move/appear**: item `version` didn't change — check `versionOf` inputs.
 - **GraphQL 502s**: that's GitHub's ~10s budget. Never batch searches; keep the single retry.

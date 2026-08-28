@@ -1,7 +1,11 @@
+import { ALT, MOD } from "./platform";
+
 // Display registry for the `?` sheet. Manually synced with the dispatchers —
 // useKeyboardNav.ts (queue) and PrDetailView's local handler (detail). Keys
 // bound inside dialogs/composers (⌘↵ stage, Esc close) are documented here
-// but dispatched by their owners.
+// but dispatched by their owners. The command modifier is PRINTED per platform
+// (keyboard/platform.ts) — every dispatcher already accepts meta or ctrl, so
+// only the label changes.
 export type ShortcutGroup = {
   title: string;
   items: Array<[keys: string, action: string]>;
@@ -40,16 +44,16 @@ export const SHORTCUT_GROUPS: ShortcutGroup[] = [
       ["click a line", "comment there"],
       ["drag line numbers", "comment on a range (or drag the gutter ⊕)"],
       ["shift+click a number", "extend the range"],
-      ["⌥↑ / ⌥↓", "grow / shrink the range while composing"],
-      ["⌘↵", "submit review (stages the comment while composing)"],
-      ["↵ / ⇧↵", "chat: send · newline (⌘↵ also sends)"],
+      [`${ALT}↑ / ${ALT}↓`, "grow / shrink the range while composing"],
+      [`${MOD}↵`, "submit review (stages the comment while composing)"],
+      ["↵ / ⇧↵", `chat: send · newline (${MOD}↵ also sends)`],
     ],
   },
   {
     title: "Anywhere",
     items: [
       ["?", "this sheet"],
-      ["⌘Q", "quit (native app)"],
+      [`${MOD}Q`, "quit (native app)"],
     ],
   },
 ];

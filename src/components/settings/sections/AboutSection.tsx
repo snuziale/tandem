@@ -11,10 +11,7 @@ import { Panel, SectionHeading } from "../fields";
 /** Everything Tandem writes to disk, in the order it matters. Descriptions
  * rather than sizes: the point is what each file CLAIMS, not how big it got. */
 const STORAGE: Array<[file: string, what: string]> = [
-  [
-    "config.json",
-    "GitHub PAT and default org — 0600, never sent to the client",
-  ],
+  ["config.json", "GitHub PAT and default org — never sent to the client"],
   ["settings.json", "everything on these pages except views and teams"],
   ["views.json", "saved queue views"],
   ["teams.json", "named lists of GitHub logins"],
@@ -34,6 +31,12 @@ export function AboutSection() {
   // The server resolves `$TANDEM_HOME` and reports it; this panel asserts
   // that eleven files live there, so it must not re-derive the path.
   const home = status.data?.homePath ?? null;
+  // Windows chmod is a no-op, so the 0600 line would be a claim the platform
+  // does not keep. The server answers which of the two is true.
+  const permissions =
+    (status.data?.posixFileModes ?? true)
+      ? "written atomically at 0600"
+      : "written atomically, readable only through your Windows user account";
 
   return (
     <>
@@ -70,11 +73,11 @@ export function AboutSection() {
           home ? (
             <>
               Everything is local, under{" "}
-              <code className="font-mono text-[11px]">{home}</code>, written
-              atomically at 0600. Nothing is uploaded anywhere.
+              <code className="font-mono text-[11px]">{home}</code>,{" "}
+              {permissions}. Nothing is uploaded anywhere.
             </>
           ) : (
-            "Everything is local, written atomically at 0600."
+            `Everything is local, ${permissions}.`
           )
         }
       >

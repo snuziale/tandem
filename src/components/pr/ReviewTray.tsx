@@ -21,6 +21,7 @@ import type {
   PrId,
   ReviewVerdict,
 } from "../../shared/review-types";
+import { MOD } from "../../keyboard/platform";
 
 type Props = {
   prId: PrId;
@@ -169,7 +170,7 @@ export function ReviewTray({
           onClick={() => setConfirmOpen(true)}
         >
           Submit review{" "}
-          <span className="ml-1.5 text-[10px] opacity-70">⌘↵</span>
+          <span className="ml-1.5 text-[10px] opacity-70">{MOD}↵</span>
         </Button>
       </div>
 

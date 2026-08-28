@@ -1,17 +1,12 @@
-import { homedir } from "node:os";
-import { join } from "node:path";
 import { mkdir, chmod } from "node:fs/promises";
+import { storageHome, storagePath } from "../storage/jsonFile";
 import type { GitHubCreds } from "../../shared/github-credentials";
 import { validateConfig } from "./validate";
 
 export type Config = { github: GitHubCreds };
 
-function dir(): string {
-  return Bun.env.TANDEM_HOME ?? join(homedir(), ".tandem");
-}
-
 function file(): string {
-  return join(dir(), "config.json");
+  return storagePath("config.json");
 }
 
 let cached: Config | null = null;
@@ -48,12 +43,13 @@ async function readConfigFromDisk(): Promise<Config | null> {
 }
 
 export async function saveConfig(c: Config): Promise<void> {
-  await mkdir(dir(), { recursive: true, mode: 0o700 });
+  await mkdir(storageHome(), { recursive: true, mode: 0o700 });
   await Bun.write(file(), JSON.stringify(c, null, 2));
   try {
     await chmod(file(), 0o600);
   } catch {
-    // Windows ACLs — chmod is a no-op there.
+    // Windows ACLs — chmod is a no-op there, so this file inherits the user
+    // profile's ACL. Settings › About reports which of the two applies.
   }
   cached = c;
   cacheLoaded = true;

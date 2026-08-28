@@ -4,13 +4,25 @@
 // toolset plus safe mode — matching the spec's "no write tools exist"
 // requirement (§4): the model cannot touch the filesystem, network, or shell.
 import { mkdir } from "node:fs/promises";
-import { homedir } from "node:os";
-import { join } from "node:path";
 import { isPlainObject } from "../../shared/is-plain-object";
+import { storagePath } from "../storage/jsonFile";
 import { readLines } from "./procStream";
 
-function tandemHome(): string {
-  return Bun.env.TANDEM_HOME ?? join(homedir(), ".tandem");
+// `claude` is an npm shim on Windows (claude.cmd / claude.ps1), not a PE
+// binary: CreateProcess cannot run a bare "claude" argv[0] there, so every
+// spawn below would fail with ENOENT however well the CLI is installed.
+// Bun.which applies PATHEXT and hands back the shim's absolute path, and Bun's
+// spawn knows to route a .cmd/.bat argv[0] through cmd.exe with its own
+// argument escaping — which is why we pass a PATH and never assemble a
+// `cmd /c` command line ourselves (that would re-parse our arguments and
+// reintroduce exactly the injection the discrete-argv note below rules out).
+// A hit is cached; a miss is re-probed, since Bun.which is a directory scan
+// rather than a process spawn and the CLI may be installed mid-session.
+let cachedBin: string | null = null;
+
+export function claudeBin(): string {
+  if (!cachedBin) cachedBin = Bun.which("claude");
+  return cachedBin ?? "claude";
 }
 
 export type ClaudePassResult =
@@ -21,11 +33,12 @@ const PASS_TIMEOUT_MS = 10 * 60_000;
 const MAX_STDERR_LINES = 50;
 
 export function buildClaudeArgs(
+  bin: string,
   model?: string,
   opts: { partialMessages?: boolean } = {},
 ): string[] {
   const args = [
-    "claude",
+    bin,
     "-p",
     "--output-format",
     "stream-json",
@@ -53,11 +66,13 @@ export async function runClaudePass(opts: {
    * pipeline passes — it turns on the CLI's partial-message frames. */
   onDelta?: (text: string) => void;
 }): Promise<ClaudePassResult> {
-  const sandbox = join(tandemHome(), "sandbox");
+  const sandbox = storagePath("sandbox");
   await mkdir(sandbox, { recursive: true, mode: 0o700 });
 
   const proc = Bun.spawn(
-    buildClaudeArgs(opts.model, { partialMessages: !!opts.onDelta }),
+    buildClaudeArgs(claudeBin(), opts.model, {
+      partialMessages: !!opts.onDelta,
+    }),
     {
       cwd: sandbox,
       stdin: new Blob([opts.prompt]),
@@ -177,7 +192,7 @@ function sumTokens(usage: Record<string, unknown>): number {
 
 function appendLog(model: string | undefined, stderrLines: string[]): void {
   if (stderrLines.length === 0) return;
-  const path = join(tandemHome(), "claude.log");
+  const path = storagePath("claude.log");
   const entry = `${new Date().toISOString()} model=${model ?? "default"}\n${stderrLines.join("\n")}\n`;
   // Best-effort append; a failed log write must never fail a run.
   Bun.file(path)
@@ -192,20 +207,24 @@ export async function checkClaudeAvailable(): Promise<{
   version?: string;
   error?: string;
 }> {
+  const bin = claudeBin();
   try {
-    const proc = Bun.spawn(["claude", "--version"], {
+    const proc = Bun.spawn([bin, "--version"], {
       stdout: "pipe",
       stderr: "pipe",
     });
     const out = await new Response(proc.stdout).text();
     const code = await proc.exited;
     if (code !== 0)
-      return { available: false, error: `claude --version exited ${code}` };
+      return { available: false, error: `${bin} --version exited ${code}` };
     return { available: true, version: out.trim() };
   } catch (e) {
     return {
       available: false,
-      error: e instanceof Error ? e.message : "claude CLI not found on PATH",
+      error:
+        e instanceof Error
+          ? `${bin}: ${e.message}`
+          : "claude CLI not found on PATH",
     };
   }
 }

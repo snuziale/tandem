@@ -1,0 +1,13 @@
+# LF in the working tree on every platform. Without this, git's Windows default
+# (core.autocrlf=true) checks the tree out with CRLF, and prettier — which has
+# no config here, so it runs on its `endOfLine: "lf"` default — reports every
+# file in the repo as needing a rewrite. It also keeps scripts/*.sh executable
+# by a POSIX shell after a round trip through a Windows clone.
+* text=auto eol=lf
+
+# Binary-ish: never touched, never diffed as text.
+*.png binary
+*.ico binary
+*.woff binary
+*.woff2 binary
+pnpm-lock.yaml -diff linguist-generated

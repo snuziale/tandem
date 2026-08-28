@@ -12,6 +12,7 @@
  */
 import { useSavedViews } from "../../../hooks/useSavedViews";
 import type { TandemSettings } from "../../../shared/settings-types";
+import { IS_MAC } from "../../../keyboard/platform";
 import {
   Note,
   NumberField,
@@ -89,7 +90,9 @@ export function PulseSection({
         </div>
 
         <div className="space-y-1.5 max-w-2xl">
-          <Note>Drop a file in your plugins folder containing:</Note>
+          <Note>
+            Drop a file in your xbar / SwiftBar plugins folder containing:
+          </Note>
           <pre className="text-[10px] font-mono bg-muted/50 rounded-md p-2 overflow-x-auto">
             {`#!/bin/sh\ncurl -s ${origin}/api/pulse.xbar`}
           </pre>
@@ -99,6 +102,15 @@ export function PulseSection({
             <code className="font-mono text-[10px]">?group=author</code> to
             override per plugin.
           </Note>
+          {!IS_MAC && (
+            <Note>
+              Those two hosts are macOS-only. The endpoint is not — it answers
+              plain text to any client, so on Windows or Linux read it with{" "}
+              <code className="font-mono text-[10px]">curl</code> or{" "}
+              <code className="font-mono text-[10px]">Invoke-RestMethod</code>;
+              there is simply no menu bar to hang it in.
+            </Note>
+          )}
         </div>
       </Panel>
     </>

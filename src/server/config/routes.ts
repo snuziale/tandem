@@ -3,6 +3,7 @@ import type { ConfigStatus } from "../../shared/config-types";
 import { API_PATHS } from "../../shared/api-paths";
 import { isPlainObject } from "../../shared/is-plain-object";
 import { testGitHubCredentials } from "../github/client";
+import { IS_WINDOWS } from "../platform";
 import { parseJsonBody } from "../requestJson";
 import { storageHome } from "../storage/jsonFile";
 import { loadConfig, saveConfig, configPath, type Config } from "./store";
@@ -48,6 +49,7 @@ async function handleStatus(): Promise<Response> {
     fields: GITHUB_CREDENTIAL_FIELDS,
     configPath: configPath(),
     homePath: storageHome(),
+    posixFileModes: !IS_WINDOWS,
     currentValues: cfg ? redactedCurrentValues(cfg) : undefined,
   } satisfies ConfigStatus);
 }

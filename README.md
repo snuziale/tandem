@@ -50,7 +50,13 @@ already read the code.
   (`bun-types` is pinned to ~1.3.x until webview-bun handles Bun 1.4's FFI
   pointer type).
 - **pnpm** and Node ≥ 22.12 for the Vite dev server and tooling.
-- **macOS** for `pnpm build:app`. The web app itself is platform-agnostic.
+- **macOS, Windows or Linux.** `pnpm build:app` produces a signed `.app` bundle
+  on macOS and a bare executable elsewhere — the icon and bundle steps are
+  macOS tooling (`sips`, `iconutil`, `codesign`). The native window needs a
+  host webview: WKWebView on macOS, the
+  [WebView2 runtime](https://developer.microsoft.com/microsoft-edge/webview2/)
+  on Windows (preinstalled on Windows 11), WebKitGTK on Linux. `pnpm serve`
+  needs none of them.
 - **[Claude Code](https://claude.com/claude-code)** on your PATH, logged in, for
   agent features. Everything else works without it.
 - A GitHub personal access token with **repo read + pull requests write**.
@@ -59,24 +65,33 @@ already read the code.
 
 ```bash
 pnpm install
-pnpm dev:all      # Bun server + Vite → http://localhost:5173
+pnpm dev:all      # native window + Vite  → http://localhost:5173
+pnpm dev:web      # same, no native window (browser only)
 # — or in two terminals —
-pnpm start        # Bun server, all /api/*, first free port from 5274
+pnpm start        # Bun server in the native window shell
+pnpm serve        # Bun server alone — all /api/*, no window
 pnpm dev          # Vite; proxies /api/* to the Bun server
 
-pnpm build:app    # macOS → dist-bin/Tandem.app (+ a dist-bin/tandem CLI)
+pnpm build:app    # dist-bin/Tandem.app on macOS, dist-bin/tandem[.exe] elsewhere
 pnpm test         # vitest — pure logic only
 pnpm typecheck && pnpm lint
 ```
 
 Dev needs **both** processes: the Vite proxy forwards all of `/api/*` to the Bun
-server, and there is no server-side HMR — restart `pnpm start` after touching a
-route.
+server (first free port from 5274), and there is no server-side HMR — restart it
+after touching a route.
+
+`start` and `serve` run the same server; `start` additionally opens the native
+window, which renders the last `pnpm build` rather than Vite's HMR output. For
+day-to-day work in the browser, `pnpm dev:web` is the shorter path and needs no
+host webview installed.
 
 ## Configuration
 
-First run asks for the token. It is stored chmod-600 in `~/.tandem/config.json`
-and never reaches the browser bundle — the server holds the credential and
+First run asks for the token. It is stored in `~/.tandem/config.json` — 0600 on
+macOS and Linux; on Windows `chmod` is a no-op, so the file inherits your user
+profile's ACL instead (Settings › About states which of the two applies on your
+machine). It never reaches the browser bundle — the server holds the credential and
 exposes typed endpoints instead of proxying GitHub. In dev, `GITHUB_TOKEN` (plus
 optional `GITHUB_ORG`) in the environment seeds the config. `TANDEM_HOME`
 relocates the whole state directory, which is the sane way to try things:
@@ -85,9 +100,9 @@ relocates the whole state directory, which is the sane way to try things:
 TANDEM_HOME=/tmp/tandem-scratch pnpm start
 ```
 
-Everything lives in that directory as 0600 JSON: the token, settings (caps,
-models, prompts, daily spend ceiling), saved views, pending-review drafts, run
-records with findings, and chat transcripts.
+Everything lives in that directory as JSON, written atomically: the token,
+settings (caps, models, prompts, daily spend ceiling), saved views,
+pending-review drafts, run records with findings, and chat transcripts.
 
 ## Per-repo tuning
 
@@ -100,7 +115,8 @@ that repo and is the single biggest quality lever available.
 `?` shows the full sheet. The short version: `j`/`k` move, `Enter` opens, `o`
 opens on GitHub, `r` reruns, `s` toggles the stats drawer. In a PR: `[`/`]` step
 files, `j`/`k` step findings, `y`/`e`/`x` accept / edit / dismiss one, `c` chats
-about it, `v` marks a file viewed, `⌘↵` submits.
+about it, `v` marks a file viewed, `⌘↵` submits. Every binding takes Cmd **or**
+Ctrl; the sheet prints whichever your platform uses.
 
 ## Built on
 

@@ -16,6 +16,7 @@ import {
 } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, dirname, join } from "node:path";
+import { IS_WINDOWS } from "../platform";
 
 // One chain per file path, NOT one global chain — two unrelated stores must not
 // serialize against each other. Keys are the handful of files listed above (plus
@@ -67,7 +68,7 @@ export async function readTextFile(file: string): Promise<string | null> {
   try {
     return await readFile(file, "utf8");
   } catch (error) {
-    if (isMissingFile(error)) return null;
+    if (hasErrorCode(error, "ENOENT")) return null;
     throw error;
   }
 }
@@ -98,7 +99,7 @@ export async function writeTextFile(
     // Chmod before the rename: this is the inode that becomes `file`, so there
     // is no window where the final path exists with a wider mode.
     await setPrivatePermissions(temp);
-    await rename(temp, file);
+    await renameOverwriting(temp, file);
     renamed = true;
   } finally {
     // Only on the failure path — a successful rename moved the temp inode onto
@@ -107,19 +108,45 @@ export async function writeTextFile(
   }
 }
 
+// POSIX rename replaces the target atomically even while another process holds
+// it open, so there it is a plain call. Windows has no such guarantee:
+// `ReplaceFile` fails with EPERM/EACCES (and EBUSY on a directory handle) when a
+// reader is mid-read — a real case here, since two servers can share one
+// `$TANDEM_HOME` (see agent/runsIndex.ts) and every poll reads the same handful
+// of files. The window is one read of a small JSON file, so a few short retries
+// close it.
+const RENAME_RETRIES = 10;
+const RENAME_BACKOFF_MS = 20;
+
+async function renameOverwriting(from: string, to: string): Promise<void> {
+  if (!IS_WINDOWS) return rename(from, to);
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await rename(from, to);
+    } catch (error) {
+      // The three Windows spellings of "someone else has this file open".
+      if (
+        attempt >= RENAME_RETRIES ||
+        !hasErrorCode(error, "EPERM", "EACCES", "EBUSY")
+      )
+        throw error;
+      await new Promise((resolve) => setTimeout(resolve, RENAME_BACKOFF_MS));
+    }
+  }
+}
+
 async function setPrivatePermissions(path: string): Promise<void> {
   try {
     await chmod(path, 0o600);
   } catch {
-    // Windows ACLs do not map cleanly to POSIX modes.
+    // Windows ACLs do not map cleanly to POSIX modes — chmod is a no-op there,
+    // so these files inherit the user profile's ACL instead of being 0600.
+    // Settings › About says so rather than repeating the POSIX claim.
   }
 }
 
-function isMissingFile(error: unknown): boolean {
-  return (
-    !!error &&
-    typeof error === "object" &&
-    "code" in error &&
-    error.code === "ENOENT"
-  );
+/** Whether a thrown value is a Node errno error carrying one of `codes`. */
+function hasErrorCode(error: unknown, ...codes: string[]): boolean {
+  if (!error || typeof error !== "object" || !("code" in error)) return false;
+  return codes.includes(error.code as string);
 }

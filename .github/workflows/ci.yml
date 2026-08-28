@@ -15,7 +15,22 @@ permissions:
 
 jobs:
   check:
-    runs-on: ubuntu-latest
+    # Both, and not for symmetry — three mechanisms genuinely diverge: the
+    # asset-manifest generator writes path strings into source, the storage
+    # layer renames files over open handles, and the agent harness resolves an
+    # npm shim.
+    #
+    # Be honest about what this buys. Only the FIRST is executed here, by
+    # scripts/asset-manifest.test.ts — which is why that logic was split out of
+    # the generator's I/O in the first place. The other two are type-checked and
+    # linted on Windows but never run: there is no dist/ tree to walk (no build
+    # step), no test drives a rename collision, and no claude CLI is installed.
+    # Covering them for real means unit tests, not a second runner.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
 
