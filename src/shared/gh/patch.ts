@@ -61,6 +61,9 @@ export function countDiffLines(
   return files.reduce((sum, f) => sum + f.additions + f.deletions, 0);
 }
 
+/** The `@@ -old[,n] +new[,n] @@` line. One copy: three walkers below read it. */
+const HUNK_HEADER = /^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/;
+
 export type DiffLineIndex = {
   /** Old-file line numbers present in the patch (deletions + context). */
   left: Set<number>;
@@ -79,7 +82,7 @@ export function diffLineIndex(patch: string): DiffLineIndex {
   let oldLine = 0;
   let newLine = 0;
   for (const line of patch.split("\n")) {
-    const hunk = /^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/.exec(line);
+    const hunk = HUNK_HEADER.exec(line);
     if (hunk) {
       oldLine = Number(hunk[1]);
       newLine = Number(hunk[2]);
@@ -117,6 +120,79 @@ type BodyLine = {
   noEol?: string;
 };
 
+type PatchHunk = {
+  /** The `@@ ... @@` line verbatim — a rewrite puts it back untouched. */
+  header: string;
+  oldStart: number;
+  newStart: number;
+  body: BodyLine[];
+  /** Non-body lines found before the next header. Empty for well-formed
+   * patches; carried so a rewrite can pass them through rather than eat them. */
+  stray: string[];
+};
+
+/**
+ * One patch, split into the lines before its first hunk and the hunks
+ * themselves, each body line numbered on both sides.
+ *
+ * Both rewriters below run off this: they have to agree on the four prefix
+ * rules and on two conventions that are easy to get subtly wrong — an EMPTY
+ * string is a context line (some patches drop the leading space), and a `\`
+ * marker belongs to the line ABOVE it, so it lives or dies with that line.
+ */
+function parsePatchHunks(patch: string): {
+  lead: string[];
+  hunks: PatchHunk[];
+  trailingNewline: boolean;
+} {
+  const lines = patch.split("\n");
+  const trailingNewline = lines.length > 0 && lines[lines.length - 1] === "";
+  if (trailingNewline) lines.pop();
+
+  const lead: string[] = [];
+  const hunks: PatchHunk[] = [];
+  let i = 0;
+  while (i < lines.length) {
+    const header = HUNK_HEADER.exec(lines[i]);
+    if (!header) {
+      (hunks[hunks.length - 1]?.stray ?? lead).push(lines[i++]);
+      continue;
+    }
+    const hunk: PatchHunk = {
+      header: lines[i++],
+      oldStart: Number(header[1]),
+      newStart: Number(header[2]),
+      body: [],
+      stray: [],
+    };
+    hunks.push(hunk);
+    let oldNo = hunk.oldStart;
+    let newNo = hunk.newStart;
+    for (; i < lines.length; i++) {
+      const line = lines[i];
+      if (line.startsWith("@@")) break;
+      if (line.startsWith("\\")) {
+        const last = hunk.body[hunk.body.length - 1];
+        if (last) last.noEol = line;
+        continue;
+      }
+      if (line.startsWith("-"))
+        hunk.body.push({ kind: "del", text: line, oldNo: oldNo++, newNo });
+      else if (line.startsWith("+"))
+        hunk.body.push({ kind: "add", text: line, oldNo, newNo: newNo++ });
+      else if (line.startsWith(" ") || line === "")
+        hunk.body.push({
+          kind: "ctx",
+          text: line,
+          oldNo: oldNo++,
+          newNo: newNo++,
+        });
+      else break; // not a hunk body line — the outer loop takes it as stray
+    }
+  }
+  return { lead, hunks, trailingNewline };
+}
+
 const withoutWhitespace = (line: string) => line.slice(1).replace(/\s+/g, "");
 
 /**
@@ -132,52 +208,23 @@ export function hideWhitespaceChanges(
   patch: string,
   keep: KeepLines = NO_KEEP,
 ): string {
-  const lines = patch.split("\n");
-  const trailingNewline = lines.length > 0 && lines[lines.length - 1] === "";
-  if (trailingNewline) lines.pop();
-
-  const out: string[] = [];
-  let i = 0;
-  while (i < lines.length) {
-    const header = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/.exec(lines[i]);
-    if (!header) {
-      out.push(lines[i++]);
-      continue;
-    }
-    const headerLine = lines[i++];
-    let oldNo = Number(header[1]);
-    let newNo = Number(header[3]);
-    const body: BodyLine[] = [];
-    for (; i < lines.length; i++) {
-      const line = lines[i];
-      if (line.startsWith("@@")) break;
-      if (line.startsWith("\\")) {
-        // Belongs to the line above, and dies with it.
-        const last = body[body.length - 1];
-        if (last) last.noEol = line;
-        continue;
-      }
-      if (line.startsWith("-"))
-        body.push({ kind: "del", text: line, oldNo: oldNo++, newNo });
-      else if (line.startsWith("+"))
-        body.push({ kind: "add", text: line, oldNo, newNo: newNo++ });
-      else if (line.startsWith(" ") || line === "")
-        body.push({ kind: "ctx", text: line, oldNo: oldNo++, newNo: newNo++ });
-      else break; // not a hunk body line — leave it to the outer loop
-    }
-    const folded = foldHunkBody(body, keep);
-    const keepsAnchor = body.some(
+  const { lead, hunks, trailingNewline } = parsePatchHunks(patch);
+  const out: string[] = [...lead];
+  for (const hunk of hunks) {
+    const folded = foldHunkBody(hunk.body, keep);
+    const keepsAnchor = hunk.body.some(
       (l) =>
         (l.kind !== "add" && keep.left.has(l.oldNo)) ||
         (l.kind !== "del" && keep.right.has(l.newNo)),
     );
     // Nothing left changed: `-w` drops the hunk, unless a card sits in it.
     if (!folded.some((l) => l.kind !== "ctx") && !keepsAnchor) continue;
-    out.push(headerLine);
+    out.push(hunk.header);
     for (const line of folded) {
       out.push(line.text);
       if (line.noEol) out.push(line.noEol);
     }
+    out.push(...hunk.stray);
   }
   return out.join("\n") + (trailingNewline ? "\n" : "");
 }
@@ -267,4 +314,68 @@ function whitespaceOnlyPairs(
 /** Whether a patch has anything left to render. */
 export function hasHunks(patch: string): boolean {
   return /^@@ /m.test(patch);
+}
+
+/**
+ * The old-file text implied by a patch and the new file it produced.
+ *
+ * @pierre/diffs expands unmodified context by hydrating a patch-parsed diff
+ * with BOTH full sides — but a unified diff already pins down everything the
+ * two sides do not share: outside the hunks they are identical by definition,
+ * and inside them the `-` lines are the old text verbatim. So ONE fetch (the
+ * new file at the head sha) plus the patch reconstructs the old side exactly.
+ *
+ * That is not just one request saved. We carry no base oid anywhere — and the
+ * base BRANCH tip is not the merge base GitHub diffed against, so fetching the
+ * old file directly would render context that silently disagrees with the
+ * patch whenever the base has moved.
+ *
+ * Reverse the SAME patch the pane is rendering: with hide-whitespace on that
+ * is the rewritten one, so a folded pair's stand-in context line reads the
+ * same on both sides instead of re-exposing the whitespace on the left.
+ */
+export function reversePatch(newFileText: string, patch: string): string {
+  const endsWithNewline = newFileText.endsWith("\n");
+  const newLines = newFileText.split("\n");
+  if (endsWithNewline) newLines.pop();
+
+  const out: string[] = [];
+  let cursor = 0; // 0-based index of the next new-file line to consume
+  // Whether the OLD side ends without a newline. Every later push clears it;
+  // a `\ No newline` marker under a line the old side kept sets it.
+  let oldNoEol = false;
+  const takeFromFile = (limit: number) => {
+    while (cursor < limit) {
+      out.push(newLines[cursor++]);
+      oldNoEol = !endsWithNewline && cursor === newLines.length;
+    }
+  };
+
+  for (const hunk of parsePatchHunks(patch).hunks) {
+    // Everything between the previous hunk and this one is shared by both sides.
+    takeFromFile(Math.min(hunk.newStart - 1, newLines.length));
+    for (const line of hunk.body) {
+      if (line.kind === "add") {
+        cursor++; // present only in the new file, and a marker here is its EOL
+        continue;
+      }
+      if (line.kind === "del") {
+        out.push(line.text.slice(1));
+        oldNoEol = false;
+      } else if (cursor < newLines.length) {
+        // Context lines: take the FILE's text, not the patch's. They agree
+        // except for a hide-whitespace stand-in line, and there the file is
+        // what the pane is already showing on the right.
+        takeFromFile(cursor + 1);
+      } else {
+        out.push(line.text.slice(1));
+        cursor++;
+      }
+      if (line.noEol) oldNoEol = true;
+    }
+  }
+  takeFromFile(newLines.length);
+
+  if (out.length === 0) return "";
+  return out.join("\n") + (oldNoEol ? "" : "\n");
 }

@@ -77,6 +77,11 @@ export type RestOptions = {
   body?: unknown;
   /** Override the Accept header (e.g. 'application/vnd.github.diff'). */
   accept?: string;
+  /** Refuse a response larger than this, by Content-Length, BEFORE reading the
+   * body — the raw blob endpoint serves up to 100MB and reading it just to
+   * measure it would download and decode the whole thing to throw it away.
+   * Overflow raises a 413 GitHubError. */
+  maxBytes?: number;
   signal?: AbortSignal;
 };
 
@@ -92,7 +97,7 @@ export async function rest<T>(
   path: string,
   opts: RestOptions = {},
 ): Promise<RestResult<T>> {
-  const { method = "GET", body, accept, signal } = opts;
+  const { method = "GET", body, accept, maxBytes, signal } = opts;
   const headers = authHeaders(creds, accept);
   if (body !== undefined) headers["Content-Type"] = "application/json";
   const res = await fetch(`${GITHUB_API}${path}`, {
@@ -103,6 +108,17 @@ export async function rest<T>(
   });
   if (!res.ok)
     throw new GitHubError(res.status, await errorMessageFrom(res), undefined);
+  if (maxBytes !== undefined) {
+    const declared = Number(res.headers.get("content-length"));
+    if (Number.isFinite(declared) && declared > maxBytes) {
+      await res.body?.cancel();
+      throw new GitHubError(
+        413,
+        `response exceeds ${maxBytes} bytes`,
+        undefined,
+      );
+    }
+  }
   const isJson = (res.headers.get("content-type") ?? "").includes("json");
   const data = (isJson ? await res.json() : await res.text()) as T;
   return { data, rateLimit: rateLimitFrom(res), response: res };

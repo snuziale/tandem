@@ -89,3 +89,48 @@ function markMissingAsTooLarge(files: FileChange[]): void {
     if (file.patch === undefined && !file.isBinary) file.tooLarge = true;
   }
 }
+
+// The one GitHub "file at a commit" read. The RAW media type is the point: the
+// JSON contents encoding tops out at 1MB, and the diff pane's context expansion
+// cannot take a truncated file — every line below the cut would render wrong.
+const MAX_BLOB_BYTES = 2_000_000;
+
+/**
+ * One file's text at a commit. Null when it does not exist there, is too large,
+ * or isn't text.
+ */
+export async function fetchFileAtRef(
+  cfg: Config,
+  ref: PrRef,
+  path: string,
+  sha: string,
+  signal?: AbortSignal,
+): Promise<string | null> {
+  // Path traversal is meaningless against the contents API (it resolves inside
+  // the repo tree), but a leading slash or `..` just 404s — reject early.
+  if (!path || path.startsWith("/") || path.includes("..")) return null;
+  const encoded = path.split("/").map(encodeURIComponent).join("/");
+  try {
+    const { data, response } = await rest<string>(
+      cfg.github,
+      `/repos/${ref.owner}/${ref.repo}/contents/${encoded}?ref=${encodeURIComponent(sha)}`,
+      {
+        accept: "application/vnd.github.raw",
+        maxBytes: MAX_BLOB_BYTES,
+        signal,
+      },
+    );
+    // A directory (or a submodule) comes back as JSON however we ask.
+    if ((response.headers.get("content-type") ?? "").includes("json"))
+      return null;
+    return typeof data === "string" ? data : null;
+  } catch (e) {
+    // 413 is our own size refusal; 403 is a blocked/oversized blob.
+    if (
+      e instanceof GitHubError &&
+      (e.status === 404 || e.status === 403 || e.status === 413)
+    )
+      return null;
+    throw e;
+  }
+}

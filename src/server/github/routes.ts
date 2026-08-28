@@ -9,7 +9,7 @@ import { deleteReview, loadReview } from "../reviews/store";
 import { loadConfig } from "../config/store";
 import { parseJsonBody } from "../requestJson";
 import { GitHubError } from "./client";
-import { fetchPrFiles } from "./files";
+import { fetchFileAtRef, fetchPrFiles } from "./files";
 import { fetchPrDetail } from "./pr";
 import { quickApprove, submitReview } from "./submit";
 
@@ -34,6 +34,28 @@ export async function handlePrs(req: Request): Promise<Response> {
     }
     if (action === "/files" && req.method === "GET") {
       return Response.json({ files: await fetchPrFiles(cfg, ref, req.signal) });
+    }
+    if (action === "/blob" && req.method === "GET") {
+      // One file's text at a commit — what the diff pane hydrates a partial
+      // diff with to expand unmodified context. A read, like /files.
+      const path = url.searchParams.get("path") ?? "";
+      const sha = url.searchParams.get("sha") ?? "";
+      if (!path || !sha)
+        return Response.json(
+          { error: "expected ?path=<path>&sha=<commit>" },
+          { status: 400 },
+        );
+      const contents = await fetchFileAtRef(cfg, ref, path, sha, req.signal);
+      if (contents === null)
+        return Response.json(
+          { error: "file unavailable at that commit" },
+          { status: 404 },
+        );
+      // Sent as-is, not JSON-framed: framing a whole file costs a stringify
+      // here and a parse in the browser, both on the click path, for nothing.
+      return new Response(contents, {
+        headers: { "content-type": "text/plain; charset=utf-8" },
+      });
     }
     if (action === "/approve" && req.method === "POST") {
       const result = await quickApprove(cfg.github, ref);

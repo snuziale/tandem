@@ -549,6 +549,7 @@ export function PrDetailView({ prId }: { prId: PrId }) {
                   />
                 </div>
                 <DiffPane
+                  prId={prId}
                   headSha={pr.headSha}
                   files={files}
                   threads={threads}

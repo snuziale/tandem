@@ -48,6 +48,8 @@ browser → /api/* → Vite proxy (dev) → Bun server (src/server/worker.ts)
   /api/config/*    config/routes.ts      PAT store, /user probe (login), test/save
   /api/queue       github/queue.ts       one GraphQL search PER VIEW, parallel (see below)
   /api/prs/:o/:r/:n[...]  github/routes.ts  detail (GraphQL) · files (REST+fallback) ·
+                                            blob (one file at a commit, for diff-pane
+                                            context expansion) ·
                                             approve · submit  ← the only two GitHub writes
   /api/reviews/:prId  reviews/routes.ts  local pending-review draft (GET/PUT/DELETE)
   /api/views       views/routes.ts       saved queue views (created/edited/imported from the
@@ -280,6 +282,27 @@ One controlled `CodeView` hosts every file (`components/pr/DiffPane.tsx`):
   `@@` counts never move and every anchor, line click and `scrollTo` still addresses the same
   lines. Annotated lines (threads, staged comments, findings, the composer) are passed in as
   `KeepLines` and never fold, or their cards would vanish with them.
+- **Unmodified context expands, and it costs ONE fetch** (`components/pr/expandContext.ts`):
+  a patch-parsed diff is `isPartial`, so the library shows no expand chevron until
+  `options.loadDiffFiles` can hand it both full sides — supplying that loader IS the feature
+  (the chevrons, the 20-line chunking, shift-click-for-everything are all the library's).
+  The loader fetches only the NEW file (`GET …/blob?path=&sha=`, cached per commit through
+  the query client) and derives the old side with `reversePatch` (`shared/gh/patch.ts`,
+  TESTED against live PRs): outside the hunks both sides are identical by definition and
+  inside them the `-` lines are the old text verbatim. Do NOT "fix" this by fetching the base
+  file — we carry no base oid, and the base BRANCH tip is not the merge base GitHub diffed
+  against, so a moved base would render context that disagrees with the patch. Reverse the
+  patch the pane is CURRENTLY showing (the hide-whitespace rewrite when that toggle is on),
+  or a folded pair's stand-in line re-exposes its whitespace on the left.
+- **Expanded lines are NOT commentable.** They sit outside the diff and GitHub's review API
+  rejects a comment there, so `onLineClick` bails on `isCommentableLine` (`annotations.ts`,
+  where this pane's library↔app vocabulary lives) — otherwise the comment stages fine and
+  dies with a per-comment 422 at submit.
+- **The parsed `fileDiff`'s IDENTITY is load-bearing**: the loader hydrates that exact object
+  in place and the library keys expansion state to it (`fileDiff !== this.fileDiff` resets the
+  file), so the parse must hold still while the patch text does — `parsePatchFiles` has no
+  cache of its own. Keep it and its patch paired: the loader refuses a `fileDiff` it wasn't
+  handed with that patch rather than reversing another one against it.
 - **`options.itemMetrics.diffHeaderHeight` MUST match our header's real height** (36px = `h-9`).
   The library reserves 44 by default, so every item's layout height silently ran 8px ahead of what
   it renders; when the layout total exceeds the real content, CodeView centres its render window in

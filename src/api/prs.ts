@@ -1,7 +1,7 @@
 import { API_PATHS } from "../shared/api-paths";
 import { parsePrId } from "../shared/gh/prKey";
 import type { FileChange, PrDetail, PrId } from "../shared/review-types";
-import { apiRequest } from "./http";
+import { apiRequest, apiRequestText } from "./http";
 
 export function prApiBase(prId: PrId): string {
   const ref = parsePrId(prId);
@@ -44,4 +44,20 @@ export async function fetchPrFiles(
     { signal },
   );
   return files;
+}
+
+/**
+ * One file's text at a commit. The diff pane fetches this to hydrate a
+ * patch-parsed diff so unmodified context can be expanded.
+ */
+export function fetchPrFileAtRef(
+  prId: PrId,
+  path: string,
+  sha: string,
+  signal?: AbortSignal,
+): Promise<string> {
+  return apiRequestText(
+    `${prApiBase(prId)}/blob?path=${encodeURIComponent(path)}&sha=${encodeURIComponent(sha)}`,
+    { signal },
+  );
 }

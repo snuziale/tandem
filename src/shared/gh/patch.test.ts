@@ -6,6 +6,7 @@ import {
   diffLineIndex,
   hasHunks,
   hideWhitespaceChanges,
+  reversePatch,
   splitRawDiff,
 } from "./patch";
 
@@ -210,5 +211,78 @@ describe("hideWhitespaceChanges", () => {
     const after = diffLineIndex(hideWhitespaceChanges(patch));
     expect([...after.left]).toEqual([...before.left]);
     expect([...after.right]).toEqual([...before.right]);
+  });
+});
+
+describe("reversePatch", () => {
+  it("restores a changed line from the patch's deletion side", () => {
+    expect(reversePatch("a\nb2\nc\n", "@@ -1,3 +1,3 @@\n a\n-b\n+b2\n c")).toBe(
+      "a\nb\nc\n",
+    );
+  });
+
+  it("copies everything outside the hunks straight across", () => {
+    const newFile = "l1\nl2\nl3\nl4\nl5\nX\nl7\n";
+    expect(reversePatch(newFile, "@@ -6,1 +6,1 @@\n-l6\n+X")).toBe(
+      "l1\nl2\nl3\nl4\nl5\nl6\nl7\n",
+    );
+  });
+
+  it("drops added lines and keeps added-only files intact", () => {
+    expect(reversePatch("a\nnew\nb\n", "@@ -1,2 +1,3 @@\n a\n+new\n b")).toBe(
+      "a\nb\n",
+    );
+  });
+
+  it("honours a no-newline marker on the old side only", () => {
+    expect(
+      reversePatch(
+        "a\nb\n",
+        "@@ -1,2 +1,2 @@\n a\n-b\n\\ No newline at end of file\n+b",
+      ),
+    ).toBe("a\nb");
+    // The same marker under a `+` line describes the NEW file — the old side
+    // still ends with a newline.
+    expect(
+      reversePatch(
+        "a\nb",
+        "@@ -1,2 +1,2 @@\n a\n-b\n+b\n\\ No newline at end of file",
+      ),
+    ).toBe("a\nb\n");
+  });
+
+  it("handles multiple hunks in one file", () => {
+    const newFile = "1\nB\n3\n4\n5\n6\nG\n8\n";
+    const patch =
+      "@@ -1,3 +1,3 @@\n 1\n-b\n+B\n 3\n@@ -6,3 +6,3 @@\n 6\n-g\n+G\n 8";
+    expect(reversePatch(newFile, patch)).toBe("1\nb\n3\n4\n5\n6\ng\n8\n");
+  });
+
+  it("round-trips a hide-whitespace patch to the new text (both sides agree)", () => {
+    const newFile = "a\n    x\nc\n";
+    const raw = "@@ -1,3 +1,3 @@\n a\n-  x\n+    x\n c\n";
+    const folded = hideWhitespaceChanges(raw);
+    // The hunk held nothing but whitespace, so `-w` drops it and the old side
+    // reconstructs as the new file — exactly what the folded diff claims.
+    expect(hasHunks(folded)).toBe(false);
+    expect(reversePatch(newFile, folded)).toBe(newFile);
+  });
+
+  it("gives a folded whitespace pair the SAME text on both sides", () => {
+    // The hunk mixes a real change with a whitespace-only one. `-w` keeps the
+    // real change and stands the pair down to a context line carrying the NEW
+    // text — so the reconstructed old side must carry that text too, or the
+    // hydrated split view would re-expose the whitespace on the left.
+    const newFile = "head\nB\n    ws\ntail\n";
+    const raw = "@@ -1,4 +1,4 @@\n head\n-b\n+B\n-  ws\n+    ws\n tail\n";
+    const folded = hideWhitespaceChanges(raw);
+    expect(folded).toContain("     ws"); // context prefix + the post-change text
+    expect(reversePatch(newFile, folded)).toBe("head\nb\n    ws\ntail\n");
+    // Against the RAW patch the old side is the true file, whitespace and all.
+    expect(reversePatch(newFile, raw)).toBe("head\nb\n  ws\ntail\n");
+  });
+
+  it("is a no-op for a patch with no hunks", () => {
+    expect(reversePatch("a\nb\n", "")).toBe("a\nb\n");
   });
 });

@@ -1,5 +1,5 @@
-import { useMemo } from "react";
-import { parsePatchFiles } from "@pierre/diffs";
+import { useCallback, useEffect, useMemo, useRef } from "react";
+import { parsePatchFiles, type FileDiffMetadata } from "@pierre/diffs";
 import {
   CodeView,
   type CodeViewDiffItem,
@@ -7,6 +7,7 @@ import {
   type CodeViewReactOptions,
   type DiffLineAnnotation,
 } from "@pierre/diffs/react";
+import { useQueryClient } from "@tanstack/react-query";
 import type { Finding } from "../../shared/agent-types";
 import {
   buildFilePatch,
@@ -17,13 +18,20 @@ import {
 import type {
   FileChange,
   PendingComment,
+  PrId,
   ReviewThread,
 } from "../../shared/review-types";
 import { resolveTheme, useThemeStore } from "../../state/themeStore";
 import { useUiStore } from "../../state/uiStore";
 import { FindingCard } from "../agent/FindingCard";
-import { annotationSideOf, diffSideOf, type TandemAnno } from "./annotations";
+import {
+  annotationSideOf,
+  diffSideOf,
+  isCommentableLine,
+  type TandemAnno,
+} from "./annotations";
 import { DiffFileHeader } from "./DiffFileHeader";
+import { loadDiffFileSides } from "./expandContext";
 import { ComposerCard } from "./ComposerCard";
 import { PendingCard } from "./PendingCard";
 import { ThreadCard } from "./ThreadCard";
@@ -31,6 +39,7 @@ import { ThreadCard } from "./ThreadCard";
 export type DiffPaneHandle = CodeViewHandle<TandemAnno>;
 
 type Props = {
+  prId: PrId;
   headSha: string;
   files: FileChange[];
   threads: ReviewThread[];
@@ -53,6 +62,14 @@ type Props = {
 };
 
 const EMPTY_ANNOS: DiffLineAnnotation<TandemAnno>[] = [];
+/** Module constant so the keep map keeps ONE identity while hide-whitespace is
+ * off — that is what holds the parsed diffs (and the reader's expansions)
+ * still across annotation changes. See the keepByPath memo. */
+const NO_KEEP_BY_PATH: ReadonlyMap<string, KeepLines> = new Map();
+
+// GitHub's own step. The library defaults to 100, which overshoots what a
+// reviewer wants when they are peeking just above a hunk.
+const EXPANSION_LINE_COUNT = 20;
 
 function keepLinesOf(annotations: DiffLineAnnotation<TandemAnno>[]): KeepLines {
   const left = new Set<number>();
@@ -83,6 +100,7 @@ function versionOf(
 }
 
 export function DiffPane({
+  prId,
   headSha,
   files,
   threads,
@@ -155,16 +173,39 @@ export function DiffPane({
     return map;
   }, [threads, pendingComments, findings, composerTarget]);
 
-  const { items, whitespaceOnlyPaths } = useMemo(() => {
-    const out: CodeViewDiffItem<TandemAnno>[] = [];
+  // Whatever is annotated stays unfolded, or its card goes with the line — so
+  // the hide-whitespace rewrite depends on the annotations, and only then.
+  //
+  // This is the ONE gate that keeps the parse below stable, and the parse's
+  // object identity is load-bearing: `loadDiffFiles` hydrates that exact object
+  // in place and the library keys expansion state to it
+  // (`fileDiff !== this.fileDiff` resets the file). With the toggle off this
+  // returns one identity forever, so staging a comment cannot cost the reader
+  // an expanded region. With it ON the patch really does depend on the
+  // annotations, so an edit re-parses and expansions reset — the honest
+  // behaviour, not something to paper over.
+  const keepByPath = useMemo(() => {
+    if (!hideWhitespace) return NO_KEEP_BY_PATH;
+    const map = new Map<string, KeepLines>();
+    for (const [path, annos] of annotationsByPath)
+      map.set(path, keepLinesOf(annos));
+    return map;
+  }, [hideWhitespace, annotationsByPath]);
+
+  // Patch and parse together: they recompute on exactly the same inputs, and
+  // pairing them is what lets the loader prove a patch belongs to the fileDiff
+  // it was handed rather than trusting a lookup by path.
+  const { diffByPath, whitespaceOnlyPaths } = useMemo(() => {
+    const diffs = new Map<
+      string,
+      { fileDiff: FileDiffMetadata; patch: string }
+    >();
     const whitespaceOnly = new Set<string>();
     for (const file of files) {
       const raw = buildFilePatch(file);
       if (!raw) continue; // binary / tooLarge — listed in the FileTree with a badge instead
-      const annotations = annotationsByPath.get(file.path) ?? EMPTY_ANNOS;
-      // Whatever is annotated stays unfolded, or its card goes with the line.
       const patch = hideWhitespace
-        ? hideWhitespaceChanges(raw, keepLinesOf(annotations))
+        ? hideWhitespaceChanges(raw, keepByPath.get(file.path))
         : raw;
       // Headers but no hunks: everything this file changed was whitespace.
       if (hideWhitespace && !hasHunks(patch)) whitespaceOnly.add(file.path);
@@ -172,19 +213,61 @@ export function DiffPane({
         patch,
         `${headSha}:${file.path}:${hideWhitespace ? "w" : "a"}`,
       )[0]?.files[0];
-      if (!fileDiff) continue;
+      if (fileDiff) diffs.set(file.path, { fileDiff, patch });
+    }
+    return { diffByPath: diffs, whitespaceOnlyPaths: whitespaceOnly };
+  }, [files, hideWhitespace, keepByPath, headSha]);
+
+  const items = useMemo(() => {
+    const out: CodeViewDiffItem<TandemAnno>[] = [];
+    for (const file of files) {
+      const parsed = diffByPath.get(file.path);
+      if (!parsed) continue;
+      const annotations = annotationsByPath.get(file.path) ?? EMPTY_ANNOS;
       const collapsed = collapsedPaths.has(file.path);
       out.push({
         id: file.path,
         type: "diff",
-        fileDiff,
+        fileDiff: parsed.fileDiff,
         annotations,
         collapsed,
         version: versionOf(headSha, annotations, collapsed, hideWhitespace),
       });
     }
-    return { items: out, whitespaceOnlyPaths: whitespaceOnly };
-  }, [files, headSha, annotationsByPath, collapsedPaths, hideWhitespace]);
+    return out;
+  }, [
+    files,
+    diffByPath,
+    annotationsByPath,
+    collapsedPaths,
+    headSha,
+    hideWhitespace,
+  ]);
+
+  // The loader must not re-identify when the diffs do: a new `loadDiffFiles`
+  // makes the whole options object unequal and pushes a setOptions through the
+  // library on every annotation edit. It only ever runs on a chevron click,
+  // long after render, so it reads off a ref — the same snapshot pattern the
+  // detail key handler uses. The identity check matters: the library may hand
+  // back a fileDiff the pane has since replaced, and reversing a DIFFERENT
+  // patch would render a wrong old side with nothing to show for it.
+  const queryClient = useQueryClient();
+  const diffsRef = useRef(diffByPath);
+  useEffect(() => {
+    diffsRef.current = diffByPath;
+  }, [diffByPath]);
+  const loadDiffFiles = useCallback(
+    (fileDiff: FileDiffMetadata) => {
+      const parsed = diffsRef.current.get(fileDiff.name);
+      return loadDiffFileSides(fileDiff, {
+        queryClient,
+        prId,
+        headSha,
+        patch: parsed?.fileDiff === fileDiff ? parsed.patch : undefined,
+      });
+    },
+    [queryClient, prId, headSha],
+  );
 
   const options = useMemo<CodeViewReactOptions<TandemAnno>>(
     () => ({
@@ -200,9 +283,14 @@ export function DiffPane({
       // in the leftover space when the layout total exceeds the real content.
       itemMetrics: { diffHeaderHeight: 36 },
       lineHoverHighlight: "line",
+      // A patch-parsed diff is partial, so the expand chevrons appear only
+      // once a loader can hand the library both full sides.
+      loadDiffFiles,
+      expansionLineCount: EXPANSION_LINE_COUNT,
       // Clicking any line opens the composer there (spec §3.2).
       onLineClick: (props, context) => {
         if (!("annotationSide" in props) || context.type !== "diff") return;
+        if (!isCommentableLine(props.lineType)) return;
         setComposerTarget({
           path: context.item.id,
           line: props.lineNumber,
@@ -210,7 +298,7 @@ export function DiffPane({
         });
       },
     }),
-    [diffStyle, themePreference, setComposerTarget],
+    [diffStyle, themePreference, setComposerTarget, loadDiffFiles],
   );
 
   if (items.length === 0) {

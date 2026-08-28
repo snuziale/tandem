@@ -8,8 +8,7 @@
 import type { PrRef } from "../../../shared/gh/prKey";
 import type { FileChange, PrDetail } from "../../../shared/review-types";
 import type { Config } from "../../config/store";
-import { rest, GitHubError } from "../../github/client";
-import { fetchPrFiles } from "../../github/files";
+import { fetchFileAtRef, fetchPrFiles } from "../../github/files";
 import { fetchPrDetail } from "../../github/pr";
 
 export type ChatContextSource = { detail: PrDetail; files: FileChange[] };
@@ -52,7 +51,8 @@ const MAX_FILE_CHARS = 40_000;
 /**
  * One whole file at the PR's head sha — the payload of a `needContext` hop.
  * Read-only, and the model never gets to name a repo: owner/repo come from the
- * session's own PR ref.
+ * session's own PR ref. Truncation is a PROMPT concern and lives here; the
+ * fetch itself is the shared one.
  */
 export async function fetchFileAtSha(
   cfg: Config,
@@ -60,29 +60,17 @@ export async function fetchFileAtSha(
   path: string,
   sha: string,
 ): Promise<string | null> {
-  // Path traversal is meaningless against the contents API (it resolves inside
-  // the repo tree), but a leading slash or `..` just 404s — reject early.
-  if (!path || path.startsWith("/") || path.includes("..")) return null;
+  let text: string | null;
   try {
-    const { data } = await rest<{ content?: string; encoding?: string }>(
-      cfg.github,
-      `/repos/${ref.owner}/${ref.repo}/contents/${path
-        .split("/")
-        .map(encodeURIComponent)
-        .join("/")}?ref=${encodeURIComponent(sha)}`,
-    );
-    if (data.content && data.encoding === "base64") {
-      const text = Buffer.from(data.content, "base64").toString("utf8");
-      return text.length > MAX_FILE_CHARS
-        ? `${text.slice(0, MAX_FILE_CHARS)}\n… (truncated)`
-        : text;
-    }
-    return null;
+    text = await fetchFileAtRef(cfg, ref, path, sha);
   } catch (e) {
-    if (e instanceof GitHubError && e.status === 404) return null;
     console.error(
       `[chat] context fetch failed for ${path}: ${e instanceof Error ? e.message : e}`,
     );
     return null;
   }
+  if (text === null) return null;
+  return text.length > MAX_FILE_CHARS
+    ? `${text.slice(0, MAX_FILE_CHARS)}\n… (truncated)`
+    : text;
 }
