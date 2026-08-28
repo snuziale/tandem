@@ -1,5 +1,7 @@
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Badge,
+  Button,
   Tooltip,
   TooltipContent,
   TooltipPortal,
@@ -18,9 +20,10 @@ import {
   pulseStateOf,
   type PulseOptions,
 } from "../../shared/pulse";
-import { Check } from "lucide-react";
-import type { PullRequest } from "../../shared/review-types";
+import { Check, Play } from "lucide-react";
+import type { PrId, PullRequest } from "../../shared/review-types";
 import { PULSE_COLOR, PULSE_ICON, SIGNAL_ICON } from "./pulseIcons";
+import { startRunAction } from "../../actions/queue";
 import { relativeAge } from "../../utils/time";
 import { AgentSpinner } from "../agent/AgentSpinner";
 import { SeverityBadge } from "../agent/SeverityBadge";
@@ -319,10 +322,18 @@ const TALLY_ORDER: Severity[] = [
  * or two depending on which they were, so scrolling the queue slid this
  * column's text up and down against the five beside it that never move.
  */
-export function AgentCell({ run }: { run: AgentRun | undefined }) {
+export function AgentCell({
+  prId,
+  run,
+}: {
+  prId: PrId;
+  run: AgentRun | undefined;
+}) {
   return (
     <span className="flex flex-col gap-1 min-w-0">
-      <span className="text-xs truncate">{statusLine(run)}</span>
+      <span className="text-xs truncate">
+        {run ? statusLine(run) : <RunAgentButton prId={prId} />}
+      </span>
       {/* Reserved, and it never wraps: the row is a fixed h-14 and clips, so a
           wrapping chip list would silently lose its own second row. */}
       <span className="flex gap-1 h-4 items-center overflow-hidden">
@@ -332,9 +343,41 @@ export function AgentCell({ run }: { run: AgentRun | undefined }) {
   );
 }
 
-function statusLine(run: AgentRun | undefined): React.ReactNode {
-  if (!run) return <span className="text-muted-foreground/60">—</span>;
+/**
+ * The never-run state is the DEFAULT one (`settings.autoRunEnabled` is off, so
+ * nothing runs on its own) — it used to be an em-dash, which said the agent had
+ * nothing to say rather than that nobody had asked it. The button lives on the
+ * first line and is height-clamped to it: the agent column is always two lines
+ * and an h-7 control here would push the chip row down on exactly the rows that
+ * have no chips, which is the drift the two-line rule exists to prevent.
+ */
+function RunAgentButton({ prId }: { prId: PrId }) {
+  const queryClient = useQueryClient();
+  const start = useMutation({
+    mutationFn: () => startRunAction(queryClient, prId),
+  });
+  return (
+    <Button
+      size="2xs"
+      variant="ghost"
+      className="h-4 -ml-1.5 px-1.5 gap-1 text-muted-foreground hover:text-foreground"
+      disabled={start.isPending}
+      onClick={(e) => {
+        e.stopPropagation();
+        start.mutate();
+      }}
+    >
+      {start.isPending ? (
+        <AgentSpinner className="size-3" />
+      ) : (
+        <Play className="size-3" />
+      )}
+      Run agent
+    </Button>
+  );
+}
 
+function statusLine(run: AgentRun): React.ReactNode {
   switch (run.status) {
     case "queued":
     case "fetching":

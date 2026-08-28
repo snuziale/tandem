@@ -130,7 +130,7 @@ export function QueueRow({
       </div>
       <SizeCell pr={pr} maxChurn={maxChurn} />
       <AgeCell pr={pr} now={now} />
-      <AgentCell run={run} />
+      <AgentCell prId={pr.prId} run={run} />
       {/* invisible (not hidden): the actions always occupy their column, so
           hovering never reflows the row. */}
       <div className="invisible group-hover:visible flex items-center justify-end gap-1">
