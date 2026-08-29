@@ -127,7 +127,7 @@ export function QueueRow({
           and high on two-line rows, so the column's most-scanned element
           drifted up and down as you moved through the queue. */}
       <div className="flex flex-col gap-1 min-w-0 items-start">
-        <ReviewCell pr={pr} />
+        <ReviewCell pr={pr} viewerLogin={pulseOpts.viewerLogin} />
         <SignalsCell pr={pr} />
       </div>
       <SizeCell pr={pr} maxChurn={maxChurn} />

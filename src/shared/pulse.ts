@@ -75,8 +75,24 @@ export function idleDaysOf(pr: PullRequest, now: number): number {
   return Math.max(0, (now - then) / DAY);
 }
 
+/**
+ * Approved in the sense that MATTERS here: nobody's sign-off is still owed.
+ *
+ * The raw count is only the fallback, and it must not beat an explicit
+ * REVIEW_REQUIRED. That verdict is GitHub's own answer to "are the required
+ * approvals in?", and under CODEOWNERS (or any required-reviewers rule) a
+ * teammate's approval leaves it at REVIEW_REQUIRED with the codeowners still
+ * outstanding. Counting that as approved sent the PR to `ready` — "approved
+ * and green; someone just has to merge it" — which is the one state read as a
+ * one-click close-out, so it was the most expensive place to be wrong.
+ *
+ * The count still carries repos with no branch protection, where the decision
+ * is null however many approvals a PR has (see ReviewCell).
+ */
 export function isApproved(pr: PullRequest): boolean {
-  return pr.reviewDecision === "APPROVED" || pr.approvalCount > 0;
+  if (pr.reviewDecision === "APPROVED") return true;
+  if (pr.reviewDecision === "REVIEW_REQUIRED") return false;
+  return pr.approvalCount > 0;
 }
 
 /**

@@ -75,7 +75,10 @@ const CHECK_LABELS: Record<string, string> = {
 };
 
 const REVIEW_LABELS: Record<string, string> = {
-  awaiting: "awaiting you",
+  // Not "awaiting you": the bucket is GitHub's REVIEW_REQUIRED, which says a
+  // required review is missing and never says whose — and on a view of your
+  // own PRs it is the codeowners', not yours. Same fix as ReviewCell.
+  awaiting: "awaiting review",
   changes: "changes requested",
   approved: "approved",
   draft: "draft",

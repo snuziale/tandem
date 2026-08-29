@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   blockedOn,
+  isApproved,
   dedupePrs,
   groupPullRequests,
   pulseCounts,
@@ -71,10 +72,34 @@ describe("blockedOn", () => {
     expect(blockedOn(pr({ approvalCount: 1 }))).toBe(null);
   });
 
+  // CODEOWNERS: a teammate approved, the required reviewer has not, so
+  // GitHub still says REVIEW_REQUIRED. The count must not overrule it.
+  it("keeps a required review outstanding despite an approval", () => {
+    expect(
+      blockedOn(pr({ approvalCount: 1, reviewDecision: "REVIEW_REQUIRED" })),
+    ).toBe("reviewer");
+  });
+
   it("author-side wins over reviewer-side", () => {
     expect(
       blockedOn(pr({ changesRequestedCount: 1, requestedReviewers: ["bob"] })),
     ).toBe("author");
+  });
+});
+
+describe("isApproved", () => {
+  it("takes the decision when GitHub computed one", () => {
+    expect(isApproved(pr({ reviewDecision: "APPROVED" }))).toBe(true);
+    expect(
+      isApproved(pr({ reviewDecision: "REVIEW_REQUIRED", approvalCount: 3 })),
+    ).toBe(false);
+  });
+
+  // The fallback that exists for repos with no branch protection, where the
+  // decision stays null however many approvals a PR has.
+  it("falls back to the count only when there is no decision", () => {
+    expect(isApproved(pr({ approvalCount: 1 }))).toBe(true);
+    expect(isApproved(pr())).toBe(false);
   });
 });
 
@@ -134,6 +159,21 @@ describe("pulseStateOf", () => {
         opts,
       ),
     ).toBe("ready");
+  });
+
+  // Your own PR, one teammate's approval, codeowners still owed: it is NOT
+  // ready to merge, and calling it that hides the one thing still needed.
+  it("does not call a PR awaiting codeowners ready", () => {
+    expect(
+      pulseStateOf(
+        pr({
+          author: "me",
+          approvalCount: 1,
+          reviewDecision: "REVIEW_REQUIRED",
+        }),
+        opts,
+      ),
+    ).toBe("blocked-on-them");
   });
 
   it("calls a long-silent changes-requested PR rotting, not blocked", () => {

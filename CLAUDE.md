@@ -873,6 +873,14 @@ picks by `process.platform` at init-script build time.
   many approvals a PR has. The badge (`ReviewCell`) and `reviewBucket` therefore read
   `viewerLatestReview` too and let YOUR verdict win — otherwise a PR you approved yourself
   renders "No review". Keep those two in step.
+- **`REVIEW_REQUIRED` names no person.** It means "a required review is still missing", never
+  whose — so on a view of your OWN PRs it is the codeowners', not you. `ReviewCell` resolves it
+  through `awaitsViewer` ("Awaiting you" vs "Awaiting review") and the drawer's bucket is labelled
+  "awaiting review"; reading it as "you" was right only by coincidence on `review-requested:@me`.
+  For the same reason `isApproved` (`shared/pulse.ts`) lets an explicit `REVIEW_REQUIRED` BEAT
+  `approvalCount` — under CODEOWNERS a teammate's approval leaves the decision required, and
+  counting it as approved put the PR in `ready`, the one state that reads as a one-click merge.
+  The raw count is the fallback for repos with no branch protection, nothing more.
 - **A description image or demo video renders as a broken box**: something bypassed the attachment
   proxy. Either the response was fetched without `bodyHTML` (nothing to resolve against, so the
   markdown is left untouched by design) or a `<video>` lost its tag to the sanitizer. Never "fix"

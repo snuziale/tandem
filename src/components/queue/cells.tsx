@@ -16,6 +16,7 @@ import {
 import {
   PULSE_HINTS,
   PULSE_LABELS,
+  awaitsViewer,
   isAutoMerging,
   pulseStateOf,
   type PulseOptions,
@@ -169,15 +170,19 @@ export function ChecksCell({ pr }: { pr: PullRequest }) {
 export function ReviewCell({
   pr,
   showDraft = true,
+  viewerLogin,
 }: {
   pr: PullRequest;
   showDraft?: boolean;
+  /** Passed in, never read from a hook here: this renders once per queue row,
+   * and one badge must not subscribe 50 components to a query. */
+  viewerLogin?: string | null;
 }) {
   // Resolve the verdict first, render once. "You requested changes" is the
   // longest label and it does not fit the queue column, so every badge
   // truncates — a rule that has to hold for all of them, which is easier to
   // see when there is one <Badge> rather than seven.
-  const { variant, label, extra } = reviewBadge(pr, showDraft);
+  const { variant, label, extra } = reviewBadge(pr, showDraft, viewerLogin);
   return (
     <Badge variant={variant} className={cn("max-w-full truncate", extra)}>
       {label}
@@ -191,13 +196,29 @@ type ReviewBadge = {
   extra?: string;
 };
 
+/** The two verdicts that name no person — they read the same whoever is
+ * looking. REVIEW_REQUIRED is the third and is resolved in `reviewBadge`. */
 const DECISION_BADGE: Record<string, ReviewBadge> = {
   CHANGES_REQUESTED: { variant: "error", label: "Changes requested" },
   APPROVED: { variant: "success", label: "Approved" },
-  REVIEW_REQUIRED: { variant: "warning", label: "Awaiting you" },
 };
 
-function reviewBadge(pr: PullRequest, showDraft: boolean): ReviewBadge {
+/**
+ * Same warning token either way: "awaiting" is ONE review state and the color
+ * is the state, not how much it is your problem. Whose court it is in is the
+ * pulse column's job, one cell to the left.
+ */
+const AWAITING_YOU: ReviewBadge = { variant: "warning", label: "Awaiting you" };
+const AWAITING_REVIEW: ReviewBadge = {
+  variant: "warning",
+  label: "Awaiting review",
+};
+
+function reviewBadge(
+  pr: PullRequest,
+  showDraft: boolean,
+  viewerLogin: string | null | undefined,
+): ReviewBadge {
   if (pr.isDraft && showDraft)
     return {
       variant: "outline",
@@ -214,6 +235,14 @@ function reviewBadge(pr: PullRequest, showDraft: boolean): ReviewBadge {
     pr.reviewDecision !== "CHANGES_REQUESTED"
   )
     return { variant: "error", label: "You requested changes" };
+  // REVIEW_REQUIRED means "a required review is still missing" — it never says
+  // WHOSE. Reading it as "Awaiting you" was right only by coincidence on a
+  // review-requested:@me view; on your own PRs it is exactly inverted, since
+  // the missing review is the codeowners'. `awaitsViewer` is the one rule for
+  // "it is yours" (and it already refuses a team request, which is not
+  // resolvable to a membership here).
+  if (pr.reviewDecision === "REVIEW_REQUIRED")
+    return awaitsViewer(pr, viewerLogin) ? AWAITING_YOU : AWAITING_REVIEW;
   return (
     DECISION_BADGE[pr.reviewDecision ?? ""] ?? {
       variant: "secondary",

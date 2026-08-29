@@ -26,6 +26,7 @@ import { HeaderDivider } from "../layout/AppHeader";
 import { Markdown } from "../common/Markdown";
 import { Shortcut } from "../common/Kbd";
 import { ReviewCell } from "../queue/cells";
+import { useConfigStatus } from "../../hooks/useConfigStatus";
 import { ChecksSummary } from "./ChecksSummary";
 
 /**
@@ -256,6 +257,10 @@ function DescriptionToggle({
 
 export function PrHeader({ pr }: { pr: PullRequest }) {
   const commits = pr.commitCount ?? 1;
+  // The review badge names a person for REVIEW_REQUIRED, so it needs to know
+  // who you are. One header, one subscription — the queue passes its already
+  // resolved login down a row instead.
+  const viewerLogin = useConfigStatus().data?.login ?? null;
   // Local, and closed on every PR: the description is something you consult
   // once, not a pane preference.
   const [descOpen, setDescOpen] = useState(false);
@@ -281,7 +286,7 @@ export function PrHeader({ pr }: { pr: PullRequest }) {
         <CopyRef branch={pr.headRef} />
         <span className="flex-1" />
         <div className="flex items-center gap-3 font-mono">
-          <ReviewCell pr={pr} showDraft={false} />
+          <ReviewCell pr={pr} showDraft={false} viewerLogin={viewerLogin} />
           <span className="text-muted-foreground">{pr.changedFiles} files</span>
           <span>
             <span className="text-emerald-400">+{pr.additions}</span>{" "}
