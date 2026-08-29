@@ -412,12 +412,14 @@ function ActiveCard({
 /** The collapsed post-mortem: what the run planned, and how each stage went. */
 function RunLog({
   run,
-  defaultOpen = false,
+  defaultOpen,
 }: {
   run: AgentRun;
   defaultOpen?: boolean;
 }) {
-  const [open, setOpen] = useState(defaultOpen);
+  // Default in the body, never in the parameter — see the React Compiler
+  // pitfall in CLAUDE.md.
+  const [open, setOpen] = useState(defaultOpen ?? false);
   const steps = run.steps ?? [];
   if (steps.length === 0 && !run.plan) return null;
   return (

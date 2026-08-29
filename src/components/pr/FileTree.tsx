@@ -34,6 +34,31 @@ const GIT_STATUS: Record<FileChange["status"], GitStatusEntry["status"]> = {
   unchanged: "modified",
 };
 
+/** Point the tree at exactly ONE path and reveal it. `item.select()` is
+ * additive, so everything else has to be deselected first — and it echoes back
+ * through `onSelectionChange`, so `applying` has to come down however this
+ * exits or the tree goes deaf to real clicks for the rest of the session.
+ *
+ * Module-level on purpose: the React Compiler skips a whole COMPONENT over a
+ * `finally` with no catch, or an optional chain inside a `try`. It compiles
+ * components and hooks, so down here both are free. */
+function selectOnly(
+  model: FileTreeModel,
+  selectedPath: string,
+  applying: { current: boolean },
+) {
+  applying.current = true;
+  try {
+    for (const path of model.getSelectedPaths())
+      if (path !== selectedPath) model.getItem(path)?.deselect();
+    const item = model.getItem(selectedPath);
+    if (item && !item.isSelected()) item.select();
+    model.scrollToPath(selectedPath, { offset: "nearest" });
+  } finally {
+    applying.current = false;
+  }
+}
+
 // The PR file tree on @pierre/trees: real hierarchy with flattened empty
 // dirs, always-virtualized, built-in search (the header's button / filters as
 // you type), git-status badges from the PR's change types, sticky folders,
@@ -48,7 +73,14 @@ export function FileTree({
 }: Props) {
   // The model is constructed ONCE (useFileTree); everything row decorations
   // need at render time is read through this ref so it never goes stale.
-  const stateRef = useRef({ files, viewedFiles, agentPaths });
+  // Indexed, not the raw arrays: `renderRowDecoration` runs per VISIBLE ROW,
+  // so a `files.find` and two `viewedFiles.includes` per row is O(files × rows)
+  // every decoration pass — ~12k comparisons on a 300-file PR.
+  const stateRef = useRef({
+    byPath: new Map(files.map((f) => [f.path, f])),
+    viewed: new Set(viewedFiles),
+    agentPaths,
+  });
 
   // `item.select()` fires onSelectionChange exactly like a click does, so the
   // effect below that makes the tree FOLLOW an external selection would echo
@@ -88,8 +120,8 @@ export function FileTree({
     },
     renderRowDecoration: ({ row }) => {
       if (row.kind !== "file") return null;
-      const { files, viewedFiles, agentPaths } = stateRef.current;
-      const file = files.find((f) => f.path === row.path);
+      const { byPath, viewed, agentPaths } = stateRef.current;
+      const file = byPath.get(row.path);
       if (!file) return null;
       const parts = [];
       if (agentPaths?.has(row.path))
@@ -106,11 +138,12 @@ export function FileTree({
           color: "var(--color-red-400, #f87171)",
         });
       }
-      if (viewedFiles.includes(row.path)) parts.push({ text: " ✓" });
+      const isViewed = viewed.has(row.path);
+      if (isViewed) parts.push({ text: " ✓" });
       return {
         text: parts.map((p) => p.text).join(""),
         parts,
-        title: `${file.path} · +${file.additions} −${file.deletions}${viewedFiles.includes(row.path) ? " · viewed" : ""}`,
+        title: `${file.path} · +${file.additions} −${file.deletions}${isViewed ? " · viewed" : ""}`,
       };
     },
   });
@@ -180,7 +213,11 @@ export function FileTree({
   // Refresh decorations when viewed/agent/file state changes: update the ref,
   // then push a fresh gitStatus array — the mutation re-renders visible rows.
   useEffect(() => {
-    stateRef.current = { files, viewedFiles, agentPaths };
+    stateRef.current = {
+      byPath: new Map(files.map((f) => [f.path, f])),
+      viewed: new Set(viewedFiles),
+      agentPaths,
+    };
     model.setGitStatus(gitStatusOf(files));
   }, [model, files, viewedFiles, agentPaths]);
 
@@ -194,16 +231,7 @@ export function FileTree({
   useEffect(() => {
     if (!selectedPath || selectedPath === lastExternal.current) return;
     lastExternal.current = selectedPath;
-    applyingExternal.current = true;
-    try {
-      for (const path of model.getSelectedPaths())
-        if (path !== selectedPath) model.getItem(path)?.deselect();
-      const item = model.getItem(selectedPath);
-      if (item && !item.isSelected()) item.select();
-      model.scrollToPath(selectedPath, { offset: "nearest" });
-    } finally {
-      applyingExternal.current = false;
-    }
+    selectOnly(model, selectedPath, applyingExternal);
   }, [model, selectedPath]);
 
   const [count] = useState(() => files.length);

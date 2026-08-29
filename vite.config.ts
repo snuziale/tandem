@@ -16,7 +16,21 @@ export default defineConfig(({ mode }) => {
   const bunServerTarget = `http://127.0.0.1:${env.TANDEM_SERVER_PORT ?? 5274}`
 
   return {
-    plugins: [react(), babel({ presets: [reactCompilerPreset()] }), tailwindcss()],
+    // `all_errors`, not the default `none`: a React Compiler bail-out is SILENT,
+    // and this app's PR screen has no hand-written memoization to fall back on —
+    // `PrDetailView` alone feeding `DiffPane` unmemoized props costs a full
+    // `setItems` (and, with hide-whitespace on, a re-parse of every file) per
+    // render. Lint cannot cover this: eslint-plugin-react-hooks bundles its OWN,
+    // newer compiler copy and stays quiet for 3 of the 4 shapes that bail this
+    // one — so the build is the only place the invariant can live. The shapes
+    // are listed in CLAUDE.md's React Compiler pitfall.
+    //
+    // Safe to be this strict: @rolldown/plugin-babel excludes node_modules by
+    // default, so third-party code never reaches the compiler. The cost is that
+    // a compiler BUMP introducing a new `Todo` on existing code breaks `pnpm
+    // dev` until that code is rewritten — deliberate, in the same spirit as the
+    // pinned bun-types and the crossed TypeScript deps.
+    plugins: [react(), babel({ presets: [reactCompilerPreset({ panicThreshold: 'all_errors' })] }), tailwindcss()],
     server: {
       proxy: {
         [API_PATHS.API]: {

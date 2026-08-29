@@ -39,15 +39,21 @@ export async function loadReview(prId: string): Promise<PendingReview | null> {
   return all.reviews[prId] ?? null;
 }
 
-export async function saveReview(review: PendingReview): Promise<void> {
+/** Returns the draft AS STORED — the client reconciles its optimistic copy
+ * from this, so re-reading the file to echo it back would be a second full
+ * read and parse on the hot path (every viewed toggle, every staged comment).
+ * It also comes from inside the mutation queue, so it cannot race a writer. */
+export async function saveReview(
+  review: PendingReview,
+): Promise<PendingReview> {
+  let stored: PendingReview = review;
   await enqueueMutation(file(), async () => {
     const all = await readAll();
-    all.reviews[review.prId] = {
-      ...review,
-      updatedAt: new Date().toISOString(),
-    };
+    stored = { ...review, updatedAt: new Date().toISOString() };
+    all.reviews[review.prId] = stored;
     await writeTextFile(file(), JSON.stringify(all, null, 2));
   });
+  return stored;
 }
 
 export async function deleteReview(prId: string): Promise<void> {

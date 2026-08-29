@@ -169,7 +169,7 @@ export function ChecksCell({ pr }: { pr: PullRequest }) {
  */
 export function ReviewCell({
   pr,
-  showDraft = true,
+  showDraft,
   viewerLogin,
 }: {
   pr: PullRequest;
@@ -182,7 +182,13 @@ export function ReviewCell({
   // longest label and it does not fit the queue column, so every badge
   // truncates — a rule that has to hold for all of them, which is easier to
   // see when there is one <Badge> rather than seven.
-  const { variant, label, extra } = reviewBadge(pr, showDraft, viewerLogin);
+  // Default in the body, never in the parameter — see the React Compiler
+  // pitfall in CLAUDE.md.
+  const { variant, label, extra } = reviewBadge(
+    pr,
+    showDraft ?? true,
+    viewerLogin,
+  );
   return (
     <Badge variant={variant} className={cn("max-w-full truncate", extra)}>
       {label}

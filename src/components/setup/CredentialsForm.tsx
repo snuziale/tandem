@@ -31,7 +31,7 @@ export function CredentialsForm({
   mode,
   onSaved,
   onCancel,
-  size = "default",
+  size,
 }: Props) {
   // One place decides the button scale for the whole form — apollo's own
   // default is what "default" means, so it stays undefined rather than named.

@@ -103,17 +103,20 @@ export function Panel({
 /** Field grid. Fields stay readable rather than stretching to the window: a
  * settings input 900px wide is harder to scan, not easier. */
 export function FieldGrid({
-  cols = 2,
+  cols,
   children,
 }: {
   cols?: 2 | 4;
   children: React.ReactNode;
 }) {
+  // Default in the body, never in the parameter — see the React Compiler
+  // pitfall in CLAUDE.md.
+  const columns = cols ?? 2;
   return (
     <div
       className={cn(
         "grid gap-3 sm:grid-cols-2",
-        cols === 4 ? "xl:grid-cols-4 max-w-5xl" : "xl:grid-cols-2 max-w-3xl",
+        columns === 4 ? "xl:grid-cols-4 max-w-5xl" : "xl:grid-cols-2 max-w-3xl",
       )}
     >
       {children}
@@ -228,7 +231,7 @@ export function TextField({
   label,
   value,
   onCommit,
-  allowEmpty = false,
+  allowEmpty,
 }: {
   label: string;
   value: string;

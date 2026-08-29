@@ -335,7 +335,23 @@ One controlled `CodeView` hosts every file (`components/pr/DiffPane.tsx`):
 - **The file header is ours** (`renderCustomHeader` → `components/pr/DiffFileHeader.tsx`): the
   library's default header can't do what we need. The path is a BUTTON that syncs the file tree
   (`onSelectPath` → `selectedPath`, no diff re-scroll), a chevron folds that one file, and
-  **viewed is a CHECKBOX per file, there** — the pane toolbar keeps only the `viewed n/m` tally.
+  **viewed is a CHECKBOX per file, there** — the pane toolbar keeps only the `viewed n/m` tally, which
+  wears a small meter beside the count (`ViewedMeter`) — `--tandem-bar`, NOT violet (that is
+  machine-authored, and this is the reviewer's own progress) and NOT a status token going green
+  at 100% (those belong to checks/review/pulse; a full bar already says done). Fixed width, so
+  the toolbar holds still as the count climbs.
+  It is drawn as a TITLE BAR (`bg-muted`, `border-y`), not a bare row, because the library's
+  in-diff "N unmodified lines" expander wears the same chevron at the same left edge — on a flat
+  background the two sat at one visual depth and nothing said which owned the file and which
+  owned a gap inside it. The bar's dead space toggles VIEWED (mouse-only: `aria-hidden` +
+  `tabIndex={-1}`, so the checkbox stays the ONE labelled control) — clicking a row to tick its
+  own checkbox is the ordinary pattern, and it folds as a consequence. The chevron beside it
+  stays a PURE fold and the two must NOT be merged into one state: `viewed` is a review CLAIM
+  that persists in the draft, counts in `viewed n/m` and ships with the submitted review, so
+  peeking back into a file you already ticked must not silently un-tick it, and folding a
+  generated file out of the way must not claim you read it. The bar must stay fully
+  opaque — it is sticky, so an `opacity` on it lets the file's own code scroll through its
+  title; that is why "viewed" dims an INNER wrapper instead.
   Header slots are light DOM (`slot="header-*"`), so Tailwind reaches them and content re-renders
   through React WITHOUT a `version` bump — verified for the viewed toggle.
 - **Folding is derived state, owned by `PrDetailView`** (`foldOverrides` + `collapsedPaths`): a
@@ -421,7 +437,8 @@ One controlled `CodeView` hosts every file (`components/pr/DiffPane.tsx`):
   file), so the parse must hold still while the patch text does — `parsePatchFiles` has no
   cache of its own. Keep it and its patch paired: the loader refuses a `fileDiff` it wasn't
   handed with that patch rather than reversing another one against it.
-- **`options.itemMetrics.diffHeaderHeight` MUST match our header's real height** (36px = `h-9`).
+- **`options.itemMetrics.diffHeaderHeight` MUST match our header's real height** (36px = `h-9`,
+  borders included — they sit inside the box, so `border-y` costs nothing).
   The library reserves 44 by default, so every item's layout height silently ran 8px ahead of what
   it renders; when the layout total exceeds the real content, CodeView centres its render window in
   the slack — with all files folded that showed up as ~90px of blank space above the first row.
@@ -441,8 +458,12 @@ visible rows. Git-status badges come from the PR's change types; decorations car
 viewed ✓, and the violet agent dot. External selection follows the `selectedPath` prop
 (select + scrollToPath) — and selection is SINGLE: `item.select()` is additive, so both the
 external-selection effect and `onSelectionChange` deselect everything else. One file is open in
-the diff, so more than one highlighted row is a lie. The tree owns its keyboard (arrows, a-z type-ahead, search) — the detail
-key handler bails when the event target is inside `[data-tandem-filetree]`.
+the diff, so more than one highlighted row is a lie. The tree owns only the keys it
+CONSUMES (arrows, Home/End, Enter, Space, Esc, F2) — the detail key handler bails on THOSE while
+focus is inside `[data-tandem-filetree]`, and on nothing else. It used to bail on every key there,
+so clicking a file silently killed the whole detail keymap until you clicked away. Letters are
+safe to take: a-z type-ahead is gated on `searchEnabled` and this tree passes `search: false`, so
+it never sees one; its search box is an `<input>`, which `isTypingTarget` already covers.
 
 Its shadow-DOM palette is OUR tokens, set as `--trees-theme-*` on the host (custom properties
 inherit through the shadow boundary). Do NOT go back to `themeToTreeStyles(shikiTheme)`: it paints
@@ -724,6 +745,16 @@ exceeds the loaded rows, says so above the charts. Never drop that caveat.
 
 ## Design decisions (settled — surface a tradeoff before changing)
 
+- **The React Compiler is load-bearing, and the BUILD is what enforces it** (2026-08-28): four
+  shapes make it skip a WHOLE component, silently — an eslint suppression of any `react-hooks`
+  rule; a `try` with no `catch`; an optional chain inside a `try`; and a default in a destructured
+  props parameter (`{ cols = 2 }`). Write `{ cols }` with `const columns = cols ?? 2` in the body,
+  keep `PrDetailView` suppression-free, and put a `try` that needs a bare `finally` in a
+  module-level function (the compiler only compiles components and hooks, so down there it is
+  free — that is why `FileTree`'s `selectOnly` is where it is). Lint CANNOT back this up:
+  `eslint-plugin-react-hooks` bundles its own, NEWER compiler copy and stays quiet for three of
+  the four, so `vite.config.ts` sets `panicThreshold: "all_errors"` and `ci.yml` runs `pnpm build`.
+  Never lower that threshold to quiet a build — rewrite the code the message points at.
 - **Typed server endpoints, not a GitHub passthrough proxy**: prewarm/pipeline need server-side
   normalized access, and "exactly two writes" stays auditable.
 - **Parallel per-view queue searches** (spec divergence, documented above).
@@ -856,6 +887,23 @@ picks by `process.platform` at init-script build time.
 - **`.gitattributes` pins `eol=lf`.** Without it git's Windows default checks the
   tree out as CRLF and prettier (no config here, so `endOfLine: "lf"`) reports
   every file as dirty.
+- **The PR screen hitches on a large PR** (folding, marking viewed, opening a composer): a
+  component bailed out of the **React Compiler**. `pnpm build` now fails when one does
+  (`panicThreshold: "all_errors"`), so this should only ever be seen mid-edit in `pnpm dev` — the
+  build message names the file and the shape. It matters because the compiler is the ONLY
+  memoization these components have: `PrDetailView` feeds `DiffPane`
+  `triageFindings`/`agentPaths`/`collapsedPaths`, and unmemoized those are fresh identities every
+  render, so `annotationsByPath` and `items` rebuild and a full `setItems` goes through CodeView —
+  and with hide-whitespace ON, `keepByPath` changes too, so EVERY file is re-`hideWhitespaceChanges`'d,
+  re-`parsePatchFiles`'d and re-indexed, which also throws away `fileDiff` identity and every
+  expanded region.
+- **A value the compiler cannot memoize poisons everything downstream.** It refuses any closure
+  capturing a binding declared LATER in the component, and that is silent — no bail, no message,
+  the function is just emitted raw. `scrollToTwice` sat below `selectFile`, so `selectFile`,
+  `focusFinding` and the key handler all missed, and two of them are dependencies of the main JSX
+  memo block — which re-rendered `FileTree`, `DiffPane` and `AgentPane` on every render for free.
+  Declare helpers ABOVE their callers.
+
 - **CodeView doesn't scroll / scrollTo dead**: container lost `overflow-y-auto` or bounded height.
 - **Annotations don't move/appear**: item `version` didn't change — check `versionOf` inputs.
 - **GraphQL 502s**: that's GitHub's ~10s budget. Never batch searches; keep the single retry.

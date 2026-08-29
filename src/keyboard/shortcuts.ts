@@ -53,7 +53,7 @@ export const SHORTCUT_GROUPS: ShortcutGroup[] = [
         keys: ["c"],
         action: "chat with the agent (about the focused finding)",
       },
-      { keys: ["v"], action: "mark selected file viewed" },
+      { keys: ["v"], action: "mark selected file viewed (first file if none)" },
       { keys: ["w"], action: "hide / show whitespace-only changes" },
       { keys: ["r"], action: "rerun agent" },
       { keys: ["a"], action: "set verdict: approve" },

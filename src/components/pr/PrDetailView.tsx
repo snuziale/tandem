@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   Button,
@@ -52,6 +52,22 @@ import { ReviewTray } from "./ReviewTray";
 import { Shortcut } from "../common/Kbd";
 
 const NO_FILES: string[] = [];
+
+/** Keys @pierre/trees consumes itself while the tree has focus. Everything
+ * else must fall through to the detail keymap — see the guard in `onKey`. */
+const TREE_OWNED_KEYS = new Set([
+  "ArrowDown",
+  "ArrowUp",
+  "ArrowLeft",
+  "ArrowRight",
+  "Home",
+  "End",
+  "Enter",
+  " ",
+  "Escape",
+  "F2",
+  "ContextMenu",
+]);
 
 /** Show/hide one side pane, so the diff can take the whole width. */
 function PaneToggle({
@@ -121,6 +137,57 @@ export function PrDetailView({ prId }: { prId: PrId }) {
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const files = filesQuery.data;
 
+  // Holding ] steps files faster than the follow-up scroll lands, and each
+  // stale timer yanks the pane to a file the reader has already left — that's
+  // the flicker. Only the newest follow-up survives.
+  const followUpScroll = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const scrollToTwice = (target: Parameters<DiffPaneHandle["scrollTo"]>[0]) => {
+    codeViewRef.current?.scrollTo(target);
+    if (followUpScroll.current) clearTimeout(followUpScroll.current);
+    followUpScroll.current = window.setTimeout(() => {
+      followUpScroll.current = null;
+      codeViewRef.current?.scrollTo(target);
+    }, 350) as unknown as ReturnType<typeof setTimeout>;
+  };
+  useEffect(
+    () => () => {
+      if (followUpScroll.current) clearTimeout(followUpScroll.current);
+    },
+    [],
+  );
+
+  /**
+   * Collapsing a file you are scrolled INSIDE of has to bring its header back
+   * into view, or you lose your place: @pierre/diffs anchors the viewport to
+   * the LINE you were looking at (`getScrollAnchor` falls through to
+   * `getNumericScrollAnchor` once an item's top is above the scroll position),
+   * and a collapsed file has no lines left to anchor to — so the scroll offset
+   * was kept and you landed in some file further down, with the one you just
+   * checked off somewhere above the fold.
+   *
+   * ONLY that case. While the header is still on screen the library takes an
+   * ITEM anchor instead (`absoluteItemTop >= scrollTop`), which already holds
+   * it exactly where it is as the content below shrinks — scrolling there too
+   * would yank the page for no reason. So the test is precisely "has this
+   * file's top gone past the viewport top", in the one coordinate space
+   * `getScrollAnchor` itself compares.
+   *
+   * Scrolling FIRST is what makes this cooperate rather than fight: the
+   * library skips capturing an anchor at all while a scroll target is pending
+   * (`capturePendingLayoutAnchor` bails on `pendingScrollTarget`), so the bad
+   * line anchor is never taken and the header lands at the top, collapsed and
+   * ticked. Expanding needs none of this — a file grows DOWNWARD from a header
+   * that is already the anchor.
+   */
+  const revealCollapsed = (path: string) => {
+    const view = codeViewRef.current?.getInstance();
+    const top = view?.getTopForItem(path);
+    // Header still on screen → the library's ITEM anchor already holds it in
+    // place while the content below shrinks. Nothing to do.
+    if (view == null || top == null || top >= view.getScrollTop()) return;
+    scrollToTwice({ type: "item", id: path, align: "start" });
+  };
+
   // Fold state is DERIVED: a viewed file is folded, because that's the point
   // of marking it viewed. The chevron writes an override for that one path;
   // toggling viewed drops the override so the default takes over again.
@@ -138,29 +205,30 @@ export function PrDetailView({ prId }: { prId: PrId }) {
     return out;
   }, [viewedFiles, foldOverrides]);
 
-  const toggleCollapsed = useCallback(
-    (path: string) =>
-      setFoldOverrides((prev) => ({
-        ...prev,
-        [path]: !(prev[path] ?? collapsedPaths.has(path)),
-      })),
-    [collapsedPaths],
-  );
+  // Plain functions, not useCallback: the React Compiler memoizes them on
+  // their real dependencies (verified — they land in cache slots), and a
+  // hand-written dep array here can only be a second, stale opinion.
+  const toggleCollapsed = (path: string) => {
+    const collapsing = !collapsedPaths.has(path);
+    setFoldOverrides((prev) => ({ ...prev, [path]: collapsing }));
+    if (collapsing) revealCollapsed(path);
+  };
   // Marking viewed re-derives the fold, so the checkbox folds and unfolds.
-  const toggleViewedAndFold = useCallback(
-    (path: string) => {
-      setFoldOverrides((prev) => {
-        const next = { ...prev };
-        delete next[path];
-        return next;
-      });
-      toggleViewed(path);
-    },
-    [toggleViewed],
-  );
-  const expandPath = useCallback((path: string) => {
+  const toggleViewedAndFold = (path: string) => {
+    // Dropping the override hands the fold back to viewed, so the file is
+    // collapsing exactly when it is becoming viewed.
+    const collapsing = !viewedFiles.includes(path);
+    setFoldOverrides((prev) => {
+      const next = { ...prev };
+      delete next[path];
+      return next;
+    });
+    toggleViewed(path);
+    if (collapsing) revealCollapsed(path);
+  };
+  const expandPath = (path: string) => {
     setFoldOverrides((prev) => ({ ...prev, [path]: false }));
-  }, []);
+  };
 
   const triageFindings = (run?.findings ?? []).filter(
     (f) => f.state === "proposed" || f.state === "edited",
@@ -188,25 +256,6 @@ export function PrDetailView({ prId }: { prId: PrId }) {
     scrollToTwice({ type: "item", id: path, align: "start" });
   };
 
-  // Holding ] steps files faster than the follow-up scroll lands, and each
-  // stale timer yanks the pane to a file the reader has already left — that's
-  // the flicker. Only the newest follow-up survives.
-  const followUpScroll = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const scrollToTwice = (target: Parameters<DiffPaneHandle["scrollTo"]>[0]) => {
-    codeViewRef.current?.scrollTo(target);
-    if (followUpScroll.current) clearTimeout(followUpScroll.current);
-    followUpScroll.current = window.setTimeout(() => {
-      followUpScroll.current = null;
-      codeViewRef.current?.scrollTo(target);
-    }, 350) as unknown as ReturnType<typeof setTimeout>;
-  };
-  useEffect(
-    () => () => {
-      if (followUpScroll.current) clearTimeout(followUpScroll.current);
-    },
-    [],
-  );
-
   const focusFinding = (finding: Finding) => {
     useUiStore.getState().setFocusedFinding(finding.id);
     setSelectedPath(finding.path);
@@ -232,153 +281,153 @@ export function PrDetailView({ prId }: { prId: PrId }) {
   // Detail-scoped keys (the global handler only runs on the queue route):
   // esc back · [ ] files · j/k findings · y/e/x triage · c chat · v viewed ·
   // w hide whitespace · r rerun · a verdict approve · o open on GitHub.
-  const keyState = useRef({
-    files,
-    selectedPath,
-    prUrl: detail.data?.pr.url,
-    triageFindings,
-    run,
-  });
-  useEffect(() => {
-    keyState.current = {
-      files,
-      selectedPath,
-      prUrl: detail.data?.pr.url,
-      triageFindings,
-      run,
+  //
+  // `useEffectEvent`, so the handler reads THIS render's `files`/`selectedPath`
+  // /`triageFindings` while the listener binds ONCE and never appears in a dep
+  // list. Its predecessor snapshotted those into a ref behind an
+  // `exhaustive-deps` suppression — and a suppression bails this whole
+  // component out of the React Compiler, which is the only memoization it has
+  // (see the pitfall in CLAUDE.md). Keep this file suppression-free.
+  const onKey = useEffectEvent((e: KeyboardEvent) => {
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    if (hasOpenDialog() || isTypingTarget(e.target)) return;
+    // The tree owns only the keys it actually consumes. It used to own ALL of
+    // them while focused, which meant clicking a file — the obvious way to
+    // pick one — silently killed the whole detail keymap until you clicked
+    // somewhere else. Letters are safe to take: the tree's a-z type-ahead is
+    // gated on `searchEnabled`, and FileTree passes `search: false`, so it
+    // never sees one. Its search box is an `<input>`, already covered by
+    // `isTypingTarget` above.
+    if (
+      e.target instanceof HTMLElement &&
+      e.target.closest("[data-tandem-filetree]") &&
+      TREE_OWNED_KEYS.has(e.key)
+    )
+      return;
+    const paths = (files ?? []).map((f) => f.path);
+    const stepFile = (delta: 1 | -1) => {
+      if (paths.length === 0) return;
+      const idx = selectedPath ? paths.indexOf(selectedPath) : -1;
+      const next =
+        idx === -1 ? 0 : Math.min(paths.length - 1, Math.max(0, idx + delta));
+      selectFile(paths[next]);
     };
-  });
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.metaKey || e.ctrlKey || e.altKey) return;
-      if (hasOpenDialog() || isTypingTarget(e.target)) return;
-      // The @pierre/trees tree owns its keys (arrows, type-ahead a-z, its
-      // search input) — never double-handle while focus is inside it.
-      if (
-        e.target instanceof HTMLElement &&
-        e.target.closest("[data-tandem-filetree]")
-      )
-        return;
-      const state = keyState.current;
-      const paths = (state.files ?? []).map((f) => f.path);
-      const stepFile = (delta: 1 | -1) => {
-        if (paths.length === 0) return;
-        const idx = state.selectedPath ? paths.indexOf(state.selectedPath) : -1;
-        const next =
-          idx === -1 ? 0 : Math.min(paths.length - 1, Math.max(0, idx + delta));
-        selectFile(paths[next]);
-      };
-      const stepFinding = (delta: 1 | -1) => {
-        const list = state.triageFindings;
-        if (list.length === 0) return;
-        const focusedId = useUiStore.getState().focusedFindingId;
-        const idx = list.findIndex((f) => f.id === focusedId);
-        const next =
-          idx === -1
-            ? delta === 1
-              ? 0
-              : list.length - 1
-            : Math.min(list.length - 1, Math.max(0, idx + delta));
-        focusFinding(list[next]);
-      };
-      const focused = () =>
-        state.triageFindings.find(
-          (f) => f.id === useUiStore.getState().focusedFindingId,
-        );
+    const stepFinding = (delta: 1 | -1) => {
+      if (triageFindings.length === 0) return;
+      const focusedId = useUiStore.getState().focusedFindingId;
+      const idx = triageFindings.findIndex((f) => f.id === focusedId);
+      const next =
+        idx === -1
+          ? delta === 1
+            ? 0
+            : triageFindings.length - 1
+          : Math.min(triageFindings.length - 1, Math.max(0, idx + delta));
+      focusFinding(triageFindings[next]);
+    };
+    const focused = () =>
+      triageFindings.find(
+        (f) => f.id === useUiStore.getState().focusedFindingId,
+      );
 
-      switch (e.key) {
-        case "Escape": {
-          // Esc closes an open composer and nothing else. It used to fall
-          // through to leaving the PR, which read as losing your place: Esc
-          // is "dismiss the thing in front of me", and with no composer open
-          // there is nothing in front of you. "← Queue" and the browser's
-          // back both still leave.
-          if (useUiStore.getState().composerTarget) {
-            e.preventDefault();
-            useUiStore.getState().setComposerTarget(null);
-          }
-          return;
+    switch (e.key) {
+      case "Escape": {
+        // Esc closes an open composer and nothing else. It used to fall
+        // through to leaving the PR, which read as losing your place: Esc
+        // is "dismiss the thing in front of me", and with no composer open
+        // there is nothing in front of you. "← Queue" and the browser's
+        // back both still leave.
+        if (useUiStore.getState().composerTarget) {
+          e.preventDefault();
+          useUiStore.getState().setComposerTarget(null);
         }
-        case "[":
-          e.preventDefault();
-          stepFile(-1);
-          return;
-        case "]":
-          e.preventDefault();
-          stepFile(1);
-          return;
-        case "j":
-        case "ArrowDown":
-          e.preventDefault();
-          stepFinding(1);
-          return;
-        case "k":
-        case "ArrowUp":
-          e.preventDefault();
-          stepFinding(-1);
-          return;
-        case "y": {
-          const finding = focused();
-          if (finding) {
-            e.preventDefault();
-            void acceptFinding(queryClient, finding, addComment);
-          }
-          return;
-        }
-        case "e": {
-          const finding = focused();
-          if (finding) {
-            e.preventDefault();
-            useUiStore.getState().setEditingFinding(finding.id);
-          }
-          return;
-        }
-        case "x": {
-          const finding = focused();
-          if (finding) {
-            e.preventDefault();
-            void dismissFinding(queryClient, finding);
-          }
-          return;
-        }
-        case "c":
-          // Chat about the focused finding, or the PR when nothing is focused.
-          e.preventDefault();
-          openChatFor(useUiStore.getState().focusedFindingId);
-          return;
-        case "r":
-          e.preventDefault();
-          void startRun(prId, true).then(() =>
-            queryClient.invalidateQueries({ queryKey: ["runs"] }),
-          );
-          return;
-        case "a":
-          e.preventDefault();
-          setVerdict("APPROVE" as ReviewVerdict);
-          return;
-        case "w":
-          e.preventDefault();
-          useUiStore.getState().setHideWhitespace((hide) => !hide);
-          return;
-        case "v":
-          if (state.selectedPath) {
-            e.preventDefault();
-            toggleViewedAndFold(state.selectedPath);
-          }
-          return;
-        case "o":
-          if (state.prUrl) {
-            e.preventDefault();
-            openPrExternal(state.prUrl);
-          }
-          return;
+        return;
       }
-    };
+      case "[":
+        e.preventDefault();
+        stepFile(-1);
+        return;
+      case "]":
+        e.preventDefault();
+        stepFile(1);
+        return;
+      case "j":
+      case "ArrowDown":
+        e.preventDefault();
+        stepFinding(1);
+        return;
+      case "k":
+      case "ArrowUp":
+        e.preventDefault();
+        stepFinding(-1);
+        return;
+      case "y": {
+        const finding = focused();
+        if (finding) {
+          e.preventDefault();
+          void acceptFinding(queryClient, finding, addComment);
+        }
+        return;
+      }
+      case "e": {
+        const finding = focused();
+        if (finding) {
+          e.preventDefault();
+          useUiStore.getState().setEditingFinding(finding.id);
+        }
+        return;
+      }
+      case "x": {
+        const finding = focused();
+        if (finding) {
+          e.preventDefault();
+          void dismissFinding(queryClient, finding);
+        }
+        return;
+      }
+      case "c":
+        // Chat about the focused finding, or the PR when nothing is focused.
+        e.preventDefault();
+        openChatFor(useUiStore.getState().focusedFindingId);
+        return;
+      case "r":
+        e.preventDefault();
+        void startRun(prId, true).then(() =>
+          queryClient.invalidateQueries({ queryKey: ["runs"] }),
+        );
+        return;
+      case "a":
+        e.preventDefault();
+        setVerdict("APPROVE" as ReviewVerdict);
+        return;
+      case "w":
+        e.preventDefault();
+        useUiStore.getState().setHideWhitespace((hide) => !hide);
+        return;
+      case "v": {
+        // `[`/`]` already read "nothing selected yet" as "the first file"; `v`
+        // used to give up instead, so on a freshly-opened PR it did nothing
+        // and said nothing. Same fallback, and it SELECTS what it acted on so
+        // the tree shows which file the next `v` will hit.
+        const path = selectedPath ?? paths[0];
+        if (path) {
+          e.preventDefault();
+          setSelectedPath(path);
+          toggleViewedAndFold(path);
+        }
+        return;
+      }
+      case "o":
+        if (detail.data) {
+          e.preventDefault();
+          openPrExternal(detail.data.pr.url);
+        }
+        return;
+    }
+  });
+  useEffect(() => {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-    // Handlers read live state through keyState/getState snapshots.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [prId, queryClient]);
+  }, []);
 
   const diffStyle = useUiStore((s) => s.diffStyle);
   const setDiffStyle = useUiStore((s) => s.setDiffStyle);
@@ -490,9 +539,10 @@ export function PrDetailView({ prId }: { prId: PrId }) {
                   <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-mono flex-1">
                     diff
                   </span>
-                  <span className="text-[11px] text-muted-foreground font-mono">
-                    viewed {viewedFiles.length}/{files.length}
-                  </span>
+                  <ViewedMeter
+                    viewed={viewedFiles.length}
+                    total={files.length}
+                  />
                   <Tooltip>
                     <TooltipTrigger asChild>
                       {/* A Toggle, not a Button: pressing changes the fill
@@ -607,6 +657,45 @@ export function PrDetailView({ prId }: { prId: PrId }) {
         }
       />
     </Shell>
+  );
+}
+
+/**
+ * How far through the files you are. The count stays printed beside the mark —
+ * the mark is the shape of the progress, never the only place the value lives.
+ *
+ * `--tandem-bar`, the app's neutral data mark, and deliberately not two other
+ * things it could have been: NOT `--tandem-agent`, because violet means
+ * machine-authored and this is the reviewer's own progress; and NOT a status
+ * token turning green at 100%, because those are spoken for by checks, review
+ * and pulse, and "colour is by JOB" — a full bar already says done.
+ *
+ * Fixed width, so the toolbar's controls hold their positions as the count
+ * climbs from 5/75 to 34/75.
+ */
+function ViewedMeter({ viewed, total }: { viewed: number; total: number }) {
+  const pct = total > 0 ? (viewed / total) * 100 : 0;
+  return (
+    <span
+      className="flex items-center gap-1.5 shrink-0"
+      title={`${viewed} of ${total} files marked viewed`}
+    >
+      <span className="text-[11px] text-muted-foreground font-mono">
+        viewed {viewed}/{total}
+      </span>
+      <span
+        aria-hidden
+        className="inline-block align-middle w-12 h-1 rounded-[1px] overflow-hidden"
+        style={{
+          background: "color-mix(in srgb, var(--tandem-bar) 22%, transparent)",
+        }}
+      >
+        <span
+          className="block h-full rounded-[1px] transition-[width] duration-200 motion-reduce:transition-none"
+          style={{ width: `${pct}%`, background: "var(--tandem-bar)" }}
+        />
+      </span>
+    </span>
   );
 }
 

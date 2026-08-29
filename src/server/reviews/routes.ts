@@ -24,8 +24,7 @@ export async function handleReviews(req: Request): Promise<Response> {
         { status: 400 },
       );
     }
-    await saveReview(review);
-    return Response.json({ review: await loadReview(prId) });
+    return Response.json({ review: await saveReview(review) });
   }
 
   if (req.method === "DELETE") {

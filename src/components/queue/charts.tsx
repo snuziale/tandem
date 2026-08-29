@@ -319,13 +319,17 @@ type SparkSeries = {
 export function Sparklines({
   series,
   days,
-  height = 28,
+  height: heightProp,
 }: {
   series: SparkSeries[];
   /** Day labels for the axis ends, oldest first. */
   days: string[];
   height?: number;
 }) {
+  // Default applied in the body, not in the destructuring pattern: a
+  // parameter default makes the React Compiler skip this component
+  // (`BuildHIR: Expected object property value to be an LVal`).
+  const height = heightProp ?? 28;
   const width = 100;
   const points = days.length;
   if (points < 2)
