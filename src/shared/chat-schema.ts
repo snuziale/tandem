@@ -32,6 +32,16 @@ export const ChatActionJsonSchema = z.discriminatedUnion("kind", [
     why: z.string().min(1).max(300),
   }),
   z.object({
+    kind: z.literal("stage-comment"),
+    path: z.string().min(1).max(400),
+    side: z.enum(["LEFT", "RIGHT"]),
+    line: z.number().int().positive(),
+    startLine: z.number().int().positive().optional(),
+    body: z.string().min(1).max(4000),
+    suggestion: z.string().max(8000).optional(),
+    why: z.string().min(1).max(300),
+  }),
+  z.object({
     kind: z.literal("revise-comment"),
     localId: z.string().min(1),
     body: z.string().min(1).max(8000),

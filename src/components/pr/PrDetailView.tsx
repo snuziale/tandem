@@ -21,7 +21,7 @@ import {
   PanelRightOpen,
 } from "lucide-react";
 import { startRun } from "../../api/runs";
-import { openChatFor } from "../../actions/chat";
+import { cycleAgentMode, openChatFor } from "../../actions/chat";
 import {
   acceptFinding,
   dismissFinding,
@@ -36,8 +36,16 @@ import { useMarkSeen } from "../../hooks/useSeen";
 import { useSettings } from "../../hooks/useSettings";
 import { hasOpenDialog, isTypingTarget } from "../../keyboard/keyOwnership";
 import { navigateToQueue } from "../../routes";
-import type { Finding } from "../../shared/agent-types";
-import { renderedPatch, type KeepLines } from "../../shared/gh/patch";
+import {
+  openFindings,
+  type AgentRun,
+  type Finding,
+} from "../../shared/agent-types";
+import {
+  diffLineIndex,
+  renderedPatch,
+  type KeepLines,
+} from "../../shared/gh/patch";
 import type {
   DiffSide,
   FileChange,
@@ -49,8 +57,9 @@ import type {
 } from "../../shared/review-types";
 import { useUiStore } from "../../state/uiStore";
 import { AgentPane } from "../agent/AgentPane";
+import { preflightOf, priorReviewFor } from "../agent/preflight";
 import { AppHeader } from "../layout/AppHeader";
-import { keepLinesByPath } from "./annotations";
+import { keepLinesByPath, paneAnchorOf } from "./annotations";
 import { DiffPane, type DiffPaneHandle } from "./DiffPane";
 import { DiffSearchBar } from "./DiffSearchBar";
 import {
@@ -72,6 +81,7 @@ const NO_FILES: string[] = [];
 const NO_THREADS: ReviewThread[] = [];
 const NO_COMMENTS: PendingComment[] = [];
 const NO_PATCHES: SearchablePatch[] = [];
+const NO_RUNS: AgentRun[] = [];
 
 type SearchablePatch = { path: string; patch: string };
 
@@ -96,6 +106,10 @@ function searchablePatches(
   }
   return out;
 }
+
+/** Keys an action chip consumes while it has focus (ChatPanel). Same
+ * apply/dismiss letters as finding triage, one level down. */
+const CHAT_OWNED_KEYS = new Set(["y", "x"]);
 
 /** Keys @pierre/trees consumes itself while the tree has focus. Everything
  * else must fall through to the detail keymap — see the guard in `onKey`. */
@@ -276,9 +290,7 @@ export function PrDetailView({ prId }: { prId: PrId }) {
     );
   };
 
-  const triageFindings = (run?.findings ?? []).filter(
-    (f) => f.state === "proposed" || f.state === "edited",
-  );
+  const triageFindings = openFindings(run);
   const agentPaths = new Set(triageFindings.map((f) => f.path));
 
   // A composer or finding focus left over from another PR must not follow us.
@@ -286,9 +298,11 @@ export function PrDetailView({ prId }: { prId: PrId }) {
   useEffect(() => {
     setComposerTarget(null);
     useUiStore.getState().setFocusedFinding(null);
+    useUiStore.getState().setRevealedAnchor(null);
     return () => {
       setComposerTarget(null);
       useUiStore.getState().setFocusedFinding(null);
+      useUiStore.getState().setRevealedAnchor(null);
     };
   }, [setComposerTarget]);
 
@@ -319,7 +333,45 @@ export function PrDetailView({ prId }: { prId: PrId }) {
     });
   };
 
+  /**
+   * Go to a span AND mark it — what a clicked citation does.
+   *
+   * `revealLine` alone only scrolls, which lands the reader in the right
+   * neighbourhood with nothing saying which lines were meant. Claiming the
+   * pane's one selection is the difference between "somewhere near here" and
+   * "these lines"; `setRevealedAnchor` clears the other claimants, so there is
+   * still only ever one mark.
+   */
+  const revealAnchor = (
+    path: string,
+    line: number,
+    side: DiffSide,
+    startLine?: number,
+  ) => {
+    // The agent cites lines it has READ, which is not the same set as the
+    // lines the diff SHOWS — it sees whole files through `@path` and
+    // `needContext`. A citation outside the patch has nothing to scroll to and
+    // nothing to mark, so before this check clicking one did nothing at all
+    // and the reader had no way to tell a dead link from a slow one.
+    //
+    // It degrades to revealing the FILE, which is the useful half and is the
+    // same honest fallback a prior run's finding gets.
+    const patch = files?.find((f) => f.path === path)?.patch;
+    const index = patch ? diffLineIndex(patch) : null;
+    const lines = index && (side === "LEFT" ? index.left : index.right);
+    if (!lines?.has(line)) {
+      useUiStore.getState().setRevealedAnchor(null);
+      selectFile(path);
+      return;
+    }
+    useUiStore.getState().setRevealedAnchor({ path, line, startLine, side });
+    // Scroll to the START of a range: the reader wants to read it from the
+    // top, and the anchor line is the end.
+    revealLine(path, startLine ?? line, side);
+  };
+
   const focusFinding = (finding: Finding) => {
+    useUiStore.getState().setRevealedAnchor(null);
     useUiStore.getState().setFocusedFinding(finding.id);
     revealLine(finding.path, finding.endLine, finding.side);
   };
@@ -408,9 +460,11 @@ export function PrDetailView({ prId }: { prId: PrId }) {
     if (!hit) return;
     setHitIndex(index);
     // One focused thing at a time: a card wearing a focused border beside a
-    // search hit would be two claims about a single selection.
+    // search hit would be two claims about a single selection. A previous
+    // citation jump outranks a hit, so it has to go too.
     useUiStore.getState().setFocusedFinding(null);
     useUiStore.getState().setFocusedComment(null);
+    useUiStore.getState().setRevealedAnchor(null);
     revealLine(hit.path, hit.line, hit.side);
   };
   const stepSearch = (delta: 1 | -1) => {
@@ -459,6 +513,15 @@ export function PrDetailView({ prId }: { prId: PrId }) {
       e.target instanceof HTMLElement &&
       e.target.closest("[data-tandem-filetree]") &&
       TREE_OWNED_KEYS.has(e.key)
+    )
+      return;
+    // Same rule for the conversation: while an action chip has focus, y/x are
+    // apply/dismiss for THAT proposal. Everything else still falls through —
+    // taking the whole keymap is the bug the tree guard above exists to avoid.
+    if (
+      e.target instanceof HTMLElement &&
+      e.target.closest("[data-tandem-chat]") &&
+      CHAT_OWNED_KEYS.has(e.key)
     )
       return;
     const paths = (files ?? []).map((f) => f.path);
@@ -550,6 +613,14 @@ export function PrDetailView({ prId }: { prId: PrId }) {
         e.preventDefault();
         openChatFor(useUiStore.getState().focusedFindingId);
         return;
+      case "C":
+        // Shift cycles the pane's LAYOUT — findings / split / chat. Kept off
+        // bare `c`, which is the more valuable binding: "ask about this
+        // finding" puts the cursor in the box, and a key that sometimes did
+        // that and sometimes resized the pane would be neither.
+        e.preventDefault();
+        cycleAgentMode();
+        return;
       case "r":
         e.preventDefault();
         void startRun(prId, true).then(() =>
@@ -616,6 +687,11 @@ export function PrDetailView({ prId }: { prId: PrId }) {
   // collapse a pane behind the toggle's back — minSize still bounds it.
   const filesOpen = useUiStore((s) => s.prFilesOpen);
   const agentOpen = useUiStore((s) => s.prAgentOpen);
+  // Read here rather than inside the anchor derivation below: hooks run
+  // unconditionally, and the early returns for loading/error sit between.
+  const focusedCommentId = useUiStore((s) => s.focusedCommentId);
+  const focusedFindingId = useUiStore((s) => s.focusedFindingId);
+  const revealedAnchor = useUiStore((s) => s.revealedAnchor);
   const setFilesOpen = useUiStore((s) => s.setPrFilesOpen);
   const setAgentOpen = useUiStore((s) => s.setPrAgentOpen);
 
@@ -646,6 +722,52 @@ export function PrDetailView({ prId }: { prId: PrId }) {
   }
 
   const { pr, threads } = detail.data;
+
+  /**
+   * What a review of THIS commit would do, and what the agent already found on
+   * an earlier one. Both are pure functions of things this screen already has
+   * in hand — the diff, the settings, today's spend, and the full run index —
+   * so the pane's empty state costs no request at all.
+   */
+  // Both are read ONLY by the no-run empty state, so a run at head makes them
+  // dead work — and `priorReviewFor` scans every run across every PR, on an
+  // array whose identity changes with each 30s poll.
+  const preflight =
+    !run && files && settings.data
+      ? preflightOf({
+          pr,
+          files,
+          settings: settings.data,
+          spentTodayUsd: runs.data?.spendTodayUsd ?? 0,
+        })
+      : null;
+  const priorReview =
+    !run && files
+      ? priorReviewFor({
+          runs: runs.data?.all ?? NO_RUNS,
+          prId,
+          headSha: pr.headSha,
+          files,
+        })
+      : null;
+
+  /**
+   * WHERE THE REVIEWER IS POINTING — the pane's one line selection. Resolved
+   * ONCE here and handed to both readers: `DiffPane`, which paints it, and the
+   * chat panel, which asks about it. Chat ships it on the TURN, never on the
+   * session key: an anchor is attention, and keying a conversation by it would
+   * fork the thread on every drag.
+   */
+  const chatAnchor = paneAnchorOf({
+    composerTarget,
+    revealedAnchor,
+    searchHit: activeHit,
+    pendingComments: review?.comments ?? NO_COMMENTS,
+    threads,
+    findings: triageFindings,
+    focusedCommentId,
+    focusedFindingId,
+  });
 
   return (
     <Shell pr={pr}>
@@ -814,7 +936,7 @@ export function PrDetailView({ prId }: { prId: PrId }) {
                   onAddComment={addComment}
                   onUpdateComment={updateComment}
                   onRemoveComment={removeCommentAndUnstage}
-                  searchHit={activeHit}
+                  anchor={chatAnchor}
                   codeViewRef={codeViewRef}
                 />
               </div>
@@ -834,6 +956,13 @@ export function PrDetailView({ prId }: { prId: PrId }) {
                     run={run}
                     progress={progress}
                     settings={settings.data}
+                    review={review ?? null}
+                    files={files}
+                    anchor={chatAnchor}
+                    preflight={preflight}
+                    priorReview={priorReview}
+                    onNavigate={revealAnchor}
+                    onRevealPath={selectFile}
                     onSelectFinding={focusFinding}
                   />
                 </ResizablePanel>

@@ -147,7 +147,23 @@ export type PendingComment = {
   /** The anchor line no longer exists in the current diff (set by the
    * staleness sweep after new commits). Blocks submit until re-anchored. */
   anchorMoved?: boolean;
+  /** The agent drafted this text in CHAT, with no finding behind it
+   * (`stage-comment`). Without it such a comment has no `findingId` and so
+   * reads as the reviewer's own — see `isAgentAuthored`. */
+  agentDrafted?: boolean;
 };
+
+/**
+ * Did the agent write this comment's text?
+ *
+ * Two ways it can be true — accepted from a finding (`findingId`), or drafted
+ * in chat (`agentDrafted`) — and every surface that marks provenance has to
+ * agree on both, because violet means machine-authored (invariant §3) and a
+ * chat-drafted comment labelled "your comment" is that claim being made wrong.
+ */
+export function isAgentAuthored(comment: PendingComment): boolean {
+  return comment.findingId !== undefined || comment.agentDrafted === true;
+}
 
 /** The local pending review draft. Never exists on GitHub until submitted. */
 export type PendingReview = {

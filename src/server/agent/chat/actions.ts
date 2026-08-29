@@ -16,8 +16,17 @@ import {
 } from "../../../shared/agent-types";
 import type { ChatActionJson } from "../../../shared/chat-schema";
 import type { ChatAction, ChatSession } from "../../../shared/chat-types";
-import type { DiffLineIndex } from "../../../shared/gh/patch";
-import type { PendingReview, ReviewThread } from "../../../shared/review-types";
+import {
+  clampCommentRange,
+  patchLineText,
+  type DiffLineIndex,
+} from "../../../shared/gh/patch";
+import type {
+  DiffSide,
+  PendingReview,
+  ReviewThread,
+} from "../../../shared/review-types";
+
 import { loadReview, saveReview } from "../../reviews/store";
 import { sanitizeFindings } from "../pipeline/parse";
 import {
@@ -32,10 +41,38 @@ export type SanitizeContext = {
   run: AgentRun | null;
   review: PendingReview | null;
   lineIndexByPath: Map<string, DiffLineIndex>;
+  /** The patch text per path — read ONLY to compute `replaces`, the left side
+   * of a chip's diff preview. Absent under test where no preview is asserted. */
+  patchByPath?: Map<string, string>;
   threads: ReviewThread[];
   /** Injected so the sanitizer stays deterministic under test. */
   newId?: () => string;
 };
+
+/**
+ * What a proposed suggestion would replace, so the chip can show a real diff
+ * instead of a wall of text. Computed HERE rather than in the client because
+ * the chip has no patch anywhere near it, and because a preview drawn from
+ * anything but the patch the action was anchored against would be a different
+ * claim than the one being applied.
+ */
+function replacesText(
+  ctx: SanitizeContext,
+  path: string,
+  side: DiffSide,
+  start: number,
+  end: number,
+  /** The proposal's replacement text. There is nothing to preview against
+   * unless one was actually offered — `null` on revise-finding means "drop the
+   * suggestion", which is not a change to look at. The check lives HERE so the
+   * three call sites cannot spell it three ways. */
+  suggestion: string | null | undefined,
+): string | undefined {
+  if (typeof suggestion !== "string") return undefined;
+  const patch = ctx.patchByPath?.get(path);
+  if (!patch) return undefined;
+  return patchLineText(patch, side, start, end) ?? undefined;
+}
 
 export function sanitizeChatActions(
   proposed: ChatActionJson[],
@@ -76,6 +113,14 @@ export function sanitizeChatActions(
         body: p.body,
         severity: p.severity,
         suggestion: p.suggestion,
+        replaces: replacesText(
+          ctx,
+          finding.path,
+          finding.side,
+          finding.startLine ?? finding.endLine,
+          finding.endLine,
+          p.suggestion,
+        ),
       });
       continue;
     }
@@ -105,7 +150,59 @@ export function sanitizeChatActions(
         discarded++;
         continue;
       }
-      actions.push({ ...base, kind: "new-finding", finding: kept[0] });
+      const made = kept[0];
+      actions.push({
+        ...base,
+        kind: "new-finding",
+        finding: made,
+        replaces: replacesText(
+          ctx,
+          made.path,
+          made.side,
+          made.startLine ?? made.endLine,
+          made.endLine,
+          made.suggestion,
+        ),
+      });
+      continue;
+    }
+
+    if (p.kind === "stage-comment") {
+      // Anchored and clamped exactly like a dragged selection: the contiguous
+      // run of patch lines ending at the anchor. Expanded context and the gaps
+      // between hunks are simply absent from the index, so a proposal reaching
+      // into either stops at the hunk edge instead of staging a comment that
+      // dies with a per-comment 422 at submit.
+      //
+      // Deliberately NOT filtered against existing human threads the way a
+      // pass-2 finding is: a finding is the agent volunteering, and this is the
+      // reviewer having asked.
+      const index = ctx.lineIndexByPath.get(p.path);
+      const clamped = index
+        ? clampCommentRange(index, p.side, p.startLine ?? p.line, p.line)
+        : null;
+      if (!clamped) {
+        discarded++;
+        continue;
+      }
+      actions.push({
+        ...base,
+        kind: "stage-comment",
+        path: p.path,
+        side: p.side,
+        line: clamped.end,
+        startLine: clamped.start === clamped.end ? undefined : clamped.start,
+        body: p.body,
+        suggestion: p.suggestion,
+        replaces: replacesText(
+          ctx,
+          p.path,
+          p.side,
+          clamped.start,
+          clamped.end,
+          p.suggestion,
+        ),
+      });
       continue;
     }
 
@@ -178,6 +275,36 @@ export async function applyChatAction(
       };
       await appendFinding(run.id, finding);
       runId = run.id;
+      break;
+    }
+    case "stage-comment": {
+      // The one action that works with no run and no draft — which is the
+      // point: runs are opt-in, so "no run" is the default path, and every
+      // other kind edits something a run emitted.
+      const review = (await loadReview(session.prId)) ?? {
+        prId: session.prId,
+        headSha: session.headSha,
+        comments: [],
+        viewedFiles: [],
+        updatedAt: new Date().toISOString(),
+      };
+      if (review.headSha !== session.headSha)
+        throw new Error(
+          "the draft is against a different commit — reopen the PR",
+        );
+      review.comments.push({
+        localId: randomUUID(),
+        path: action.path,
+        line: action.line,
+        startLine: action.startLine,
+        side: action.side,
+        body: action.body,
+        suggestion: action.suggestion,
+        // No finding behind it, so this is the only thing that keeps the tray
+        // and the inline card from attributing the agent's text to the human.
+        agentDrafted: true,
+      });
+      await saveReview(review);
       break;
     }
     case "revise-comment": {

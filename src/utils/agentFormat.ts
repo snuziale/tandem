@@ -32,5 +32,20 @@ export function shortPrRef(prId: string): string {
 /** Basenames of the files a step is reading, for a one-line readout. */
 export function fileNames(paths: readonly string[] | undefined): string {
   if (!paths || paths.length === 0) return "";
-  return paths.map((path) => path.split("/").pop() ?? path).join(" · ");
+  return paths.map(fileName).join(" · ");
+}
+
+/** One path's basename. The `?? path` matters: `split("/").pop()` is typed
+ * `string | undefined`, so an inlined copy renders nothing for a root-level
+ * file. */
+export function fileName(path: string): string {
+  return path.split("/").pop() ?? path;
+}
+
+/** A commit, as every surface in the app prints one. Seven characters is
+ * git's own default abbreviation; the point of having it here is that the run
+ * header, the pre-flight card and the thread list cannot print the same commit
+ * three different lengths. */
+export function shortSha(sha: string): string {
+  return sha.slice(0, 7);
 }

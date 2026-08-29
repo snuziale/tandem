@@ -152,9 +152,15 @@ duplicates drop, severity×confidence ranking under the caps (default 8 findings
 
 ## Chat — the fourth pass (server/agent/chat/)
 
-Ask the agent about the PR, or about ONE finding: why it flagged something, whether it still
-believes it, how to reword the comment. Interactive, but the same read-only pass as the pipeline
-(`--safe-mode --tools ''`), and it changes nothing on its own.
+Ask the agent about the PR, about ONE finding, or about the LINES YOU ARE POINTING AT: why it
+flagged something, whether it still believes it, how to reword the comment, or "write this comment
+for me". Interactive, but the same read-only pass as the pipeline (`--safe-mode --tools ''`), and it
+changes nothing on its own.
+
+**It is the review's second cursor, and three things follow from that.** It SEES where you are (the
+pane's one line selection rides on the turn), it MOVES you (a `path.ts:42` in its prose is a
+control), and it WRITES INTO YOUR DRAFT (`stage-comment`). None of that touches invariant §1: every
+one is still a proposal the human applies.
 
 - **The answering PROFILE follows the run, and the SERVER reads it.** `startChatTurn` resolves it
   as `opts.agentId ?? (await getRun(prId, headSha))?.agentId`, so asking "why did you flag this?"
@@ -163,14 +169,33 @@ believes it, how to reword the comment. Interactive, but the same read-only pass
   as an override for an "ask another lens" affordance that does not exist yet. Scope is unchanged:
   the conversation is still keyed by (PR, sha, finding), so a rerun under another profile does not
   fork it.
-- **Scope is the identity.** `chatKeyOf(prId, headSha[, findingId])` is the session id, the storage
-  key, and the URL segment — so opening a finding's thread is a plain GET with no create call, and
-  a new head sha is a new conversation. The pane's focused finding IS the scope (`ChatPanel` is
+- **Scope is the identity. The ANCHOR is attention, and they are not the same thing.**
+  `chatKeyOf(prId, headSha[, findingId])` is the session id, the storage key, and the URL segment —
+  so opening a finding's thread is a plain GET with no create call, and a new head sha is a new
+  conversation. Where the reviewer is POINTING (`ChatAnchor`) rides on the TURN instead, is
+  persisted on the user message, and never touches the key: keying a conversation by the selection
+  would fork the thread on every drag. The pane's focused finding IS the scope (`ChatPanel` is
   mounted keyed by it).
+- **The anchor comes from `paneAnchorOf` (`components/pr/annotations.ts`, TESTED), the ONE spelling
+  of the pane's selection-precedence table, resolved ONCE by `PrDetailView` and handed to both
+  readers** — `DiffPane` paints it, chat asks about it. Calling it in both places meant two
+  seven-argument call sites agreeing by luck, and they had already drifted. — composer, then find-in-diff hit, then focused staged
+  comment or human thread, then focused finding. `DiffPane` paints it and chat asks about it, so
+  "where the reviewer is pointing" is one function with two readers rather than two implementations
+  agreeing by luck. The header's anchor chip is `--tandem-bar`, NOT violet: pointing at lines is
+  the most human thing in the panel, and violet means machine-authored (§3).
 - **Stateless multi-turn, not CLI session resume.** Each turn rebuilds
-  `[immutable context] + [transcript] + [question]` (`chat/prompt.ts`) — stable prefix first, so
-  prompt caching pays for the diff instead of us re-paying per message. Transcripts live in
-  `chats.json`; `--no-session-persistence` stays.
+  `[stable prefix] + [everything that moves] + [question]` (`chat/prompt.ts`). **ORDER IS THE
+  CACHE**: mission, action contract, PR header, conventions and THE DIFF are the prefix; the
+  fetched files, findings, threads, draft, review progress, anchor and transcript all sit below it.
+  `findingsBlock` and `draftBlock` used to sit ABOVE the diff, which put a block that changes on
+  every apply in front of 60,000 stable characters — staging one comment re-paid for the whole diff
+  on every turn after. `budgetedDiffBlock` orders by the run's PATHS only, never by finding state,
+  for the same reason. Transcripts live in `chats.json`; `--no-session-persistence` stays.
+- **The prompt knows how far through the review the human is** (`reviewProgressBlock`): viewed
+  n/m, which files are still unopened, comments staged, verdict. It is free — the draft is already
+  loaded — and it is what lets an answer say "the one file you have not opened is where the blocker
+  is" instead of describing a PR the reviewer has mostly read.
 - **Prose first, actions in an OPTIONAL trailing ``json fence** (`chat/prose.ts`): strict JSON is
 not the product here, so an unparseable tail degrades to prose-only instead of failing the turn.
 `createFenceGate` hides the fence while it streams (only ``json — a ```ts snippet still
@@ -180,18 +205,152 @@ not the product here, so an unparseable tail degrades to prose-only instead of f
   where a human already commented — the pass-2 gate), then re-validated on click, because the
   finding may have been staged or dismissed since. Kinds: revise-finding (proposed/edited only —
   a STAGED finding's text belongs to the draft, so that's `revise-comment` on its localId),
-  dismiss-finding, new-finding, revise-comment. Apply is human-triggered only; invariant §1 holds.
+  dismiss-finding, new-finding, revise-comment, **stage-comment**. Apply is human-triggered only;
+  invariant §1 holds.
+- **`stage-comment` is the only kind that needs NO RUN, and that is the point.** Every other kind
+  edits something a run emitted, so a PR without one could produce nothing at all — and runs are
+  opt-in (§2), so "no run" is the DEFAULT path. It writes a `PendingComment` straight into the
+  draft at lines the model names, anchored and clamped through `clampCommentRange` exactly like a
+  dragged selection, so a proposal reaching past a hunk edge stops there instead of dying with a
+  per-comment 422 at submit. Unlike a finding it is NOT dropped where a human already commented:
+  a finding is the agent volunteering, and this is the reviewer having asked.
+- **A suggestion is previewed as a DIFF, and the left side is computed server-side.**
+  `replaces` (on stage-comment, revise-finding and new-finding) is `patchLineText` over the same
+  patch the action was anchored against, attached at sanitize time — the chip has no patch anywhere
+  near it, and a preview drawn from anything else would be a different claim than the one being
+  applied. The chip's rail and label stay violet; the added and removed lines take the DIFF's own
+  red and green. Violet marks provenance and must never tint content.
+- **Apply-all is SEQUENTIAL** (`useChat.applyAll`): `stage-comment` reads the draft, pushes a
+  comment and writes it back, so two applies in flight would both read before either wrote and one
+  comment would vanish. Each still re-validates server-side, so a stale proposal fails on its own
+  chip without stopping the rest.
 - **`needContext` is a SERVER hop, not a tool.** The turn may ask for files it cannot see; the
   server fetches them read-only at the PR's head sha (`chat/context.ts`, ≤2 hops, owner/repo from
-  the session, never from the model) and re-asks. No write tool exists at any point.
+  the session, never from the model) and re-asks. No write tool exists at any point. A hop is
+  EXPENSIVE — it is a whole extra model call — which is why `@path` mentions are pre-loaded before
+  hop 0 instead (`contextPaths` on the turn, fetched CONCURRENTLY), and why a pre-load emits no
+  `context` frame: that frame means "I threw away the answer I was writing", and a pre-load did
+  neither. **A mentioned file already in the diff is NOT skipped**: the diff carries HUNKS, so
+  naming a file is how the reviewer asks for the whole thing. Filtering those out made the client's
+  resolution (against the diff's own paths) and the server's filter exact complements, so nothing
+  was ever fetched — the feature was dead. A full path the diff does not contain passes through
+  unresolved for the server to try; a bare word never does.
+- **A hop must not delete what you were reading.** `useChat` moves the prose written before a hop
+  into a `ChatHop` record rendered dimmed under "asked for X · re-reading". It used to
+  `setStreaming("")` and the text simply vanished mid-turn, which is exactly the class of thing
+  that makes a panel feel unreliable.
 - Turns are server-owned (`live.ts`, `kind: "chat"` so they stay out of the run accounting) and
   stream real token deltas (`--include-partial-messages`, chat only). Chat spends from the SAME
   daily ceiling as runs.
+- **The run summary is TURN ZERO, not a block above the findings.** Pass 3 already wrote it and it
+  is already paid for; rendering it as the conversation's first message is what makes the pane read
+  as a conversation that opens with the report rather than a report with a chat drawer bolted
+  underneath. It lives on the RUN, so it is never persisted into the transcript and never doubles.
+- **Openers are DERIVED, never asked** (`components/agent/chatOpeners.ts`, TESTED). An empty
+  conversation shows up to four chips computed from the run record and the draft — blockers, the
+  score gap, "what did you not flag", a read-back of your staged comments, the biggest file you
+  have not opened. Nothing spends a token until one is clicked, which is what keeps §2 intact; an
+  opener that pre-asked would be exactly the automatic spend that rule exists to prevent.
+- **`/command` and `@path` are CLIENT-side and pure** (`components/agent/chatCommands.ts`, TESTED):
+  a slash command expands into an ordinary question BEFORE it is sent, so the transcript stays
+  prose forever after and the server's turn contract never grows a command vocabulary to keep in
+  step with the UI. An unrecognized `/whatever` is left completely alone. An `@path` stays in the
+  text (it is part of what was asked) and is ALSO reported as `contextPaths`; bare names resolve
+  through the same `resolveCodeRef` the agent's own citations do, so an ambiguous one resolves to
+  nothing rather than to the wrong file.
+- **A `path.ts:42` in agent prose is a CONTROL** (`components/common/codeRefs.ts` TESTED +
+  `mdCodeRefs.ts`): it scrolls the diff, expands the file and MARKS the lines it named
+  (`uiStore.revealedAnchor`, second in the precedence table). Scrolling alone lands the reader in
+  the right neighbourhood with nothing saying which lines were meant — the mark is the difference
+  between "somewhere near here" and "these lines". A range (`patch.ts:40-52`) marks the whole span
+  and scrolls to its TOP, since the anchor is the end. Because the chat's own anchor chip reads the
+  SAME `paneAnchorOf`, a follow-up question is then already scoped to the lines you jumped to.
+  **A citation outside the patch degrades to revealing the FILE**: the agent cites lines it has
+  READ, which is not the set the diff SHOWS (it sees whole files through `@path` and
+  `needContext`), so an unchecked click had nothing to scroll to and nothing to mark — a dead link
+  indistinguishable from a slow one. Same fallback a prior run's finding gets. It
+  applies nothing and mutates nothing, so it needs no chip and no gate. The rehype plugin runs
+  AFTER `rehype-sanitize` — what it adds is ours, not the document's — and skips `pre` subtrees,
+  because a code block is a quotation and peppering it with buttons would make the quotation lie.
+  **Opt-in via `Markdown`'s `onRefClick`**, so a PR description or a thread comment renders exactly
+  as it always did.
+
+## The pane before a run exists (`components/agent/PreflightCard.tsx`)
+
+Landing on a PR with no run at this commit is the FIRST thing most reviewers
+see, and it used to be a lone "Run agent" button: a spend commitment with
+nothing to weigh it against. Everything the decision turns on was already in
+memory. The card is the rule made concrete — **never ask for a decision without
+handing over what the decision turns on.**
+
+- **The skip is PREDICTED, not discovered** (`preflightOf` → `skipDecision`), and it is fed the
+  SERVER's inputs: `pr.changedFiles` and `countDiffLines`, exactly what `pipeline/run.ts` passes.
+  Not `files.length` — the files endpoint caps its list (`FILES_API_WINDOW`), so on the very PRs
+  the file cap exists for the two diverge and the card would offer a run the pipeline then refuses.
+  Sharing the rule without sharing its inputs buys the guarantee's appearance, not the guarantee.
+  A manual run applies `skipDecision` too — `force` only bypasses the sha
+  cache — so a draft PR would spend a fetch to produce a Skipped record. The
+  card says "would be skipped · draft" and renders NO BUTTON, plus the one
+  sentence that fixes it. This is why `decide.ts` moved to
+  `shared/agent-decide.ts`: a second copy of those rules on the client would be
+  a promise the server had no reason to keep. `agentEnabledFor` moved to
+  `shared/settings-types.ts` for exactly the same reason.
+- **The shape of the run is stated in PASSES, never seconds** (`clusterFiles`,
+  now `shared/agent-cluster.ts`): the cluster count is knowable and a duration
+  is a guess, and a guessed ETA that runs long is worse than no ETA. Beside it,
+  spend today against the ceiling — both halves in dollars, which is why it does
+  not go through `formatSpend` (that falls back to a token count at $0, and
+  "0k tok of $5.00" is not a sentence).
+- **The review that already happened is the reason the card exists**
+  (`priorReviewFor`, TESTED). Staleness keeps old runs and their findings rather
+  than deleting them (spec §2) — and nothing ever showed them, because
+  `runFor` can only answer for the sha you already named. `useAgentRuns` now
+  also exposes `all`, and the card surfaces the most recent finished run on any
+  OTHER sha of this PR: its summary, score, severity tally, and the honest
+  headline **"N of M still point at files this commit changes"**. Only `ready`
+  and `stale` runs qualify — a failed or skipped one has nothing to tell you —
+  and dismissed/posted findings are excluded, because a human already settled
+  those.
+- **A prior finding reveals its FILE, never its line.** It was anchored against
+  a different commit, so the line number is the one thing about it that has
+  certainly moved.
+
+## Conversation history (`components/agent/PriorThreads.tsx`)
+
+`GET /api/chats?prId=` has always listed every thread on a PR and nothing ever
+called it: the pane could only open the ONE session matching its current scope,
+so each new commit read as amnesia. `useChatSessions` is that list, and it
+appears in the chat panel only while THIS conversation is empty — once you are
+talking, older threads are not what the pane is for.
+
+- **One renderer, `ChatMessageView`.** The live pane and the read-back draw the same `ChatMessage`;
+  two copies of that JSX drifted before either shipped (the replay dropped `contextRead` and printed
+  a raw `stage-comment` where the pane said "comment on your draft"). Interactivity is the only real
+  difference, so it is the only prop: no `handlers` = inert chips.
+- **The list is GATED on the conversation being empty** (`useChatSessions(prId, enabled)`), which is
+  also the only time it renders. Every session in that response carries its whole transcript, so
+  ungated it fetched on every PR open and again after every completed turn — when the panel is
+  guaranteed not to show it.
+- **Read-only, always.** A thread at another sha was about code that has since
+  moved, so continuing it in place would attach new answers to a diff neither
+  party was looking at — and its action chips were validated against a run that
+  is gone, so they are LISTED rather than clickable. Reading it back is the
+  whole ask; re-asking is a fresh question at this commit.
+- A thread is named by its finding's own TITLE where the current run can still
+  resolve the id ("one finding" tells you nothing about which).
+- The list is invalidated on `turn-end` and on clear — it is keyed
+  `["chats", prId]`, which does NOT collide with a session's own
+  `["chat", id]`.
 
 ## The review flow (the human half)
 
 - The draft (`PendingReview`) lives SERVER-SIDE in `~/.tandem/reviews.json`, keyed by prId —
   browser and native app agree; optimistic updates via `usePendingReview`.
+- **Provenance is `isAgentAuthored`, not `findingId`** (`shared/review-types.ts`, TESTED). A
+  comment the agent drafted in CHAT has no finding behind it, so reading `findingId` alone made the
+  tray count it as the reviewer's and the inline card label it "your comment · staged" in the
+  human colour — violet means machine-authored (§3), and that was the claim being made wrong.
+  `stage-comment` sets `agentDrafted`; both surfaces read the one predicate.
 - Line click → composer annotation → staged `PendingComment` (optionally with an exact-replacement
   `suggestion`). Accepting a finding stages `**title**\n\nbody` + suggestion with `findingId` set —
   that drives the tray's human/agent breakdown and finding-state transitions. Removing an
@@ -473,9 +632,9 @@ One controlled `CodeView` hosts every file (`components/pr/DiffPane.tsx`):
   - **Typing does not jump.** It scrolls the pane and force-expands a file to land a hit, and
     doing that per keystroke moves the reader's place while they are still deciding; the count
     and the list answer "is it in here?" instantly, `↵`/`n` commit to going there.
-  - The hit borrows the pane's ONE line selection, second in the precedence table (after the
-    composer, ahead of a focused card or finding), and jumping clears both focus slots — two
-    borders would be two claims about one selection.
+  - The hit borrows the pane's ONE line selection, third in the precedence table (after the
+    composer and a clicked citation), and jumping clears every other claim — two borders would be
+    two claims about one selection.
 
 The FILE TREE is `@pierre/trees` (`components/pr/FileTree.tsx`): `useFileTree` constructs the
 model ONCE — later state reaches rows through model methods, so `renderRowDecoration` reads a
@@ -504,6 +663,10 @@ src/
     api-paths.ts  config-types.ts  github-credentials.ts  review-types.ts  agent-types.ts
     finding-schema.ts (zod)  settings-types.ts  is-plain-object  runtime  user-agent
     team-types.ts  pulse.ts (TESTED: states, blockedOn, grouping)
+    agent-decide.ts (TESTED: skipDecision) · agent-cluster.ts (TESTED: the
+                     pass-2 grouping) — SHARED because the PR pane's pre-flight
+                     card answers "would this even run, and how big is it"
+                     before the reviewer spends one
     agent-activity.ts (TESTED: live-registry ↔ run-record reconciliation, today's tally)
     pulse-journal.ts (TESTED)  xbar.ts (TESTED: the menu-bar plugin renderer)
                      kebab-case here; gh/ below is a camelCase sub-package. `-schema` means
@@ -524,7 +687,8 @@ src/
     settings/  teams/{store,routes}  pulse/{journal,routes}
     agent/   claude.ts (CLI harness)  procStream  live.ts (runs + chat)  sse.ts (replay-then-
              tail, shared)  runsIndex.ts  prewarm.ts  routes.ts
-             pipeline/{run,prompts,cluster,parse,context,decide}
+             pipeline/{run,prompts,parse,context}  (cluster + decide live in
+             shared/ — the pane predicts skips and pass counts before you spend)
              chat/{turn,prompt,prose,actions,context,store,routes}
   api/               plain-fetch clients (http.ts wrapper + one file per resource, named for
                      the resource: config, settings, queue, prs, reviews, runs, seen, views,
@@ -555,7 +719,11 @@ src/
   utils/queueStats.ts  TESTED pure stats + facets over the active view's rows
                      (buckets, top-N folding, parse/format/match facet; `pulse` is the one
                      facet dim needing context, hence the optional PulseOptions arg)
-  components/        layout/AppHeader (the ONE header: chrome + brand + agent strip + settings
+  components/        common/codeRefs.ts (TESTED: file:line in prose) + mdCodeRefs.ts (the
+                     rehype walk that makes them controls)
+                     agent/chatOpeners.ts + chatCommands.ts (both TESTED, both PURE — the
+                     conversation's free half: what to ask, and / and @)
+                     layout/AppHeader (the ONE header: chrome + brand + agent strip + settings
                      + theme; screens fill `children`/`actions`) queue/ pr/ agent/
                      review(tray in pr/)/ teams/ (TeamsPanel, framed by the settings
                      section AND the view editor's dialog)/ settings/ (SettingsView
@@ -791,6 +959,13 @@ exceeds the loaded rows, says so above the charts. Never drop that caveat.
   `uiStore.lastViewId` is only a persisted memory for cold launches and "← Queue".
 - **One header component** (`layout/AppHeader`) owns the chrome for every screen — a screen
   passes slots, never its own `<header>`.
+- **The agent pane has THREE modes, not a chat toggle** (`uiStore.prAgentMode`: `findings` /
+  `split` / `chat`, persisted; the ToggleGroup in the pane header, or `⇧C`): the conversation
+  outgrew a drawer capped at half the pane. In `chat` the findings fold to a one-row tally that is
+  also the way back — nothing is hidden, and an in-flight run still says so there, because that row
+  is the only one left. `c` stays "chat about the focused finding" and only ever GROWS the
+  conversation's share: a key that sometimes put the cursor in the box and sometimes resized the
+  pane would be neither.
 - **The PR detail side panes hide by UNMOUNTING** (`uiStore.prFilesOpen` / `prAgentOpen`, both
   persisted, toggled from the diff toolbar's panel icons): react-resizable-panels' `collapsible`
   lets a pane that lands at zero width during the group's first solve stay collapsed, which cost

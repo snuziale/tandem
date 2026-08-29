@@ -1,7 +1,11 @@
 // Pass-2 file clustering: related files analyzed together so cross-file
 // context survives (a hook and its test, a type and its consumer), while
 // keeping each invocation's prompt bounded.
-import type { FileChange } from "../../../shared/review-types";
+//
+// In SHARED for the same reason as agent-decide.ts: the pane's pre-flight card
+// tells the reviewer how many analysis passes a run would make before they
+// spend one, and "how many passes" is exactly what this function answers.
+import type { FileChange } from "./review-types";
 
 const MAX_FILES_PER_CLUSTER = 8;
 const MAX_LINES_PER_CLUSTER = 800;

@@ -182,12 +182,3 @@ function sanitizeAutoApprove(raw: unknown): TandemSettings["autoApprove"] {
         : d.requireChecksPassing,
   };
 }
-
-export function agentEnabledFor(
-  settings: TandemSettings,
-  repoKey: string,
-): boolean {
-  return (
-    settings.repos[repoKey]?.agentEnabled ?? settings.agentEnabledByDefault
-  );
-}

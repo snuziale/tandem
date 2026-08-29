@@ -312,6 +312,33 @@ body.future-dark {
   background: color-mix(in oklab, currentColor 8%, transparent);
   white-space: nowrap;
 }
+/* A `path.ts:42` the agent wrote, made clickable (components/common/
+   mdCodeRefs.ts). It is a CONTROL, so it reads as one — but it is drawn in
+   the agent token because the citation is machine-authored, exactly like the
+   rail beside the message it sits in. Only chat opts into these; a PR
+   description's markdown never grows one. */
+.tandem-md-ref {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 0.85em;
+  color: var(--tandem-agent);
+  background: var(--tandem-agent-bg);
+  border: 1px solid var(--tandem-agent-dim);
+  border-radius: 3px;
+  padding: 0 0.3em;
+  line-height: 1.4;
+  white-space: nowrap;
+  cursor: pointer;
+}
+/* A citation written as inline code — the agent's usual form — would otherwise
+   wear the code chip AND the ref chip, one inside the other. */
+.tandem-md code:has(> .tandem-md-ref) {
+  background: none;
+  border: none;
+  padding: 0;
+}
+.tandem-md-ref:hover {
+  background: color-mix(in srgb, var(--tandem-agent) 18%, transparent);
+}
 .tandem-md img,
 .tandem-md video {
   max-width: 100%;

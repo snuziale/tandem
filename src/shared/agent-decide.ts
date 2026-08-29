@@ -1,7 +1,13 @@
 // PURE run/skip decisions (Sift schedule.ts discipline: every decision the
 // scheduler or pipeline makes lives here, testable without I/O).
-import type { SkipReason } from "../../../shared/agent-types";
-import type { TandemSettings } from "../../../shared/settings-types";
+//
+// In SHARED, not under the pipeline, because it has two readers now: the
+// server, which skips a run, and the PR pane's pre-flight card, which tells
+// the reviewer BEFORE they click that this PR would be skipped and why. A
+// second copy of these rules on the client would be a promise the server had
+// no reason to keep.
+import type { SkipReason } from "./agent-types";
+import type { TandemSettings } from "./settings-types";
 
 export type SkipInput = {
   isDraft: boolean;

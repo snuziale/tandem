@@ -12,8 +12,13 @@ import {
   type DiffLineIndex,
   type KeepLines,
 } from "../../shared/gh/patch";
-import type { PendingComment, ReviewThread } from "../../shared/review-types";
+import type {
+  DiffSide,
+  PendingComment,
+  ReviewThread,
+} from "../../shared/review-types";
 import { useUiStore } from "../../state/uiStore";
+import type { RevealTarget } from "../../state/uiStore";
 import type { Finding } from "../../shared/agent-types";
 import type { ComposerTarget } from "../../state/uiStore";
 
@@ -49,6 +54,19 @@ export function spanOf(
 
 export function startLineOf(start: number, end: number): number | undefined {
   return start === end ? undefined : start;
+}
+
+/** How a span is WRITTEN wherever one is shown to the reader: `40–52`, or a
+ * bare `52` when there is only one line. Beside `spanOf`/`startLineOf` because
+ * it is the same convention — the chat header, the composer's label and a
+ * replayed transcript must not punctuate one range three ways. */
+export function spanLabel(anchor: {
+  line: number;
+  startLine?: number;
+}): string {
+  return anchor.startLine
+    ? `${anchor.startLine}–${anchor.line}`
+    : `${anchor.line}`;
 }
 
 /**
@@ -122,6 +140,85 @@ export function keepLinesByPath(sources: {
   if (composer)
     keep(composer.path, composer.side, composer.startLine, composer.line);
   return map;
+}
+
+/** Who is currently lending the pane its one selection. Named because the
+ * chat header says it out loud — "these lines" reads very differently when it
+ * came from an open composer than from a finding you clicked. */
+export type AnchorSource =
+  "composer" | "revealed" | "search" | "comment" | "thread" | "finding";
+
+/** The pane's one selection, in the app's own anchor shape. */
+export type PaneAnchor = {
+  path: string;
+  side: DiffSide;
+  /** The END line, as everywhere else. */
+  line: number;
+  startLine?: number;
+  source: AnchorSource;
+};
+
+/**
+ * WHO OWNS THE PANE'S ONE LINE SELECTION, in precedence order — the composer,
+ * then an explicit jump (a clicked citation), then a find-in-diff hit, then
+ * the focused staged comment or human thread, then the focused finding.
+ *
+ * A jump sits second because it is the most recent thing the reader ASKED
+ * for — they clicked `patch.ts:213` and the pane took them there, so those are
+ * the lines they are looking at. It still loses to an open composer, which is
+ * a sentence they are halfway through writing.
+ *
+ * There is exactly one of these because there is exactly one selection: two
+ * things wearing a highlight would be two claims about a single range. It
+ * lives here, pure, because it has TWO readers now — `DiffPane`, which paints
+ * it, and the chat panel, which asks about it. "Where the reviewer is
+ * pointing" must be one function, not two implementations agreeing by luck.
+ *
+ * Null `end` means the claimant anchors nothing (a thread outdated against
+ * this diff), and it falls through to the next one.
+ */
+export function paneAnchorOf(sources: {
+  composerTarget: ComposerTarget | null;
+  revealedAnchor: RevealTarget | null;
+  searchHit: { path: string; side: DiffSide; line: number } | null;
+  pendingComments: readonly PendingComment[];
+  threads: readonly ReviewThread[];
+  findings: readonly Finding[];
+  focusedCommentId: string | null;
+  focusedFindingId: string | null;
+}): PaneAnchor | null {
+  const at = (
+    source: AnchorSource,
+    a: { path: string; side: DiffSide; startLine?: number } | undefined,
+    end: number | null | undefined,
+  ): PaneAnchor | null => {
+    if (!a || end == null) return null;
+    const span = spanOf(a.startLine, end);
+    return {
+      path: a.path,
+      side: a.side,
+      line: span.end,
+      startLine: startLineOf(span.start, span.end),
+      source,
+    };
+  };
+  const composer = sources.composerTarget ?? undefined;
+  const comment = sources.pendingComments.find(
+    (c) => c.localId === sources.focusedCommentId,
+  );
+  const thread = sources.threads.find((t) => t.id === sources.focusedCommentId);
+  const finding = sources.findings.find(
+    (f) => f.id === sources.focusedFindingId,
+  );
+  const revealed = sources.revealedAnchor ?? undefined;
+  return (
+    at("composer", composer, composer?.line) ??
+    at("revealed", revealed, revealed?.line) ??
+    at("search", sources.searchHit ?? undefined, sources.searchHit?.line) ??
+    at("comment", comment, comment?.line) ??
+    at("thread", thread, thread?.line) ??
+    at("finding", finding, finding?.endLine)
+  );
 }
 
 /**

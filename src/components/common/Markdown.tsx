@@ -5,7 +5,9 @@ import rehypeRaw from "rehype-raw";
 import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
 import { cn } from "@uipath/apollo-wind";
 import { openPrExternal } from "../../actions/queue";
+import { findCodeRefs, type CodeRef } from "./codeRefs";
 import { rehypeGithubAlerts } from "./mdAlerts";
+import { CODE_REF_CLASS, rehypeCodeRefs } from "./mdCodeRefs";
 
 // The one markdown renderer: PR descriptions, thread comments, finding bodies,
 // staged comments. react-markdown builds a React tree (no innerHTML).
@@ -44,6 +46,10 @@ const REHYPE = [
   rehypeGithubAlerts,
 ] as const;
 
+/** With `onRefClick`: the same chain plus the file:line linkifier, which runs
+ * last for the same reason the alerts plugin does — what it adds is ours. */
+const REHYPE_WITH_REFS = [...REHYPE, rehypeCodeRefs] as const;
+
 /** `language-ts` → `ts`, for the code fence's corner label. */
 function languageOf(className: unknown): string | null {
   if (typeof className !== "string") return null;
@@ -51,20 +57,26 @@ function languageOf(className: unknown): string | null {
   return match ? match[1] : null;
 }
 
+/**
+ * A link in rendered markdown must never navigate the SPA away from the
+ * review — least of all in the native webview, where there is no back button.
+ *
+ * One function because there are two `a` overrides: the default set below, and
+ * the chat variant that also has to recognise a linkified `path.ts:42`.
+ */
+function openExternalLink(
+  e: { preventDefault: () => void },
+  href: string | undefined,
+): void {
+  if (!href) return;
+  e.preventDefault();
+  openPrExternal(href);
+}
+
 const COMPONENTS: Components = {
-  // A description link must never navigate the SPA away from the review —
-  // least of all in the native webview, where there is no back button.
   a({ href, children, ...rest }) {
     return (
-      <a
-        {...rest}
-        href={href}
-        onClick={(e) => {
-          if (!href) return;
-          e.preventDefault();
-          openPrExternal(href);
-        }}
-      >
+      <a {...rest} href={href} onClick={(e) => openExternalLink(e, href)}>
         {children}
       </a>
     );
@@ -96,9 +108,14 @@ const COMPONENTS: Components = {
 export function Markdown({
   children,
   className,
+  onRefClick,
 }: {
   children: string;
   className?: string;
+  /** Opt in to file:line linkification. Absent — the case for every PR
+   * description and thread comment — nothing is rewritten and the render is
+   * exactly what it always was. */
+  onRefClick?: (ref: CodeRef) => void;
 }) {
   // PR templates ship as HTML comments; rehype-raw would otherwise keep them
   // as comment nodes and the "empty description" check would miss them.
@@ -106,12 +123,54 @@ export function Markdown({
     () => children.replace(/<!--[\s\S]*?-->/g, ""),
     [children],
   );
+  // One `a` override serves both jobs: a real link opens externally, and a
+  // reference the linkifier added moves the diff. Told apart by the attribute
+  // the plugin wrote, never by the href.
+  const components = useMemo<Components>(() => {
+    if (!onRefClick) return COMPONENTS;
+    return {
+      ...COMPONENTS,
+      a({ href, children: kids, className: cls, ...rest }) {
+        const ours =
+          typeof cls === "string" && cls.split(" ").includes(CODE_REF_CLASS);
+        // The plugin makes the reference text the element's only child, so
+        // this is the same string it matched.
+        const written = Array.isArray(kids) ? kids[0] : kids;
+        if (ours && typeof written === "string") {
+          const hit = findCodeRefs(written)[0];
+          if (hit) {
+            return (
+              <button
+                type="button"
+                className={CODE_REF_CLASS}
+                onClick={() => onRefClick(hit.ref)}
+              >
+                {written}
+              </button>
+            );
+          }
+        }
+        // Not one of ours — the ONE external-link handler, shared with
+        // COMPONENTS.a so a future fix there reaches chat prose too.
+        return (
+          <a
+            {...rest}
+            className={cls}
+            href={href}
+            onClick={(e) => openExternalLink(e, href)}
+          >
+            {kids}
+          </a>
+        );
+      },
+    };
+  }, [onRefClick]);
   return (
     <div className={cn("tandem-md text-sm break-words", className)}>
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
-        rehypePlugins={REHYPE as never}
-        components={COMPONENTS}
+        rehypePlugins={(onRefClick ? REHYPE_WITH_REFS : REHYPE) as never}
+        components={components}
       >
         {cleaned}
       </ReactMarkdown>

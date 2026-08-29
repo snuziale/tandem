@@ -8,6 +8,14 @@ import type { PrId } from "../shared/review-types";
 
 export type QueueRowRef = { prId: PrId; url: string; blockerTitle?: string };
 export type DiffStyle = "unified" | "split";
+/**
+ * How the right-hand pane splits its height between the findings list and the
+ * conversation. Three modes rather than a boolean, because the conversation
+ * outgrew a drawer: `chat` gives it the whole pane (the findings collapse to
+ * their tally), `findings` is the old chat-closed state, `split` is both.
+ */
+export type AgentPaneMode = "findings" | "split" | "chat";
+const AGENT_PANE_MODES: AgentPaneMode[] = ["findings", "split", "chat"];
 export type ComposerTarget = {
   path: string;
   /**
@@ -20,6 +28,22 @@ export type ComposerTarget = {
   startLine?: number;
   side: "LEFT" | "RIGHT";
 };
+/**
+ * A span the reader was SENT to — today, by clicking a `path.ts:42` citation
+ * the agent wrote. Same shape as a composer target because it is the same
+ * thing: a path, a side, and an end-anchored range.
+ *
+ * It exists because a jump that only scrolls leaves you somewhere with nothing
+ * marked; the lines the citation named have to wear the pane's selection, or
+ * the reader has to find them again by eye.
+ */
+export type RevealTarget = {
+  path: string;
+  line: number;
+  startLine?: number;
+  side: "LEFT" | "RIGHT";
+};
+
 /** react-resizable-panels' Layout: panel id → size, in the library's own units. */
 export type PaneLayout = Record<string, number>;
 
@@ -65,6 +89,11 @@ type UiState = {
   // A finding's focus means more than the highlight (chat scope, j/k, the
   // agent pane), which is why it keeps its own name.
   // Finding triage focus/editing on the detail screen (j/k · y/e/x).
+  /** Where an explicit jump last landed. Cleared by any other claim on the
+   * selection, so the pane never wears two marks for one range. */
+  revealedAnchor: RevealTarget | null;
+  setRevealedAnchor: (target: RevealTarget | null) => void;
+
   focusedFindingId: string | null;
   setFocusedFinding: (id: string | null) => void;
   /** A staged comment (`PendingComment.localId`) or a human thread
@@ -103,8 +132,10 @@ type UiState = {
   setPrAgentOpen: (open: boolean | ((current: boolean) => boolean)) => void;
 
   /** The chat section at the foot of the agent pane. Persisted like the panes. */
-  prChatOpen: boolean;
-  setPrChatOpen: (open: boolean | ((current: boolean) => boolean)) => void;
+  prAgentMode: AgentPaneMode;
+  setPrAgentMode: (mode: AgentPaneMode) => void;
+  /** findings → split → chat → findings. */
+  cyclePrAgentMode: () => void;
 
   shortcutsOpen: boolean;
   setShortcutsOpen: (open: boolean) => void;
@@ -146,8 +177,31 @@ export const useUiStore = create<UiState>()(
       setComposerTarget: (target) =>
         set(
           target
-            ? { composerTarget: target, focusedCommentId: null }
+            ? // `revealedAnchor` goes too: the composer outranks it, so a
+              // stale one is invisible while open — and then pops its
+              // highlight back the moment the composer closes, marking lines
+              // the reader last looked at minutes ago.
+              {
+                composerTarget: target,
+                focusedCommentId: null,
+                revealedAnchor: null,
+              }
             : { composerTarget: target },
+        ),
+
+      // Every setter below clears the others: at most ONE of these may claim
+      // the pane's single selection, or two cards wear a focused border and
+      // both are lying about the same range.
+      revealedAnchor: null,
+      setRevealedAnchor: (target) =>
+        set(
+          target
+            ? {
+                revealedAnchor: target,
+                focusedFindingId: null,
+                focusedCommentId: null,
+              }
+            : { revealedAnchor: null },
         ),
 
       focusedFindingId: null,
@@ -183,10 +237,15 @@ export const useUiStore = create<UiState>()(
           prAgentOpen: typeof open === "function" ? open(s.prAgentOpen) : open,
         })),
 
-      prChatOpen: true,
-      setPrChatOpen: (open) =>
+      prAgentMode: "split",
+      setPrAgentMode: (mode) => set({ prAgentMode: mode }),
+      cyclePrAgentMode: () =>
         set((s) => ({
-          prChatOpen: typeof open === "function" ? open(s.prChatOpen) : open,
+          prAgentMode:
+            AGENT_PANE_MODES[
+              (AGENT_PANE_MODES.indexOf(s.prAgentMode) + 1) %
+                AGENT_PANE_MODES.length
+            ],
         })),
 
       shortcutsOpen: false,
@@ -215,7 +274,7 @@ export const useUiStore = create<UiState>()(
         prPaneLayout: s.prPaneLayout,
         prFilesOpen: s.prFilesOpen,
         prAgentOpen: s.prAgentOpen,
-        prChatOpen: s.prChatOpen,
+        prAgentMode: s.prAgentMode,
         statsOpen: s.statsOpen,
       }),
     },

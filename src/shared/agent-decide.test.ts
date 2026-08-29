@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_SETTINGS } from "../../../shared/settings-types";
-import { skipDecision, type SkipInput } from "./decide";
+import { DEFAULT_SETTINGS } from "./settings-types";
+import { skipDecision, type SkipInput } from "./agent-decide";
 
 const base: SkipInput = {
   isDraft: false,

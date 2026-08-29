@@ -34,7 +34,8 @@ import { fetchPrFiles } from "../../github/files";
 import { fetchPrDetail } from "../../github/pr";
 import { quickApprove } from "../../github/submit";
 import { loadReview } from "../../reviews/store";
-import { agentEnabledFor, loadSettings } from "../../settings/store";
+import { loadSettings } from "../../settings/store";
+import { agentEnabledFor } from "../../../shared/settings-types";
 import { runClaudePass, type ClaudePassResult } from "../claude";
 import { createLive, finishLive, publish } from "../live";
 import {
@@ -44,9 +45,9 @@ import {
   spendToday,
   upsertRun,
 } from "../runsIndex";
-import { analyzableFiles, clusterFiles } from "./cluster";
+import { analyzableFiles, clusterFiles } from "../../../shared/agent-cluster";
 import { fetchConventions, fetchRecentCommitSubjects } from "./context";
-import { skipDecision } from "./decide";
+import { skipDecision } from "../../../shared/agent-decide";
 import {
   parseWithSchema,
   sanitizeFindings,

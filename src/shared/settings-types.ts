@@ -135,3 +135,21 @@ export function agentById(
     DEFAULT_AGENT
   );
 }
+
+/**
+ * Is the agent on for this repo? The per-repo toggle, with the global default
+ * behind it.
+ *
+ * In shared beside the type it reads, because the PANE asks it too now: the
+ * pre-flight card tells the reviewer a run would be skipped before they spend
+ * one, and a client-side second opinion on this rule would be a promise the
+ * server had no reason to keep.
+ */
+export function agentEnabledFor(
+  settings: TandemSettings,
+  repoKey: string,
+): boolean {
+  return (
+    settings.repos[repoKey]?.agentEnabled ?? settings.agentEnabledByDefault
+  );
+}

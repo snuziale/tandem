@@ -23,9 +23,10 @@ import type { PrId, PullRequest } from "../../shared/review-types";
 import type { Config } from "../config/store";
 import { fetchPrFiles } from "../github/files";
 import { loadReview, saveReview } from "../reviews/store";
-import { agentEnabledFor, loadSettings } from "../settings/store";
+import { loadSettings } from "../settings/store";
+import { agentEnabledFor } from "../../shared/settings-types";
 import { startRun } from "./pipeline/run";
-import { skipDecision } from "./pipeline/decide";
+import { skipDecision } from "../../shared/agent-decide";
 import { liveCount } from "./live";
 import {
   getRun,

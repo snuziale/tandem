@@ -24,7 +24,6 @@ import {
   type KeepLines,
 } from "../../shared/gh/patch";
 import type {
-  DiffSide,
   FileChange,
   PendingComment,
   PrId,
@@ -42,9 +41,9 @@ import {
   keepLinesByPath,
   spanOf,
   startLineOf,
+  type PaneAnchor,
   type TandemAnno,
 } from "./annotations";
-import type { DiffHit } from "./diffSearch";
 import { DiffFileHeader } from "./DiffFileHeader";
 import { loadDiffFileSides } from "./expandContext";
 import { ComposerCard } from "./ComposerCard";
@@ -75,7 +74,9 @@ type Props = {
   onRemoveComment: (localId: string) => void;
   /** The find-in-diff hit the reader is on, if any. It borrows the pane's ONE
    * line selection while the find bar is open — see the selection memo. */
-  searchHit: DiffHit | null;
+  /** Where the pane's one line selection points — resolved by PrDetailView so
+   * the diff and the chat panel cannot disagree about it. */
+  anchor: PaneAnchor | null;
   /** React writes this; the pane reads it too — it owns the diff's line
    * selection while PrDetailView owns scrollTo. One ref, two readers. */
   codeViewRef: React.RefObject<DiffPaneHandle | null>;
@@ -131,7 +132,7 @@ export function DiffPane({
   onAddComment,
   onUpdateComment,
   onRemoveComment,
-  searchHit,
+  anchor,
   codeViewRef,
 }: Props) {
   const diffStyle = useUiStore((s) => s.diffStyle);
@@ -312,45 +313,23 @@ export function DiffPane({
    * committed state back, so the highlight survives the drag ending and dies
    * with the composer.
    */
-  const focusedFindingId = useUiStore((s) => s.focusedFindingId);
-  const focusedCommentId = useUiStore((s) => s.focusedCommentId);
+  /**
+   * The pane's ONE selected line range, as the library wants it.
+   *
+   * WHO owns that selection is `paneAnchorOf` — and it is resolved ONCE, by
+   * PrDetailView, which then hands the answer to both readers: here, to paint
+   * it, and to the chat panel, to ask about it. Calling it in both places
+   * meant two seven-argument call sites agreeing by luck, and they had already
+   * drifted; the whole point of the function is that there is one answer.
+   */
   const selection = useMemo<CodeViewLineSelection | null>(() => {
-    // The composer wins; otherwise whichever card the reader is pointed at.
-    // Every claimant is reduced to one {path, side, startLine, end} shape, so
-    // the span rule is applied once and a RANGE card of any kind shows its
-    // height rather than just its anchor line. `end` is null for a thread that
-    // is outdated against this diff — nothing to highlight.
-    const anchored = (
-      a: { path: string; side: DiffSide; startLine?: number } | undefined,
-      end: number | null | undefined,
-    ): CodeViewLineSelection | null => {
-      if (!a || end == null) return null;
-      const span = spanOf(a.startLine, end);
-      return {
-        id: a.path,
-        range: { ...span, side: annotationSideOf(a.side) },
-      };
+    if (!anchor) return null;
+    const span = spanOf(anchor.startLine, anchor.line);
+    return {
+      id: anchor.path,
+      range: { ...span, side: annotationSideOf(anchor.side) },
     };
-    const composer = composerTarget ?? undefined;
-    const comment = pendingComments.find((c) => c.localId === focusedCommentId);
-    const thread = threads.find((t) => t.id === focusedCommentId);
-    const finding = findings.find((f) => f.id === focusedFindingId);
-    return (
-      anchored(composer, composer?.line) ??
-      anchored(searchHit ?? undefined, searchHit?.line) ??
-      anchored(comment, comment?.line) ??
-      anchored(thread, thread?.line) ??
-      anchored(finding, finding?.endLine)
-    );
-  }, [
-    composerTarget,
-    searchHit,
-    pendingComments,
-    threads,
-    findings,
-    focusedCommentId,
-    focusedFindingId,
-  ]);
+  }, [anchor]);
   useEffect(() => {
     codeViewRef.current?.setSelectedLines(selection);
   }, [selection, codeViewRef]);

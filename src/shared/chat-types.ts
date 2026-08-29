@@ -7,10 +7,30 @@
 // in this file can reach GitHub — submit.ts is still the only writer.
 import type { FindingJson } from "./finding-schema";
 import type { Severity } from "./agent-types";
-import type { PrId } from "./review-types";
+import type { DiffSide, PrId } from "./review-types";
 
 /** What a conversation is about: a PR at a sha, optionally narrowed to one finding. */
 export type ChatScope = { prId: PrId; headSha: string; findingId?: string };
+
+/**
+ * Where the reviewer is POINTING when they ask — the pane's one line
+ * selection, whoever is currently lending it (composer, focused card, focused
+ * finding, search hit).
+ *
+ * This is ATTENTION, not IDENTITY, and the distinction is the whole design:
+ * `chatKeyOf` keys storage and the URL and must stay coarse, so an anchor
+ * rides on the TURN instead. Key the session by selection and every drag
+ * forks the conversation.
+ *
+ * Same convention as every other range in the app: `line` is the END, and
+ * `startLine` is absent when there is only one.
+ */
+export type ChatAnchor = {
+  path: string;
+  side: DiffSide;
+  line: number;
+  startLine?: number;
+};
 
 /** Session identity — also the storage key and the URL segment. A new head sha
  * or a different finding is a DIFFERENT conversation, so scope is the key. */
@@ -43,6 +63,8 @@ export type ReviseFindingAction = ActionBase & {
   severity?: Severity;
   /** New replacement text, or null to drop the existing suggestion. */
   suggestion?: string | null;
+  /** What `suggestion` would replace — see NewFindingAction.replaces. */
+  replaces?: string;
 };
 
 export type DismissFindingAction = ActionBase & {
@@ -55,6 +77,32 @@ export type DismissFindingAction = ActionBase & {
 export type NewFindingAction = ActionBase & {
   kind: "new-finding";
   finding: FindingJson;
+  /** The current text of the anchored lines — the LEFT side of the chip's
+   * diff preview. Server-computed at sanitize time, because the chip has the
+   * patch nowhere near it. */
+  replaces?: string;
+};
+
+/**
+ * A comment the CONVERSATION produced, staged straight into the draft at lines
+ * the reviewer pointed at.
+ *
+ * The only action kind that needs no run: every other one edits something a
+ * run emitted, which left a PR with no run unable to produce anything at all —
+ * and runs are opt-in, so that is the default path. Still a proposal; still
+ * the reviewer's click; `submit.ts` is still the only writer.
+ */
+export type StageCommentAction = ActionBase & {
+  kind: "stage-comment";
+  path: string;
+  side: DiffSide;
+  line: number;
+  startLine?: number;
+  body: string;
+  /** Exact replacement text for the anchored lines. */
+  suggestion?: string;
+  /** What `suggestion` would replace — see NewFindingAction.replaces. */
+  replaces?: string;
 };
 
 /** Rewrite the body of a comment already staged in the pending review. */
@@ -68,7 +116,8 @@ export type ChatAction =
   | ReviseFindingAction
   | DismissFindingAction
   | NewFindingAction
-  | ReviseCommentAction;
+  | ReviseCommentAction
+  | StageCommentAction;
 
 export type ChatRole = "user" | "agent";
 
@@ -78,6 +127,10 @@ export type ChatMessage = {
   /** Markdown prose. For agent turns this is the reply with the action fence stripped. */
   text: string;
   createdAt: string;
+  /** User turns only: the lines the reviewer was pointing at when they asked.
+   * Persisted so a replayed transcript still reads as a conversation about
+   * something rather than a list of unmoored questions. */
+  anchor?: ChatAnchor;
   /** Agent turns only. */
   agentId?: string;
   agentName?: string;

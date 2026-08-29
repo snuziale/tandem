@@ -11,7 +11,11 @@
 // Applying an action is the ONLY state-changing thing a conversation can do,
 // and it happens here — on an explicit human request, never from the turn.
 import { API_PATHS } from "../../../shared/api-paths";
-import type { ChatEvent, ChatScope } from "../../../shared/chat-types";
+import type {
+  ChatAnchor,
+  ChatEvent,
+  ChatScope,
+} from "../../../shared/chat-types";
 import { isPlainObject } from "../../../shared/is-plain-object";
 import { loadConfig } from "../../config/store";
 import { matchIdPath } from "../../pathMatch";
@@ -82,6 +86,36 @@ export async function handleChats(req: Request): Promise<Response> {
   return new Response("Not Found", { status: 404 });
 }
 
+/**
+ * The reviewer's line selection, off the wire. Untrusted like anything else
+ * from a client: a malformed anchor degrades to "no anchor" — the turn still
+ * answers about the PR — rather than 400ing a question someone typed.
+ */
+function parseAnchor(raw: unknown): ChatAnchor | undefined {
+  if (!isPlainObject(raw)) return undefined;
+  const { path, side, line, startLine } = raw;
+  if (typeof path !== "string" || !path) return undefined;
+  if (side !== "LEFT" && side !== "RIGHT") return undefined;
+  if (typeof line !== "number" || !Number.isInteger(line) || line < 1)
+    return undefined;
+  const start =
+    typeof startLine === "number" &&
+    Number.isInteger(startLine) &&
+    startLine >= 1 &&
+    startLine < line
+      ? startLine
+      : undefined;
+  return { path, side, line, startLine: start };
+}
+
+function parseContextPaths(raw: unknown): string[] | undefined {
+  if (!Array.isArray(raw)) return undefined;
+  const paths = raw.filter(
+    (p): p is string => typeof p === "string" && p.length > 0 && p.length < 400,
+  );
+  return paths.length ? paths : undefined;
+}
+
 async function handleTurn(req: Request): Promise<Response> {
   const cfg = await loadConfig();
   if (!cfg) return Response.json({ error: "unconfigured" }, { status: 503 });
@@ -93,7 +127,10 @@ async function handleTurn(req: Request): Promise<Response> {
     typeof body.message !== "string"
   ) {
     return Response.json(
-      { error: "expected { prId, headSha, message, findingId?, agentId? }" },
+      {
+        error:
+          "expected { prId, headSha, message, findingId?, agentId?, anchor?, contextPaths? }",
+      },
       { status: 400 },
     );
   }
@@ -106,6 +143,8 @@ async function handleTurn(req: Request): Promise<Response> {
     const result = await startChatTurn(cfg, scope, {
       message: body.message,
       agentId: typeof body.agentId === "string" ? body.agentId : undefined,
+      anchor: parseAnchor(body.anchor),
+      contextPaths: parseContextPaths(body.contextPaths),
     });
     return Response.json(result);
   } catch (e) {

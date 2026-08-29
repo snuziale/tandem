@@ -1,6 +1,7 @@
 import { API_PATHS } from "../shared/api-paths";
 import type {
   ChatActionState,
+  ChatAnchor,
   ChatEvent,
   ChatSession,
 } from "../shared/chat-types";
@@ -30,6 +31,11 @@ export function sendChatTurn(input: {
   findingId?: string;
   message: string;
   agentId?: string;
+  /** Where the pane's line selection is pointing — attention, not identity,
+   * so it never touches the session key. */
+  anchor?: ChatAnchor;
+  /** Files the reviewer named with `@path`; the server pre-loads them. */
+  contextPaths?: string[];
 }): Promise<{ session: ChatSession }> {
   return apiRequest(`${API_PATHS.CHATS}/turn`, {
     method: "POST",

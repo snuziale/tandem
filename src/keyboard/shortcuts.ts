@@ -53,6 +53,10 @@ export const SHORTCUT_GROUPS: ShortcutGroup[] = [
         keys: ["c"],
         action: "chat with the agent (about the focused finding)",
       },
+      {
+        keys: [`${SHIFT}+C`],
+        action: "agent pane: findings / split / conversation",
+      },
       { keys: ["v"], action: "mark selected file viewed (first file if none)" },
       { keys: ["w"], action: "hide / show whitespace-only changes" },
       { keys: ["r"], action: "rerun agent" },
@@ -81,6 +85,12 @@ export const SHORTCUT_GROUPS: ShortcutGroup[] = [
       },
       { keys: ["↵", `${MOD}+↵`], action: "chat: send" },
       { keys: [`${SHIFT}+↵`], action: "chat: newline" },
+      { keys: ["/", "@"], action: "chat: commands, or name a file to read" },
+      { keys: ["⇥"], action: "chat: take the first command or file offered" },
+      {
+        keys: ["y", "x"],
+        action: "chat: apply / dismiss the focused proposal",
+      },
     ],
   },
   {

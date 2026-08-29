@@ -208,3 +208,121 @@ describe("sanitizeChatActions", () => {
     expect(discarded).toBe(1);
   });
 });
+
+describe("sanitizeChatActions — stage-comment", () => {
+  const stage = (over: Record<string, unknown> = {}): ChatActionJson =>
+    ({
+      kind: "stage-comment",
+      path: "src/a.ts",
+      side: "RIGHT",
+      line: 11,
+      body: "this needs a guard",
+      why: "they asked for it",
+      ...over,
+    }) as ChatActionJson;
+
+  it("keeps a comment anchored to a real diff line", () => {
+    const { actions, discarded } = sanitizeChatActions([stage()], ctx());
+    expect(discarded).toBe(0);
+    expect(actions[0]).toMatchObject({
+      kind: "stage-comment",
+      path: "src/a.ts",
+      side: "RIGHT",
+      line: 11,
+      body: "this needs a guard",
+      state: "proposed",
+    });
+  });
+
+  it("needs NO run — the whole point of the kind", () => {
+    const { actions, discarded } = sanitizeChatActions(
+      [stage()],
+      ctx({ run: null }),
+    );
+    expect(discarded).toBe(0);
+    expect(actions).toHaveLength(1);
+  });
+
+  it("drops an anchor the patch does not contain", () => {
+    const { actions, discarded } = sanitizeChatActions(
+      [stage({ line: 999 })],
+      ctx(),
+    );
+    expect(actions).toHaveLength(0);
+    expect(discarded).toBe(1);
+  });
+
+  it("drops a file that is not in the diff", () => {
+    const { actions, discarded } = sanitizeChatActions(
+      [stage({ path: "src/nope.ts" })],
+      ctx(),
+    );
+    expect(actions).toHaveLength(0);
+    expect(discarded).toBe(1);
+  });
+
+  it("clamps a range back to the contiguous run of patch lines", () => {
+    // Only 10 and 11 are in the patch on the RIGHT, so a range from 8 stops
+    // at 10 — exactly what a dragged selection does, and what GitHub accepts.
+    const { actions } = sanitizeChatActions(
+      [stage({ line: 11, startLine: 8 })],
+      ctx(),
+    );
+    expect(actions[0]).toMatchObject({ line: 11, startLine: 10 });
+  });
+
+  it("collapses a range that clamps down to one line", () => {
+    const { actions } = sanitizeChatActions(
+      [stage({ line: 10, startLine: 8 })],
+      ctx(),
+    );
+    expect(actions[0]).toMatchObject({ line: 10 });
+    expect((actions[0] as { startLine?: number }).startLine).toBeUndefined();
+  });
+
+  it("stages even where a human already commented — they asked", () => {
+    // The pass-2 gate drops a FINDING that duplicates a human thread; a
+    // requested comment is not the agent volunteering.
+    const { actions } = sanitizeChatActions(
+      [stage({ line: 10 })],
+      ctx({
+        threads: [
+          {
+            id: "t1",
+            path: "src/a.ts",
+            line: 10,
+            side: "RIGHT",
+            isResolved: false,
+            isOutdated: false,
+            comments: [
+              {
+                id: "cm1",
+                author: "dana",
+                bodyMarkdown: "same point",
+                createdAt: "",
+              },
+            ],
+          },
+        ],
+      }),
+    );
+    expect(actions).toHaveLength(1);
+  });
+
+  it("computes `replaces` from the patch so the chip can show a diff", () => {
+    const patch = "@@ -5,1 +10,2 @@\n context\n+added line\n";
+    const { actions } = sanitizeChatActions(
+      [stage({ line: 11, suggestion: "fixed line" })],
+      ctx({ patchByPath: new Map([["src/a.ts", patch]]) }),
+    );
+    expect(actions[0]).toMatchObject({
+      suggestion: "fixed line",
+      replaces: "added line",
+    });
+  });
+
+  it("omits `replaces` when nothing is being replaced", () => {
+    const { actions } = sanitizeChatActions([stage()], ctx());
+    expect((actions[0] as { replaces?: string }).replaces).toBeUndefined();
+  });
+});

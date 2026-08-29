@@ -16,6 +16,7 @@ import {
 import {
   chatKeyOf,
   newChatSession,
+  type ChatAnchor,
   type ChatEvent,
   type ChatMessage,
   type ChatScope,
@@ -40,11 +41,24 @@ import { clearStuckStatus, getSession, updateSession } from "./store";
 /** How many times a single turn may ask the server for more files. */
 const MAX_CONTEXT_HOPS = 2;
 const MAX_QUESTION_CHARS = 4000;
+/** `@path` mentions the reviewer typed. Pre-loaded before hop 0, which is the
+ * point: naming the file up front skips the needContext round trip entirely,
+ * and that hop is a whole model call. */
+const MAX_MENTIONED_PATHS = 3;
+
+export type ChatTurnOptions = {
+  message: string;
+  agentId?: string;
+  /** Where the reviewer was pointing when they asked. */
+  anchor?: ChatAnchor;
+  /** Files named with `@path` in the composer. */
+  contextPaths?: string[];
+};
 
 export async function startChatTurn(
   cfg: Config,
   scope: ChatScope,
-  opts: { message: string; agentId?: string },
+  opts: ChatTurnOptions,
 ): Promise<{ session: ChatSession }> {
   const question = opts.message.trim();
   if (!question) throw new Error("empty message");
@@ -80,6 +94,7 @@ export async function startChatTurn(
     role: "user",
     text: question,
     createdAt: new Date().toISOString(),
+    anchor: opts.anchor,
   };
   const session = await updateSession(scope, (s) => {
     s.messages.push(userMessage);
@@ -90,9 +105,11 @@ export async function startChatTurn(
     headSha: scope.headSha,
     agentName: agent.name,
   });
-  void drive(cfg, scope, sessionId, agent, question, signal).catch((e) => {
-    console.error(`[chat] turn ${sessionId} crashed:`, e);
-  });
+  void drive(cfg, scope, sessionId, agent, question, opts, signal).catch(
+    (e) => {
+      console.error(`[chat] turn ${sessionId} crashed:`, e);
+    },
+  );
 
   return { session };
 }
@@ -103,6 +120,7 @@ async function drive(
   sessionId: string,
   agent: ReturnType<typeof agentById>,
   question: string,
+  opts: ChatTurnOptions,
   signal: AbortSignal,
 ): Promise<void> {
   const emit = (event: ChatEvent) => publish(sessionId, event);
@@ -130,13 +148,47 @@ async function drive(
     // The question we just persisted is passed separately, not twice.
     const priorHistory = history.slice(0, -1);
 
+    const withPatch = files.filter((f) => f.patch !== undefined);
     const lineIndexByPath = new Map<string, DiffLineIndex>(
-      files
-        .filter((f) => f.patch !== undefined)
-        .map((f) => [f.path, diffLineIndex(f.patch!)]),
+      withPatch.map((f) => [f.path, diffLineIndex(f.patch!)]),
+    );
+    const patchByPath = new Map<string, string>(
+      withPatch.map((f) => [f.path, f.patch!]),
     );
 
     const extraContext: Array<{ path: string; text: string }> = [];
+    // `@path` mentions are fetched BEFORE the first pass rather than waiting
+    // for the model to ask: the reviewer already named the file, and a
+    // needContext hop costs a full re-ask.
+    //
+    // A file already in the diff is NOT skipped, and that was a real bug: the
+    // client resolves a mention against the diff's own paths, so filtering out
+    // everything in the diff made the two exact complements and nothing was
+    // ever fetched. The diff carries HUNKS — naming a file is how the reviewer
+    // asks for the whole thing.
+    const mentioned = (opts.contextPaths ?? []).slice(0, MAX_MENTIONED_PATHS);
+    // Concurrent: these are independent reads on the turn's critical path, and
+    // the reviewer is watching a spinner for all of them.
+    if (mentioned.length) {
+      emit({ type: "status", label: `reading ${mentioned.join(", ")}` });
+      const fetched = await Promise.all(
+        mentioned.map((path) =>
+          fetchFileAtSha(cfg, ref, path, scope.headSha).then((text) => ({
+            path,
+            text,
+          })),
+        ),
+      );
+      if (signal.aborted) throw new Error("cancelled");
+      for (const { path, text } of fetched) {
+        if (text === null) continue;
+        extraContext.push({ path, text });
+        contextRead.push(path);
+      }
+    }
+    // No `context` frame here on purpose: that frame means "I threw away the
+    // answer I was writing and went to read something", and a pre-load did
+    // neither. The files still land on the message's contextRead.
     let prose = "";
     let tail: unknown = null;
 
@@ -151,6 +203,7 @@ async function drive(
         conventions,
         run,
         focused,
+        anchor: opts.anchor ?? null,
         threads: detail.threads,
         review,
         history: priorHistory,
@@ -212,6 +265,7 @@ async function drive(
       run,
       review,
       lineIndexByPath,
+      patchByPath,
       threads: detail.threads,
     });
     if (discarded > 0)

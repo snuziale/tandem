@@ -1,7 +1,14 @@
 import { describe, expect, it } from "vitest";
 import type { SelectedLineRange } from "@pierre/diffs";
 import { diffLineIndex } from "../../shared/gh/patch";
-import { commentAnchorOf, spanOf, startLineOf } from "./annotations";
+import type { Finding } from "../../shared/agent-types";
+import type { PendingComment, ReviewThread } from "../../shared/review-types";
+import {
+  commentAnchorOf,
+  paneAnchorOf,
+  spanOf,
+  startLineOf,
+} from "./annotations";
 
 describe("spanOf / startLineOf", () => {
   it("treats an absent startLine as the anchor's own line", () => {
@@ -95,5 +102,137 @@ describe("commentAnchorOf", () => {
     expect(
       commentAnchorOf(range({ start: 10, end: 12, side: "deletions" }), index),
     ).toEqual({ line: 12, startLine: 10, side: "LEFT" });
+  });
+});
+
+describe("paneAnchorOf", () => {
+  const comment: PendingComment = {
+    localId: "c1",
+    path: "src/a.ts",
+    line: 20,
+    startLine: 18,
+    side: "RIGHT",
+    body: "b",
+  };
+  const thread: ReviewThread = {
+    id: "t1",
+    path: "src/b.ts",
+    line: 30,
+    side: "RIGHT",
+    isResolved: false,
+    isOutdated: false,
+    comments: [],
+  } as unknown as ReviewThread;
+  const finding: Finding = {
+    id: "f1",
+    path: "src/c.ts",
+    side: "RIGHT",
+    endLine: 40,
+    startLine: 38,
+  } as Finding;
+
+  const empty = {
+    composerTarget: null,
+    revealedAnchor: null,
+    searchHit: null,
+    pendingComments: [comment],
+    threads: [thread],
+    findings: [finding],
+    focusedCommentId: null,
+    focusedFindingId: null,
+  };
+
+  it("claims nothing when nothing is pointed at", () => {
+    expect(paneAnchorOf(empty)).toBeNull();
+  });
+
+  it("gives the composer precedence over everything", () => {
+    const out = paneAnchorOf({
+      ...empty,
+      composerTarget: { path: "src/z.ts", line: 5, side: "RIGHT" },
+      revealedAnchor: { path: "src/r.ts", line: 3, side: "RIGHT" },
+      searchHit: { path: "src/a.ts", side: "RIGHT", line: 9 },
+      focusedCommentId: "c1",
+      focusedFindingId: "f1",
+    });
+    expect(out).toEqual({
+      path: "src/z.ts",
+      side: "RIGHT",
+      line: 5,
+      startLine: undefined,
+      source: "composer",
+    });
+  });
+
+  it("gives a search hit precedence over a focused card", () => {
+    const out = paneAnchorOf({
+      ...empty,
+      searchHit: { path: "src/a.ts", side: "RIGHT", line: 9 },
+      focusedCommentId: "c1",
+    });
+    expect(out?.source).toBe("search");
+  });
+
+  it("carries a focused comment's whole range, not just its anchor", () => {
+    const out = paneAnchorOf({ ...empty, focusedCommentId: "c1" });
+    expect(out).toEqual({
+      path: "src/a.ts",
+      side: "RIGHT",
+      line: 20,
+      startLine: 18,
+      source: "comment",
+    });
+  });
+
+  it("falls through a thread that anchors nothing in this diff", () => {
+    const outdated = { ...thread, line: null } as unknown as ReviewThread;
+    const out = paneAnchorOf({
+      ...empty,
+      threads: [outdated],
+      focusedCommentId: "t1",
+      focusedFindingId: "f1",
+    });
+    expect(out?.source).toBe("finding");
+  });
+
+  it("reads a finding's end line as the anchor", () => {
+    const out = paneAnchorOf({ ...empty, focusedFindingId: "f1" });
+    expect(out).toEqual({
+      path: "src/c.ts",
+      side: "RIGHT",
+      line: 40,
+      startLine: 38,
+      source: "finding",
+    });
+  });
+
+  it("a clicked citation outranks a search hit and any focused card", () => {
+    const out = paneAnchorOf({
+      ...empty,
+      revealedAnchor: {
+        path: "src/r.ts",
+        line: 52,
+        startLine: 40,
+        side: "RIGHT",
+      },
+      searchHit: { path: "src/a.ts", side: "RIGHT", line: 9 },
+      focusedCommentId: "c1",
+      focusedFindingId: "f1",
+    });
+    expect(out).toEqual({
+      path: "src/r.ts",
+      side: "RIGHT",
+      line: 52,
+      startLine: 40,
+      source: "revealed",
+    });
+  });
+
+  it("marks a single-line citation with no range", () => {
+    const out = paneAnchorOf({
+      ...empty,
+      revealedAnchor: { path: "src/r.ts", line: 213, side: "RIGHT" },
+    });
+    expect(out).toMatchObject({ line: 213, startLine: undefined });
   });
 });

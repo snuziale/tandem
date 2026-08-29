@@ -3,10 +3,22 @@
 // the data blocks and the action contract — is code-owned, because
 // chat/actions.ts re-validates every proposal against these exact ids.
 //
-// Ordering is deliberate: immutable context first, transcript last. The prefix
-// is byte-identical across the turns of a conversation, so prompt caching pays
-// for the diff instead of us re-paying per message.
+// ORDER IS THE CACHE, and it is the whole reason this file reads the way it
+// does. A conversation re-sends its context every turn, so the prefix has to
+// be byte-identical across turns or prompt caching pays for nothing. That
+// means STATIC FIRST — mission, contract, PR header, conventions, and the
+// DIFF, which is by far the largest block — then a hard line, then everything
+// that moves: the files a hop fetched, the findings (whose states change on
+// every apply), the human threads, the draft, the reviewer's progress, the
+// anchor they are pointing at, the transcript, the question.
+//
+// The findings and draft blocks used to sit ABOVE the diff, which put a
+// volatile block in front of 60,000 stable characters: staging one comment
+// re-paid for the entire diff on every turn that followed.
 import type { AgentRun, Finding } from "../../../shared/agent-types";
+import type { ChatAnchor, ChatMessage } from "../../../shared/chat-types";
+import { analyzableFiles } from "../../../shared/agent-cluster";
+import { patchLineText } from "../../../shared/gh/patch";
 import type { PromptTexts } from "../../../shared/prompt-defaults";
 import type {
   FileChange,
@@ -14,7 +26,6 @@ import type {
   PullRequest,
   ReviewThread,
 } from "../../../shared/review-types";
-import type { ChatMessage } from "../../../shared/chat-types";
 import {
   conventionsBlock,
   fileDiffBlock,
@@ -26,6 +37,8 @@ const MAX_DIFF_CHARS = 60_000;
 /** How much of the conversation travels with each turn. */
 const MAX_TRANSCRIPT_MESSAGES = 20;
 const MAX_TRANSCRIPT_CHARS = 12_000;
+/** Unviewed files are a nudge, not an inventory. */
+const MAX_UNVIEWED_LISTED = 12;
 
 const ACTION_CONTRACT = `How to propose a change
 You cannot edit anything yourself. When the reviewer asks you to change a finding, a nit, or a
@@ -37,6 +50,7 @@ ONE \`\`\`json fence containing the proposals. The reviewer sees each as a chip 
   { "kind": "revise-finding", "findingId": "<id from the findings block>", "title": "...", "body": "...", "severity": "nit", "suggestion": "exact replacement text or null to drop it", "why": "one line for the chip" },
   { "kind": "dismiss-finding", "findingId": "<id>", "why": "..." },
   { "kind": "new-finding", "finding": { "path": "...", "side": "RIGHT", "endLine": 42, "startLine": 40, "severity": "risk", "category": "correctness", "title": "...", "body": "...", "suggestion": "...", "confidence": 0.8, "evidence": [{ "path": "...", "lines": "40-42", "why": "..." }] }, "why": "..." },
+  { "kind": "stage-comment", "path": "src/...", "side": "RIGHT", "line": 42, "startLine": 40, "body": "the comment, in the reviewer's voice", "suggestion": "exact replacement text for lines 40-42", "why": "..." },
   { "kind": "revise-comment", "localId": "<id from the draft block>", "body": "the full new comment body", "why": "..." }
 ] }
 \`\`\`
@@ -44,6 +58,13 @@ ONE \`\`\`json fence containing the proposals. The reviewer sees each as a chip 
 - Every field of "revise-finding" except findingId/why is optional — send only what changes.
 - A finding that is already STAGED belongs to the draft: revise it with "revise-comment" on the
   matching localId, not with "revise-finding".
+- "stage-comment" writes a comment straight into the reviewer's draft at lines YOU name. Use it
+  when they ask you to write, phrase or suggest something — especially when they are pointing at
+  lines (see "what the reviewer is pointing at" below). It needs no run and no finding. "suggestion"
+  is an EXACT replacement for lines startLine..line, so it must be whole lines of real code with no
+  fence markers, no "..." and no commentary.
+- "new-finding" is for something worth TRIAGING alongside the run's own findings; "stage-comment"
+  is for something the reviewer has already decided to say. When they asked for a comment, stage it.
 - "new-finding" must anchor to a line that exists in the diff below, with real evidence. Anything
   that doesn't anchor is dropped before the reviewer sees it.
 - No actions is the normal case. Do not manufacture one to look useful.
@@ -56,7 +77,7 @@ and nothing else — the server will fetch it and re-ask you (at most twice per 
 
 function findingsBlock(run: AgentRun | null): string {
   if (!run)
-    return "This PR has no agent run yet — you have no findings of your own to discuss.";
+    return "This PR has no agent run yet — you have no findings of your own to discuss. You can still write comments into the reviewer's draft with stage-comment.";
   const lines = run.findings
     .filter((f) => f.state !== "stale")
     .map(
@@ -101,6 +122,75 @@ function draftBlock(review: PendingReview | null): string {
     .join("\n");
 }
 
+/**
+ * How far through the review the human actually is — viewed files, staged
+ * comments, verdict. Cheap to assemble and it is what lets an answer say
+ * "the one file you have not opened is where the blocker is" instead of
+ * describing a PR the reviewer has already read most of.
+ */
+function reviewProgressBlock(
+  review: PendingReview | null,
+  files: FileChange[],
+): string {
+  const viewed = new Set(review?.viewedFiles ?? []);
+  // Same filter the client's opener chip applies: a lockfile listed here as
+  // "not yet viewed" makes the agent's answer contradict the chip that
+  // prompted the question, since that one deliberately refuses to name one.
+  const unviewed = analyzableFiles(files).filter((f) => !viewed.has(f.path));
+  const staged = review?.comments ?? [];
+  const fromFindings = staged.filter((c) => c.findingId).length;
+  const listed = unviewed
+    .slice(0, MAX_UNVIEWED_LISTED)
+    .map((f) => `${f.path} (+${f.additions} −${f.deletions})`);
+  return `Where the reviewer is in this review:
+- ${viewed.size} of ${files.length} files marked viewed.
+- Not yet viewed: ${
+    listed.length === 0
+      ? "(none — they have been through the whole diff)"
+      : `${listed.join(", ")}${unviewed.length > listed.length ? `, and ${unviewed.length - listed.length} more` : ""}`
+  }
+- ${staged.length} comment(s) staged in the draft${staged.length ? ` (${fromFindings} from your findings, ${staged.length - fromFindings} their own)` : ""}.
+- Verdict: ${review?.verdict ?? "not set"}.`;
+}
+
+/**
+ * The lines the reviewer is pointing at, quoted with their real numbers.
+ *
+ * Deliberately NOT folded into the diff selection above: the diff is the
+ * cached half of the prompt and must hold still, while this changes with
+ * every drag. Quoting the span costs a few hundred characters and keeps
+ * 60,000 of them in the stable prefix.
+ */
+function anchorBlock(
+  anchor: ChatAnchor | null,
+  files: FileChange[],
+): string | null {
+  if (!anchor) return null;
+  const file = files.find((f) => f.path === anchor.path);
+  const start = Math.min(anchor.startLine ?? anchor.line, anchor.line);
+  const text = file?.patch
+    ? patchLineText(file.patch, anchor.side, start, anchor.line)
+    : null;
+  const span =
+    start === anchor.line
+      ? `line ${anchor.line}`
+      : `lines ${start}-${anchor.line}`;
+  const quoted = text
+    ? text
+        .split("\n")
+        .map((line, i) => `${String(start + i).padStart(5)} | ${line}`)
+        .join("\n")
+    : "(these lines are not in the diff any more)";
+  return `WHAT THE REVIEWER IS POINTING AT — ${anchor.path}, ${span}, ${anchor.side} side.
+Unless they say otherwise, "this", "here" and "these lines" mean exactly this span. A comment or
+suggestion they ask for goes HERE: stage-comment with path="${anchor.path}", side="${anchor.side}",
+line=${anchor.line}${start === anchor.line ? "" : `, startLine=${start}`}.
+
+\`\`\`
+${quoted}
+\`\`\``;
+}
+
 /** Focused file in full; everything else as a one-line inventory. */
 function focusedDiffBlock(files: FileChange[], path: string): string {
   const focused = files.find((f) => f.path === path);
@@ -117,15 +207,19 @@ Other files in this PR (ask for one with needContext if you need it):
 ${others.join("\n") || "(none)"}`;
 }
 
-/** As much of the diff as the budget allows, findings-first. */
+/**
+ * As much of the diff as the budget allows, flagged files first.
+ *
+ * The ordering reads the run's PATHS only, never finding state — this block is
+ * the cached prefix, and re-sorting it because a finding got dismissed would
+ * invalidate the cache for the largest thing in the prompt.
+ */
 function budgetedDiffBlock(files: FileChange[], run: AgentRun | null): string {
-  const flagged = new Set(
-    (run?.findings ?? []).filter((f) => f.state !== "stale").map((f) => f.path),
-  );
+  const flagged = new Set((run?.findings ?? []).map((f) => f.path));
   const ordered = [...files].sort((a, b) => {
     const rank = (f: FileChange) =>
       (flagged.has(f.path) ? 0 : 1) + (f.isGenerated ? 2 : 0);
-    return rank(a) - rank(b);
+    return rank(a) - rank(b) || a.path.localeCompare(b.path);
   });
   const included: FileChange[] = [];
   const omitted: FileChange[] = [];
@@ -159,7 +253,11 @@ function transcriptBlock(messages: ChatMessage[]): string {
     const note = applied.length
       ? `\n(the reviewer applied: ${applied.map((a) => a.kind).join(", ")})`
       : "";
-    const text = `${m.role === "user" ? "REVIEWER" : "YOU"}: ${m.text}${note}`;
+    // A past question's anchor is part of what it meant.
+    const at = m.anchor
+      ? ` [pointing at ${m.anchor.path}:${m.anchor.startLine ? `${m.anchor.startLine}-` : ""}${m.anchor.line}]`
+      : "";
+    const text = `${m.role === "user" ? "REVIEWER" : "YOU"}${at}: ${m.text}${note}`;
     if (chars + text.length > MAX_TRANSCRIPT_CHARS) break;
     chars += text.length;
     rendered.unshift(text);
@@ -174,6 +272,7 @@ export function buildChatPrompt(input: {
   conventions: string | null;
   run: AgentRun | null;
   focused: Finding | null;
+  anchor: ChatAnchor | null;
   threads: ReviewThread[];
   review: PendingReview | null;
   history: ChatMessage[];
@@ -185,7 +284,10 @@ export function buildChatPrompt(input: {
     ? `This conversation is scoped to ONE finding: id=${input.focused.id}, ${input.focused.severity}/${input.focused.category} at ${input.focused.path}:${input.focused.endLine} — "${input.focused.title}". Answer about it unless the reviewer widens the subject.`
     : "This conversation is scoped to the whole PR.";
 
-  return `${input.prompts.chat}
+  const anchored = anchorBlock(input.anchor, input.files);
+
+  // ---- stable prefix: identical across every turn of this conversation ----
+  const prefix = `${input.prompts.chat}
 
 ${scopeLine}
 
@@ -193,13 +295,6 @@ ${ACTION_CONTRACT}
 
 ${prHeaderBlock(input.pr)}
 ${conventionsBlock(input.conventions)}
-${findingsBlock(input.run)}
-
-Existing human review comments on GitHub:
-${threadsBlock(input.threads)}
-
-The reviewer's local draft (not on GitHub — nothing here is public yet):
-${draftBlock(input.review)}
 
 Diff:
 
@@ -207,18 +302,31 @@ ${
   input.focused
     ? focusedDiffBlock(input.files, input.focused.path)
     : budgetedDiffBlock(input.files, input.run)
-}
-${
-  input.extraContext.length
-    ? `\nFiles you asked for, at the PR's head sha:\n\n${input.extraContext
-        .map((c) => `### ${c.path}\n\`\`\`\n${c.text}\n\`\`\``)
-        .join("\n\n")}\n`
-    : ""
-}
+}`;
+
+  // ---- everything below moves; keep it below ----
+  const volatile = `${
+    input.extraContext.length
+      ? `Files you asked for, at the PR's head sha:\n\n${input.extraContext
+          .map((c) => `### ${c.path}\n\`\`\`\n${c.text}\n\`\`\``)
+          .join("\n\n")}\n\n`
+      : ""
+  }${findingsBlock(input.run)}
+
+Existing human review comments on GitHub:
+${threadsBlock(input.threads)}
+
+The reviewer's local draft (not on GitHub — nothing here is public yet):
+${draftBlock(input.review)}
+
+${reviewProgressBlock(input.review, input.files)}
+${anchored ? `\n${anchored}\n` : ""}
 Conversation so far:
 ${transcriptBlock(input.history)}
 
 REVIEWER: ${input.question}
 
 Reply now. Prose for the reviewer, then the optional \`\`\`json fence.`;
+
+  return `${prefix}\n\n${volatile}`;
 }

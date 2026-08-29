@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Button, Textarea, cn } from "@uipath/apollo-wind";
 import { Pencil, Trash2 } from "lucide-react";
+import { isAgentAuthored } from "../../shared/review-types";
 import type { PendingComment } from "../../shared/review-types";
 import { useUiStore } from "../../state/uiStore";
 import { Markdown } from "../common/Markdown";
@@ -17,7 +18,7 @@ type Props = {
 export function PendingCard({ comment, onUpdate, onRemove }: Props) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(comment.body);
-  const agentAuthored = comment.findingId !== undefined;
+  const agentAuthored = isAgentAuthored(comment);
   const span = spanOf(comment.startLine, comment.line);
   const focusedCommentId = useUiStore((s) => s.focusedCommentId);
   const focused = focusedCommentId === comment.localId;

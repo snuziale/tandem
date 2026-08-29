@@ -21,6 +21,21 @@ export const SEVERITIES: readonly Severity[] = [
   "question",
   "praise",
 ];
+/**
+ * Findings still in TRIAGE — the ones a reviewer can act on.
+ *
+ * `proposed || edited` was spelled out at four call sites (the pane, the
+ * status strip, the activity reconciler and the openers) before this existed;
+ * it is the definition of "open", so it belongs beside the state machine it
+ * reads rather than in whichever component needed it first.
+ */
+export function openFindings(run: { findings: Finding[] } | undefined | null) {
+  if (!run) return [];
+  return run.findings.filter(
+    (f) => f.state === "proposed" || f.state === "edited",
+  );
+}
+
 export const CATEGORIES: readonly Category[] = [
   "correctness",
   "security",

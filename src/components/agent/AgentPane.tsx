@@ -5,14 +5,21 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  ToggleGroup,
+  ToggleGroupItem,
+  Tooltip,
+  TooltipContent,
+  TooltipPortal,
+  TooltipTrigger,
   DropdownMenuTrigger,
   cn,
   toast,
 } from "@uipath/apollo-wind";
-import { ChevronDown, ChevronRight, MessageSquare } from "lucide-react";
+import { ChevronDown, ChevronRight } from "lucide-react";
 import { AgentSpinner } from "./AgentSpinner";
 import { startRun } from "../../api/runs";
 import {
+  openFindings,
   SKIP_REASON_LABEL,
   type AgentRun,
   type Finding,
@@ -20,13 +27,22 @@ import {
   type Severity,
 } from "../../shared/agent-types";
 import type { RunProgress } from "../../hooks/useRunStream";
+import type {
+  DiffSide,
+  FileChange,
+  PendingReview,
+} from "../../shared/review-types";
 import type { TandemSettings } from "../../shared/settings-types";
-import { useUiStore } from "../../state/uiStore";
+import type { PaneAnchor } from "../pr/annotations";
+import { PreflightCard } from "./PreflightCard";
+import type { Preflight, PriorReview } from "./preflight";
+import { useUiStore, type AgentPaneMode } from "../../state/uiStore";
 import { formatDuration, formatSpend } from "../../utils/agentFormat";
 import { Markdown } from "../common/Markdown";
 import { Shortcut } from "../common/Kbd";
 import { ChatPanel } from "./ChatPanel";
 import { SeverityBadge } from "./SeverityBadge";
+import { SeverityTally } from "./SeverityTally";
 
 type Props = {
   prId: string;
@@ -35,16 +51,26 @@ type Props = {
   run: AgentRun | undefined;
   progress: RunProgress | null;
   settings: TandemSettings | undefined;
+  /** The draft and the file list: chat's openers and its `@path` menu read
+   * both, and neither costs a request — they are already on this screen. */
+  review: PendingReview | null;
+  files: readonly FileChange[];
+  /** Where the pane's one line selection is pointing. */
+  anchor: PaneAnchor | null;
+  /** What a run here would do — shown INSTEAD of a bare button when there is
+   * no run at this commit yet. Null until the diff has loaded. */
+  preflight: Preflight | null;
+  /** The review that already happened on an earlier commit of this PR. */
+  priorReview: PriorReview | null;
+  onNavigate: (
+    path: string,
+    line: number,
+    side: DiffSide,
+    startLine?: number,
+  ) => void;
+  onRevealPath: (path: string, side: DiffSide) => void;
   onSelectFinding: (finding: Finding) => void;
 };
-
-const SEVERITY_ORDER: Severity[] = [
-  "blocker",
-  "risk",
-  "nit",
-  "question",
-  "praise",
-];
 
 // The right-hand agent pane (spec §3.2): run status, prose summary, severity
 // tally, findings grouped Must resolve / Worth raising / Nits.
@@ -54,12 +80,19 @@ export function AgentPane({
   run,
   progress,
   settings,
+  review,
+  files,
+  anchor,
+  preflight,
+  priorReview,
+  onNavigate,
+  onRevealPath,
   onSelectFinding,
 }: Props) {
   const queryClient = useQueryClient();
   const focusedFindingId = useUiStore((s) => s.focusedFindingId);
-  const chatOpen = useUiStore((s) => s.prChatOpen);
-  const setChatOpen = useUiStore((s) => s.setPrChatOpen);
+  const mode = useUiStore((s) => s.prAgentMode);
+  const setMode = useUiStore((s) => s.setPrAgentMode);
   const [showNits, setShowNits] = useState(false);
 
   const rerun = useMutation({
@@ -72,9 +105,7 @@ export function AgentPane({
   });
   const agents = settings?.agents ?? [];
 
-  const triage = (run?.findings ?? []).filter(
-    (f) => f.state === "proposed" || f.state === "edited",
-  );
+  const triage = openFindings(run);
   const threshold = settings?.severityThreshold ?? "risk";
   const collapsed = triage.filter((f) => belowThreshold(f.severity, threshold));
   const visible = triage.filter((f) => !belowThreshold(f.severity, threshold));
@@ -94,16 +125,42 @@ export function AgentPane({
           ● agent
         </span>
         <span className="flex-1" />
-        <Button
-          size="2xs"
-          icon
-          variant="ghost"
-          aria-label={chatOpen ? "Hide chat" : "Show chat"}
-          aria-pressed={chatOpen}
-          onClick={() => setChatOpen((open) => !open)}
-        >
-          <MessageSquare />
-        </Button>
+        {/* Three modes rather than a chat toggle: the conversation outgrew a
+            drawer capped at half the pane. `chat` collapses the findings to
+            their tally, `findings` is the old chat-closed state. */}
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <ToggleGroup
+              type="single"
+              size="xs"
+              variant="outline"
+              value={mode}
+              onValueChange={(next) => {
+                if (next) setMode(next as AgentPaneMode);
+              }}
+              aria-label="Agent pane layout"
+            >
+              <ToggleGroupItem
+                value="findings"
+                className="font-mono text-[10px]"
+              >
+                list
+              </ToggleGroupItem>
+              <ToggleGroupItem value="split" className="font-mono text-[10px]">
+                split
+              </ToggleGroupItem>
+              <ToggleGroupItem value="chat" className="font-mono text-[10px]">
+                chat
+              </ToggleGroupItem>
+            </ToggleGroup>
+          </TooltipTrigger>
+          <TooltipPortal>
+            <TooltipContent>
+              Findings / both / conversation
+              <Shortcut keys="C" className="ml-1.5" />
+            </TooltipContent>
+          </TooltipPortal>
+        </Tooltip>
         <Button
           size="2xs"
           variant="ghost"
@@ -142,111 +199,194 @@ export function AgentPane({
         ) : null}
       </div>
 
-      <div className="flex-1 min-h-0 overflow-y-auto">
-        <StatusCard
-          run={run}
-          progress={progress}
-          onStart={() => rerun.mutate(undefined)}
-          starting={rerun.isPending}
+      {mode === "chat" ? (
+        // The findings are still one click away — as a tally, which is what
+        // the list is FOR at a glance. Nothing is hidden, only folded.
+        <FindingTally
+          findings={triage}
+          score={run?.score}
+          active={isActive(run)}
+          reviewed={run?.status === "ready"}
+          onExpand={() => setMode("split")}
         />
+      ) : null}
 
-        {run?.status === "ready" ? (
-          <>
-            {run.summary ? (
-              <Markdown className="px-3 pt-1 pb-2 text-muted-foreground leading-relaxed">
-                {run.summary}
-              </Markdown>
-            ) : null}
+      {mode === "chat" ? null : (
+        <div className="flex-1 min-h-0 overflow-y-auto">
+          <StatusCard
+            run={run}
+            progress={progress}
+            preflight={preflight}
+            priorReview={priorReview}
+            onStart={() => rerun.mutate(undefined)}
+            onRevealPath={onRevealPath}
+            starting={rerun.isPending}
+          />
 
-            {triage.length > 0 ? (
-              <div className="px-3 pb-2 flex flex-wrap gap-1">
-                {SEVERITY_ORDER.map((severity) => (
-                  <SeverityBadge
-                    key={severity}
-                    severity={severity}
-                    count={triage.filter((f) => f.severity === severity).length}
-                  />
-                ))}
-              </div>
-            ) : (
-              <div className="px-3 pb-3 text-sm">
-                <div className="font-medium">Nothing to flag</div>
-                <div className="text-muted-foreground text-xs mt-0.5">
-                  The agent read the diff and has nothing worth your time.
+          {run?.status === "ready" ? (
+            <>
+              {/* Only in `findings` mode. Everywhere else the conversation
+                opens with this same prose as turn zero, and rendering it in
+                both places put the same paragraph on screen twice — and built
+                the markdown tree twice, since react-markdown memoizes
+                nothing. */}
+              {run.summary && mode === "findings" ? (
+                <Markdown className="px-3 pt-1 pb-2 text-muted-foreground leading-relaxed">
+                  {run.summary}
+                </Markdown>
+              ) : null}
+
+              {triage.length > 0 ? (
+                <div className="px-3 pb-2 flex flex-wrap gap-1">
+                  <SeverityTally findings={triage} />
                 </div>
-              </div>
-            )}
-
-            <FindingGroup
-              label="must resolve"
-              findings={mustResolve}
-              focusedFindingId={focusedFindingId}
-              onSelect={onSelectFinding}
-            />
-            <FindingGroup
-              label="worth raising"
-              findings={worthRaising}
-              focusedFindingId={focusedFindingId}
-              onSelect={onSelectFinding}
-            />
-
-            {collapsed.length > 0 ? (
-              <div className="px-3 py-2 border-t border-border/60">
-                <button
-                  type="button"
-                  className="text-[10px] uppercase tracking-wider font-mono text-muted-foreground hover:text-foreground"
-                  onClick={() => setShowNits((v) => !v)}
-                >
-                  nits · {collapsed.length} hidden ·{" "}
-                  {showNits ? "hide" : "show"}
-                </button>
-                {showNits ? (
-                  <div className="mt-1">
-                    {collapsed.map((f) => (
-                      <FindingRow
-                        key={f.id}
-                        finding={f}
-                        focused={f.id === focusedFindingId}
-                        onSelect={onSelectFinding}
-                      />
-                    ))}
+              ) : (
+                <div className="px-3 pb-3 text-sm">
+                  <div className="font-medium">Nothing to flag</div>
+                  <div className="text-muted-foreground text-xs mt-0.5">
+                    The agent read the diff and has nothing worth your time.
                   </div>
-                ) : (
-                  <div className="text-[11px] text-muted-foreground mt-1">
-                    Nits stay collapsed below your{" "}
-                    <span className="font-mono">{threshold}</span> threshold.
-                    Change it in settings.
-                  </div>
-                )}
-              </div>
-            ) : null}
-          </>
-        ) : null}
-      </div>
+                </div>
+              )}
 
-      {chatOpen ? (
-        // Sized by its own content up to half the pane: an empty conversation
-        // must not steal height from the findings it is about.
-        <div className="flex flex-col min-h-0 max-h-[50%] border-t border-border shrink-0">
+              <FindingGroup
+                label="must resolve"
+                findings={mustResolve}
+                focusedFindingId={focusedFindingId}
+                onSelect={onSelectFinding}
+              />
+              <FindingGroup
+                label="worth raising"
+                findings={worthRaising}
+                focusedFindingId={focusedFindingId}
+                onSelect={onSelectFinding}
+              />
+
+              {collapsed.length > 0 ? (
+                <div className="px-3 py-2 border-t border-border/60">
+                  <button
+                    type="button"
+                    className="text-[10px] uppercase tracking-wider font-mono text-muted-foreground hover:text-foreground"
+                    onClick={() => setShowNits((v) => !v)}
+                  >
+                    nits · {collapsed.length} hidden ·{" "}
+                    {showNits ? "hide" : "show"}
+                  </button>
+                  {showNits ? (
+                    <div className="mt-1">
+                      {collapsed.map((f) => (
+                        <FindingRow
+                          key={f.id}
+                          finding={f}
+                          focused={f.id === focusedFindingId}
+                          onSelect={onSelectFinding}
+                        />
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="text-[11px] text-muted-foreground mt-1">
+                      Nits stay collapsed below your{" "}
+                      <span className="font-mono">{threshold}</span> threshold.
+                      Change it in settings.
+                    </div>
+                  )}
+                </div>
+              ) : null}
+            </>
+          ) : null}
+        </div>
+      )}
+
+      {mode === "findings" ? (
+        <button
+          type="button"
+          className="border-t border-border px-3 py-1.5 text-left text-[10px] uppercase tracking-wider font-mono text-muted-foreground hover:text-foreground shrink-0"
+          onClick={() => setMode("split")}
+        >
+          ● chat{chatFinding ? " about this finding" : ""}{" "}
+          <span className="opacity-60">c</span>
+        </button>
+      ) : (
+        // In `split` the conversation is capped at half the pane so an empty
+        // one cannot steal height from the findings it is about; in `chat` it
+        // takes everything that is left, which is the whole point of the mode.
+        <div
+          className={cn(
+            "flex flex-col min-h-0 border-t border-border",
+            mode === "chat" ? "flex-1" : "max-h-[50%] shrink-0",
+          )}
+        >
           <ChatPanel
             key={chatFinding?.id ?? "pr"}
             prId={prId}
             headSha={headSha}
             finding={chatFinding}
+            run={run}
+            review={review}
+            files={files}
+            anchor={anchor}
+            onNavigate={onNavigate}
             onClearScope={() => useUiStore.getState().setFocusedFinding(null)}
           />
         </div>
-      ) : (
-        <button
-          type="button"
-          className="border-t border-border px-3 py-1.5 text-left text-[10px] uppercase tracking-wider font-mono text-muted-foreground hover:text-foreground shrink-0"
-          onClick={() => setChatOpen(true)}
-        >
-          ● chat{chatFinding ? " about this finding" : ""}{" "}
-          <span className="opacity-60">c</span>
-        </button>
       )}
     </div>
+  );
+}
+
+/**
+ * The findings list, folded to one row — what `chat` mode trades the list for.
+ *
+ * Deliberately not a "0 findings" placeholder when there are none: an empty
+ * tally is a real answer, and the row is also the way back to the list, so it
+ * has to be there either way.
+ */
+function FindingTally({
+  findings,
+  score,
+  active,
+  reviewed,
+  onExpand,
+}: {
+  findings: Finding[];
+  score: number | undefined;
+  /** A run is in flight. This row is the only one left in chat mode, so it
+   * has to carry the one fact the hidden status card was carrying. */
+  active: boolean;
+  /** A run finished at this commit. Without it, "nothing to flag" would be a
+   * claim the agent never made — it has not looked. */
+  reviewed: boolean;
+  onExpand: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onExpand}
+      title="Show the findings list"
+      className="flex items-center gap-1.5 px-3 h-8 border-b border-border shrink-0 w-full hover:bg-accent/30"
+    >
+      {active ? (
+        <span
+          className="flex items-center gap-1.5 text-[10px] font-mono"
+          style={{ color: "var(--tandem-agent)" }}
+        >
+          <AgentSpinner className="size-3" /> analyzing
+        </span>
+      ) : findings.length === 0 ? (
+        <span className="text-[10px] font-mono text-muted-foreground">
+          {reviewed ? "nothing to flag" : "not reviewed at this commit"}
+        </span>
+      ) : (
+        <SeverityTally findings={findings} />
+      )}
+      <span className="flex-1" />
+      {score !== undefined ? (
+        <span className="text-[10px] font-mono text-muted-foreground">
+          {score}/100
+        </span>
+      ) : null}
+      <ChevronRight className="size-3 text-muted-foreground" />
+    </button>
   );
 }
 
@@ -272,26 +412,31 @@ function belowThreshold(
 function StatusCard({
   run,
   progress,
+  preflight,
+  priorReview,
   onStart,
+  onRevealPath,
   starting,
 }: {
   run: AgentRun | undefined;
   progress: RunProgress | null;
+  preflight: Preflight | null;
+  priorReview: PriorReview | null;
   onStart: () => void;
+  onRevealPath: (path: string, side: DiffSide) => void;
   starting: boolean;
 }) {
+  // No run at this commit is the FIRST thing most reviewers see, and it used
+  // to be a lone button. See PreflightCard.
   if (!run) {
     return (
-      <div className="px-3 py-2">
-        <Button
-          size="xs"
-          variant="outline"
-          onClick={onStart}
-          disabled={starting}
-        >
-          {starting ? "Starting…" : "Run agent"}
-        </Button>
-      </div>
+      <PreflightCard
+        preflight={preflight}
+        prior={priorReview}
+        starting={starting}
+        onStart={onStart}
+        onRevealPath={onRevealPath}
+      />
     );
   }
 

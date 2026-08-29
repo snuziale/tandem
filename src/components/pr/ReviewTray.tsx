@@ -16,6 +16,7 @@ import {
   toast,
 } from "@uipath/apollo-wind";
 import { submitPr } from "../../api/prs";
+import { isAgentAuthored } from "../../shared/review-types";
 import type {
   PendingReview,
   PrId,
@@ -66,7 +67,7 @@ export function ReviewTray({
   const [confirmOpen, setConfirmOpen] = useState(false);
 
   const comments = review?.comments ?? [];
-  const agentCount = comments.filter((c) => c.findingId !== undefined).length;
+  const agentCount = comments.filter(isAgentAuthored).length;
   const humanCount = comments.length - agentCount;
   const verdict = review?.verdict;
 
