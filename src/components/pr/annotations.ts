@@ -7,7 +7,11 @@ import type {
   LineTypes,
   SelectedLineRange,
 } from "@pierre/diffs";
-import { clampCommentRange, type DiffLineIndex } from "../../shared/gh/patch";
+import {
+  clampCommentRange,
+  type DiffLineIndex,
+  type KeepLines,
+} from "../../shared/gh/patch";
 import type { PendingComment, ReviewThread } from "../../shared/review-types";
 import { useUiStore } from "../../state/uiStore";
 import type { Finding } from "../../shared/agent-types";
@@ -71,6 +75,53 @@ export function annoSpan(anno: DiffLineAnnotation<TandemAnno>): {
           ? meta.finding.startLine
           : meta.target.startLine;
   return spanOf(start, anno.lineNumber);
+}
+
+/**
+ * Every line number something is anchored to, by path — what the
+ * hide-whitespace rewrite must not fold away, because folding a line takes its
+ * card with it and a RANGE card would end up pointing at half its own
+ * evidence.
+ *
+ * Written off the SOURCES rather than off built annotations so there is one
+ * spelling of it for two readers: the pane, which folds the patch it renders,
+ * and find-in-diff, which has to rebuild that same patch to scan the text
+ * actually on screen. A thread with a null `line` is outdated against this
+ * diff and anchors nothing.
+ */
+export function keepLinesByPath(sources: {
+  threads: readonly ReviewThread[];
+  pendingComments: readonly PendingComment[];
+  findings: readonly Finding[];
+  composerTarget: ComposerTarget | null;
+}): Map<string, KeepLines> {
+  const map = new Map<string, { left: Set<number>; right: Set<number> }>();
+  const keep = (
+    path: string,
+    side: "LEFT" | "RIGHT",
+    startLine: number | undefined,
+    end: number,
+  ) => {
+    let entry = map.get(path);
+    if (!entry) {
+      entry = { left: new Set(), right: new Set() };
+      map.set(path, entry);
+    }
+    const set = side === "LEFT" ? entry.left : entry.right;
+    const span = spanOf(startLine, end);
+    for (let n = span.start; n <= span.end; n++) set.add(n);
+  };
+  for (const thread of sources.threads)
+    if (thread.line !== null)
+      keep(thread.path, thread.side, thread.startLine, thread.line);
+  for (const comment of sources.pendingComments)
+    keep(comment.path, comment.side, comment.startLine, comment.line);
+  for (const finding of sources.findings)
+    keep(finding.path, finding.side, finding.startLine, finding.endLine);
+  const composer = sources.composerTarget;
+  if (composer)
+    keep(composer.path, composer.side, composer.startLine, composer.line);
+  return map;
 }
 
 /**

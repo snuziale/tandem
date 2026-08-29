@@ -43,7 +43,7 @@ export const SHORTCUT_GROUPS: ShortcutGroup[] = [
   {
     title: "PR detail",
     items: [
-      { keys: ["esc"], action: "close the composer" },
+      { keys: ["esc"], action: "close the composer, then the find bar" },
       { keys: ["[", "]"], action: "previous / next file" },
       { keys: ["j", "k"], action: "next / previous agent finding" },
       { keys: ["y"], action: "add focused finding to review" },
@@ -58,6 +58,8 @@ export const SHORTCUT_GROUPS: ShortcutGroup[] = [
       { keys: ["r"], action: "rerun agent" },
       { keys: ["a"], action: "set verdict: approve" },
       { keys: ["o"], action: "open PR on GitHub" },
+      { keys: ["/", `${MOD}+F`], action: "find in diff" },
+      { keys: ["n", `${SHIFT}+N`], action: "next / previous match" },
       { keys: [], gesture: "click a line", action: "comment there" },
       {
         keys: [],

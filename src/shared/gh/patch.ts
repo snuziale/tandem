@@ -131,6 +131,39 @@ export function clampCommentRange(
   return { start: first, end };
 }
 
+/** One body line of a patch, numbered on BOTH sides with its prefix stripped.
+ * `kind` is what the prefix said: a deletion reads on the LEFT at `oldNo`, an
+ * addition on the RIGHT at `newNo`, a context line on both. */
+export type PatchBodyLine = {
+  kind: "ctx" | "del" | "add";
+  /** The line's text, `+`/`-`/space prefix removed. */
+  text: string;
+  oldNo: number;
+  newNo: number;
+};
+
+/**
+ * Every line a patch's hunks actually contain, in order. One walk for
+ * everything that reads a patch as TEXT rather than as a set of anchors —
+ * `patchLineText` composes a suggestion out of it, the diff search scans it.
+ *
+ * Nothing outside the hunks comes back, which is the part worth having in one
+ * place: a file patch starts with `--- a/x` and `+++ b/x`, and a hand-rolled
+ * walk reads those as a deletion and an addition on line 0.
+ */
+export function patchBodyLines(patch: string): PatchBodyLine[] {
+  const out: PatchBodyLine[] = [];
+  for (const hunk of parsePatchHunks(patch).hunks)
+    for (const line of hunk.body)
+      out.push({
+        kind: line.kind,
+        text: line.text.slice(1),
+        oldNo: line.oldNo,
+        newNo: line.newNo,
+      });
+  return out;
+}
+
 /**
  * The text of lines `start`..`end` on one side of a patch, prefixes stripped
  * and newline-joined — what a ```suggestion fence starts as, since a
@@ -151,10 +184,9 @@ export function patchLineText(
   const left = side === "LEFT";
   const drop = left ? "add" : "del";
   const byLine = new Map<number, string>();
-  for (const hunk of parsePatchHunks(patch).hunks)
-    for (const line of hunk.body)
-      if (line.kind !== drop)
-        byLine.set(left ? line.oldNo : line.newNo, line.text.slice(1));
+  for (const line of patchBodyLines(patch))
+    if (line.kind !== drop)
+      byLine.set(left ? line.oldNo : line.newNo, line.text);
   const out: string[] = [];
   for (let n = start; n <= end; n++) {
     const text = byLine.get(n);
@@ -290,6 +322,26 @@ export function hideWhitespaceChanges(
     out.push(...hunk.stray);
   }
   return out.join("\n") + (trailingNewline ? "\n" : "");
+}
+
+/**
+ * The patch the diff pane is CURRENTLY rendering for a file: the raw patch,
+ * plus the hide-whitespace rewrite when that toggle is on. Null when the file
+ * carries no patch at all (binary, oversized) and so renders nothing.
+ *
+ * One spelling, because two readers have to agree on it EXACTLY: the pane,
+ * which parses this into what you see, and find-in-diff, which scans the same
+ * text for matches. A hit on a line the pane folded away would be a count of
+ * something nobody can be shown.
+ */
+export function renderedPatch(
+  file: FileChange,
+  hideWhitespace: boolean,
+  keep: KeepLines | undefined,
+): string | null {
+  const raw = buildFilePatch(file);
+  if (raw === null) return null;
+  return hideWhitespace ? hideWhitespaceChanges(raw, keep) : raw;
 }
 
 function foldHunkBody(body: BodyLine[], keep: KeepLines): BodyLine[] {

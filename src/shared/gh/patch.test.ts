@@ -8,6 +8,7 @@ import {
   hasHunks,
   hideWhitespaceChanges,
   patchLineText,
+  renderedPatch,
   reversePatch,
   splitRawDiff,
 } from "./patch";
@@ -371,5 +372,31 @@ describe("reversePatch", () => {
 
   it("is a no-op for a patch with no hunks", () => {
     expect(reversePatch("a\nb\n", "")).toBe("a\nb\n");
+  });
+});
+
+describe("renderedPatch", () => {
+  const ws: FileChange = {
+    ...base,
+    patch: "@@ -1,3 +1,3 @@\n head\n-  x\n+    x\n tail",
+  };
+
+  it("is the raw patch while the toggle is off", () => {
+    expect(renderedPatch(ws, false, undefined)).toBe(buildFilePatch(ws));
+  });
+
+  it("is the folded patch while it is on, keep included", () => {
+    const raw = buildFilePatch(ws)!;
+    expect(renderedPatch(ws, true, undefined)).toBe(hideWhitespaceChanges(raw));
+    const keep = { left: new Set([2]), right: new Set<number>() };
+    expect(renderedPatch(ws, true, keep)).toBe(
+      hideWhitespaceChanges(raw, keep),
+    );
+  });
+
+  it("is null for a file with no patch at all", () => {
+    expect(renderedPatch({ ...base, patch: undefined }, false, undefined)).toBe(
+      null,
+    );
   });
 });

@@ -451,6 +451,32 @@ One controlled `CodeView` hosts every file (`components/pr/DiffPane.tsx`):
 - Split/unified via `options.diffStyle`; theming via `options.theme {dark, light}` +
   `options.themeType` (shadow DOM — Tailwind classes don't reach inside).
 
+- **Find in diff searches the PATCHES, never the DOM** (`components/pr/diffSearch.ts`, TESTED +
+  `DiffSearchBar`/`DiffSearchResults`, opened with `/` or `MOD+F`): the browser's own find is what
+  this replaces, and it fails for a structural reason — CodeView is virtualized and a folded file
+  (which is what marking one viewed does) has no code in the DOM at all. The patches are in
+  memory for every file whatever is on screen, so the scan is pure, the count is honest, and
+  `scrollTo` + the pane's line selection do the jumping — there is NO character-level highlight
+  inside the code, because the only non-destructive way to paint one is the CSS Custom Highlight
+  API re-applied through `onPostRender`, and the results list answers the same question without
+  reaching into the library's shadow tree.
+  - **It reads the patch the pane is CURRENTLY rendering, through the SAME call**:
+    `keepLinesByPath` (`annotations.ts`, the one spelling of "what must not fold", shared with
+    `DiffPane`'s own `keepByPath`) feeds `renderedPatch` (`shared/gh/patch.ts`, TESTED — raw
+    patch, plus the hide-whitespace rewrite when `w` is on), which is what `DiffPane` builds its
+    own items from. So "what is on screen" is one function, not two implementations agreeing by
+    luck, and with `w` on a hit can never be a line the reader cannot see. The results list says
+    so out loud, next to the truncation notice — both are why a count here can be lower than
+    github.com's.
+  - **Expanded context is NOT searched.** It came from the blob, so the patch never named it —
+    the same reason a comment cannot be staged there.
+  - **Typing does not jump.** It scrolls the pane and force-expands a file to land a hit, and
+    doing that per keystroke moves the reader's place while they are still deciding; the count
+    and the list answer "is it in here?" instantly, `↵`/`n` commit to going there.
+  - The hit borrows the pane's ONE line selection, second in the precedence table (after the
+    composer, ahead of a focused card or finding), and jumping clears both focus slots — two
+    borders would be two claims about one selection.
+
 The FILE TREE is `@pierre/trees` (`components/pr/FileTree.tsx`): `useFileTree` constructs the
 model ONCE — later state reaches rows through model methods, so `renderRowDecoration` reads a
 ref (`stateRef`) and a `setGitStatus(freshArray)` call after viewed/agent changes re-renders the
@@ -562,7 +588,8 @@ Two dispatchers, one guard module (`keyboard/keyOwnership.ts`), one display regi
   j/k/Enter/o/a/A(override)/r/s/esc//. Reads state via `getState()` snapshots — the listener
   never re-binds.
 - `PrDetailView` binds its own detail keys (esc, [ ], j/k findings, y/e/x, c chat, v, w, r, a,
-  o) — same snapshot pattern via a ref updated in an effect. **`esc` closes the composer and
+  o, `/` and `MOD+F` find-in-diff, n/N match). `MOD+F` is handled AHEAD of the modifier bail and
+  preventDefaults — the browser's find is exactly what does not work in a virtualized diff — same snapshot pattern via a ref updated in an effect. **`esc` closes the composer and
   nothing more** (user decision 2026-08-27): it used to fall through to leaving the PR, which read
   as losing your place. Esc dismisses what is in front of you; leaving is "← Queue" or browser
   back. Composer/tray own ⌘↵ (stage vs submit) — the

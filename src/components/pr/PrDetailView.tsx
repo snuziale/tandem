@@ -37,21 +37,65 @@ import { useSettings } from "../../hooks/useSettings";
 import { hasOpenDialog, isTypingTarget } from "../../keyboard/keyOwnership";
 import { navigateToQueue } from "../../routes";
 import type { Finding } from "../../shared/agent-types";
+import { renderedPatch, type KeepLines } from "../../shared/gh/patch";
 import type {
+  DiffSide,
+  FileChange,
+  PendingComment,
   PrId,
   PullRequest,
+  ReviewThread,
   ReviewVerdict,
 } from "../../shared/review-types";
 import { useUiStore } from "../../state/uiStore";
 import { AgentPane } from "../agent/AgentPane";
 import { AppHeader } from "../layout/AppHeader";
+import { keepLinesByPath } from "./annotations";
 import { DiffPane, type DiffPaneHandle } from "./DiffPane";
+import { DiffSearchBar } from "./DiffSearchBar";
+import {
+  DEFAULT_SEARCH_OPTIONS,
+  EMPTY_SEARCH_RESULT,
+  searchDiff,
+  stepHit,
+  type DiffHit,
+  type DiffSearchOptions,
+} from "./diffSearch";
 import { FileTree } from "./FileTree";
 import { PrBreadcrumb, PrHeader } from "./PrHeader";
 import { ReviewTray } from "./ReviewTray";
 import { Shortcut } from "../common/Kbd";
 
 const NO_FILES: string[] = [];
+// Same job as NO_FILES: a stable identity while the detail query and the draft
+// are still absent, so find-in-diff's derivations hold still with them.
+const NO_THREADS: ReviewThread[] = [];
+const NO_COMMENTS: PendingComment[] = [];
+const NO_PATCHES: SearchablePatch[] = [];
+
+type SearchablePatch = { path: string; patch: string };
+
+/**
+ * The text find-in-diff scans: `renderedPatch` per file — the SAME call the
+ * pane builds its own items from, which is what makes "exactly what is on
+ * screen" a shared fact rather than two implementations agreeing by luck.
+ * Files with no patch at all (binary, oversized) drop out.
+ *
+ * Module level on purpose: this is the only loop in the feature, and down here
+ * it is out of the React Compiler's way (it compiles components and hooks).
+ */
+function searchablePatches(
+  files: readonly FileChange[],
+  hideWhitespace: boolean,
+  keep: ReadonlyMap<string, KeepLines> | null,
+): SearchablePatch[] {
+  const out: SearchablePatch[] = [];
+  for (const file of files) {
+    const patch = renderedPatch(file, hideWhitespace, keep?.get(file.path));
+    if (patch !== null) out.push({ path: file.path, patch });
+  }
+  return out;
+}
 
 /** Keys @pierre/trees consumes itself while the tree has focus. Everything
  * else must fall through to the detail keymap — see the guard in `onKey`. */
@@ -227,7 +271,9 @@ export function PrDetailView({ prId }: { prId: PrId }) {
     if (collapsing) revealCollapsed(path);
   };
   const expandPath = (path: string) => {
-    setFoldOverrides((prev) => ({ ...prev, [path]: false }));
+    setFoldOverrides((prev) =>
+      prev[path] === false ? prev : { ...prev, [path]: false },
+    );
   };
 
   const triageFindings = (run?.findings ?? []).filter(
@@ -256,18 +302,26 @@ export function PrDetailView({ prId }: { prId: PrId }) {
     scrollToTwice({ type: "item", id: path, align: "start" });
   };
 
-  const focusFinding = (finding: Finding) => {
-    useUiStore.getState().setFocusedFinding(finding.id);
-    setSelectedPath(finding.path);
-    // Scrolling to a line inside a folded file would land on its header.
-    expandPath(finding.path);
+  /** Bring one LINE of the diff into view: sync the tree, unfold the file (a
+   * `scrollTo` into a folded one lands on its header) and scroll twice. The
+   * findings walk and find-in-diff both step through the diff this way, so the
+   * rule is written once — above both of them, since the React Compiler
+   * refuses a closure capturing a binding declared later. */
+  const revealLine = (path: string, line: number, side: DiffSide) => {
+    setSelectedPath(path);
+    expandPath(path);
     scrollToTwice({
       type: "line",
-      id: finding.path,
-      lineNumber: finding.endLine,
-      side: finding.side === "LEFT" ? "deletions" : "additions",
+      id: path,
+      lineNumber: line,
+      side: side === "LEFT" ? "deletions" : "additions",
       align: "center",
     });
+  };
+
+  const focusFinding = (finding: Finding) => {
+    useUiStore.getState().setFocusedFinding(finding.id);
+    revealLine(finding.path, finding.endLine, finding.side);
   };
 
   // Removing an agent-authored staged comment returns its finding to triage.
@@ -278,9 +332,102 @@ export function PrDetailView({ prId }: { prId: PrId }) {
       void unstageFinding(queryClient, run.id, comment.findingId);
   };
 
+  // ---- Find in diff -------------------------------------------------------
+  //
+  // The browser's own find can only see what CodeView has RENDERED: the view is
+  // virtualized, and a folded file — which is what marking one viewed does — has
+  // no code in the DOM at all. So this searches the PATCHES instead, which are
+  // in memory for every file whatever is on screen, and jumps the pane to a
+  // hit. Everything below is derived, so the React Compiler memoizes it on the
+  // real inputs; nothing here carries a hand-written dep array.
+  //
+  // Expanded context is NOT searched: it came from the blob, so the patch never
+  // named it — the same reason a comment cannot be staged there.
+  const hideWhitespace = useUiStore((s) => s.hideWhitespace);
+  const composerTarget = useUiStore((s) => s.composerTarget);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchTerm, setSearchTerm] = useState("");
+  // The debounced copy is what the scan runs on; the box shows `searchTerm`.
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchOptions, setSearchOptions] = useState(DEFAULT_SEARCH_OPTIONS);
+  const [searchListOpen, setSearchListOpen] = useState(true);
+  // -1 = no hit selected yet. Typing deliberately does NOT jump (see the bar).
+  const [hitIndex, setHitIndex] = useState(-1);
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
+  const searchDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const searchActive = searchOpen && searchQuery !== "";
+  const searchKeep =
+    searchActive && hideWhitespace
+      ? keepLinesByPath({
+          threads: detail.data?.threads ?? NO_THREADS,
+          pendingComments: review?.comments ?? NO_COMMENTS,
+          findings: triageFindings,
+          composerTarget,
+        })
+      : null;
+  const searchPatches =
+    searchActive && files
+      ? searchablePatches(files, hideWhitespace, searchKeep)
+      : NO_PATCHES;
+  const searchResult = searchActive
+    ? searchDiff(searchPatches, searchQuery, searchOptions)
+    : EMPTY_SEARCH_RESULT;
+  // The hit borrows the pane's ONE line selection while the bar is open. No
+  // `searchOpen` guard needed: a closed bar is never `searchActive`, so the
+  // result is already empty and the lookup already misses.
+  const activeHit = searchResult.hits[hitIndex] ?? null;
+
+  const applySearchTerm = (value: string) => {
+    setSearchTerm(value);
+    // A new term invalidates the position, not the bar: the count updates and
+    // the reader decides whether to go there.
+    setHitIndex(-1);
+    if (searchDebounce.current) clearTimeout(searchDebounce.current);
+    searchDebounce.current = setTimeout(() => setSearchQuery(value), 120);
+  };
+  const applySearchOptions = (next: DiffSearchOptions) => {
+    setSearchOptions(next);
+    setHitIndex(-1);
+  };
+  const openSearch = () => {
+    // Already open: MOD+F on an open bar means "let me retype", the way it does
+    // everywhere else. The box autofocuses on mount, so this is the other case.
+    if (searchOpen) searchInputRef.current?.select();
+    else setSearchOpen(true);
+  };
+  const closeSearch = () => {
+    if (searchDebounce.current) clearTimeout(searchDebounce.current);
+    setSearchOpen(false);
+    setHitIndex(-1);
+    // The TERM survives: reopening and hitting ↵ is the usual second question.
+    // It dies with the screen, which remounts per PR.
+  };
+  const jumpToHit = (index: number, hits: readonly DiffHit[]) => {
+    const hit = hits[index];
+    if (!hit) return;
+    setHitIndex(index);
+    // One focused thing at a time: a card wearing a focused border beside a
+    // search hit would be two claims about a single selection.
+    useUiStore.getState().setFocusedFinding(null);
+    useUiStore.getState().setFocusedComment(null);
+    revealLine(hit.path, hit.line, hit.side);
+  };
+  const stepSearch = (delta: 1 | -1) => {
+    const hits = searchResult.hits;
+    jumpToHit(stepHit(hits.length, hitIndex, delta), hits);
+  };
+  useEffect(
+    () => () => {
+      if (searchDebounce.current) clearTimeout(searchDebounce.current);
+    },
+    [],
+  );
+
   // Detail-scoped keys (the global handler only runs on the queue route):
   // esc back · [ ] files · j/k findings · y/e/x triage · c chat · v viewed ·
-  // w hide whitespace · r rerun · a verdict approve · o open on GitHub.
+  // w hide whitespace · r rerun · a verdict approve · o open on GitHub ·
+  // / or MOD+F find in diff · n/N next/previous match.
   //
   // `useEffectEvent`, so the handler reads THIS render's `files`/`selectedPath`
   // /`triageFindings` while the listener binds ONCE and never appears in a dep
@@ -289,6 +436,16 @@ export function PrDetailView({ prId }: { prId: PrId }) {
   // component out of the React Compiler, which is the only memoization it has
   // (see the pitfall in CLAUDE.md). Keep this file suppression-free.
   const onKey = useEffectEvent((e: KeyboardEvent) => {
+    // MOD+F is the one chord this screen claims, so it is handled ahead of the
+    // modifier bail — and it preventDefaults, because the browser's own find is
+    // precisely what does not work here: letting it open would hand the reader
+    // a search of the render window and call it a search of the diff.
+    if ((e.metaKey || e.ctrlKey) && !e.altKey && e.key.toLowerCase() === "f") {
+      if (hasOpenDialog()) return;
+      e.preventDefault();
+      openSearch();
+      return;
+    }
     if (e.metaKey || e.ctrlKey || e.altKey) return;
     if (hasOpenDialog() || isTypingTarget(e.target)) return;
     // The tree owns only the keys it actually consumes. It used to own ALL of
@@ -331,14 +488,18 @@ export function PrDetailView({ prId }: { prId: PrId }) {
 
     switch (e.key) {
       case "Escape": {
-        // Esc closes an open composer and nothing else. It used to fall
-        // through to leaving the PR, which read as losing your place: Esc
-        // is "dismiss the thing in front of me", and with no composer open
-        // there is nothing in front of you. "← Queue" and the browser's
-        // back both still leave.
+        // Esc dismisses what is in front of you, nearest first: the composer,
+        // then the find bar. It used to fall through to LEAVING the PR, which
+        // read as losing your place — with neither of those open there is
+        // nothing in front of you, and "← Queue" and the browser's back both
+        // still leave. While the find box has focus the box owns Esc; the
+        // dispatcher never sees it (isTypingTarget).
         if (useUiStore.getState().composerTarget) {
           e.preventDefault();
           useUiStore.getState().setComposerTarget(null);
+        } else if (searchOpen) {
+          e.preventDefault();
+          closeSearch();
         }
         return;
       }
@@ -422,6 +583,18 @@ export function PrDetailView({ prId }: { prId: PrId }) {
           openPrExternal(detail.data.pr.url);
         }
         return;
+      case "/":
+        e.preventDefault();
+        openSearch();
+        return;
+      case "n":
+      case "N":
+        // Only while the bar is open. `n` is otherwise unbound, and stepping
+        // through matches nobody asked for would be a scroll out of nowhere.
+        if (!searchOpen || searchResult.hits.length === 0) return;
+        e.preventDefault();
+        stepSearch(e.key === "N" ? -1 : 1);
+        return;
     }
   });
   useEffect(() => {
@@ -431,7 +604,6 @@ export function PrDetailView({ prId }: { prId: PrId }) {
 
   const diffStyle = useUiStore((s) => s.diffStyle);
   const setDiffStyle = useUiStore((s) => s.setDiffStyle);
-  const hideWhitespace = useUiStore((s) => s.hideWhitespace);
   const setHideWhitespace = useUiStore((s) => s.setHideWhitespace);
   // Pane widths outlive this screen: it remounts per PR (keyed on prId), so the
   // layout is read from / written back to the persisted store, not local state.
@@ -526,7 +698,7 @@ export function PrDetailView({ prId }: { prId: PrId }) {
               </>
             ) : null}
             <ResizablePanel id="diff" defaultSize="62" minSize="30">
-              <div className="h-full min-w-0 flex flex-col">
+              <div className="h-full min-w-0 flex flex-col relative">
                 <div className="flex items-center gap-2 px-3 h-9 border-b border-border shrink-0">
                   <PaneToggle
                     side="left"
@@ -601,6 +773,30 @@ export function PrDetailView({ prId }: { prId: PrId }) {
                     onToggle={() => setAgentOpen((open) => !open)}
                   />
                 </div>
+                {searchOpen ? (
+                  // Docked OVER the diff, not added to the toolbar: that row
+                  // is a fixed set of controls at fixed positions, and a bar
+                  // appearing must not shuffle them. Same place every find
+                  // widget lives, for the same reason.
+                  <div className="absolute right-3 top-11 z-20 w-[min(42rem,calc(100%-1.5rem))]">
+                    <DiffSearchBar
+                      term={searchTerm}
+                      onTermChange={applySearchTerm}
+                      options={searchOptions}
+                      onOptionsChange={applySearchOptions}
+                      result={searchResult}
+                      activeIndex={hitIndex}
+                      onStep={stepSearch}
+                      onJump={(index) => jumpToHit(index, searchResult.hits)}
+                      listOpen={searchListOpen}
+                      onListOpenChange={setSearchListOpen}
+                      onClose={closeSearch}
+                      inputRef={searchInputRef}
+                      fileCount={files.length}
+                      hideWhitespace={hideWhitespace}
+                    />
+                  </div>
+                ) : null}
                 <DiffPane
                   prId={prId}
                   headSha={pr.headSha}
@@ -618,6 +814,7 @@ export function PrDetailView({ prId }: { prId: PrId }) {
                   onAddComment={addComment}
                   onUpdateComment={updateComment}
                   onRemoveComment={removeCommentAndUnstage}
+                  searchHit={activeHit}
                   codeViewRef={codeViewRef}
                 />
               </div>

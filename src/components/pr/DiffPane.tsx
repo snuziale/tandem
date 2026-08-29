@@ -15,12 +15,11 @@ import {
 import { useQueryClient } from "@tanstack/react-query";
 import type { Finding } from "../../shared/agent-types";
 import {
-  buildFilePatch,
   clampCommentRange,
   diffLineIndex,
   hasHunks,
-  hideWhitespaceChanges,
   patchLineText,
+  renderedPatch,
   type DiffLineIndex,
   type KeepLines,
 } from "../../shared/gh/patch";
@@ -40,10 +39,12 @@ import {
   commentAnchorOf,
   diffSideOf,
   isCommentableLine,
+  keepLinesByPath,
   spanOf,
   startLineOf,
   type TandemAnno,
 } from "./annotations";
+import type { DiffHit } from "./diffSearch";
 import { DiffFileHeader } from "./DiffFileHeader";
 import { loadDiffFileSides } from "./expandContext";
 import { ComposerCard } from "./ComposerCard";
@@ -72,6 +73,9 @@ type Props = {
   onAddComment: (comment: Omit<PendingComment, "localId">) => void;
   onUpdateComment: (localId: string, patch: Partial<PendingComment>) => void;
   onRemoveComment: (localId: string) => void;
+  /** The find-in-diff hit the reader is on, if any. It borrows the pane's ONE
+   * line selection while the find bar is open — see the selection memo. */
+  searchHit: DiffHit | null;
   /** React writes this; the pane reads it too — it owns the diff's line
    * selection while PrDetailView owns scrollTo. One ref, two readers. */
   codeViewRef: React.RefObject<DiffPaneHandle | null>;
@@ -86,19 +90,6 @@ const NO_KEEP_BY_PATH: ReadonlyMap<string, KeepLines> = new Map();
 // GitHub's own step. The library defaults to 100, which overshoots what a
 // reviewer wants when they are peeking just above a hunk.
 const EXPANSION_LINE_COUNT = 20;
-
-function keepLinesOf(annotations: DiffLineAnnotation<TandemAnno>[]): KeepLines {
-  const left = new Set<number>();
-  const right = new Set<number>();
-  for (const a of annotations) {
-    const set = a.side === "deletions" ? left : right;
-    // A RANGE keeps every line it covers, not just its anchor: fold the middle
-    // of a comment on 42-48 away and the card points at half its own evidence.
-    const { start, end } = annoSpan(a);
-    for (let n = start; n <= end; n++) set.add(n);
-  }
-  return { left, right };
-}
 
 // Controlled CodeView items re-render only on version changes. Annotation
 // CONTENT is a React render prop and updates through React regardless — the
@@ -140,6 +131,7 @@ export function DiffPane({
   onAddComment,
   onUpdateComment,
   onRemoveComment,
+  searchHit,
   codeViewRef,
 }: Props) {
   const diffStyle = useUiStore((s) => s.diffStyle);
@@ -201,6 +193,8 @@ export function DiffPane({
 
   // Whatever is annotated stays unfolded, or its card goes with the line — so
   // the hide-whitespace rewrite depends on the annotations, and only then.
+  // `keepLinesByPath` is shared with find-in-diff, which rebuilds this same
+  // patch to scan the text actually on screen.
   //
   // This is the ONE gate that keeps the parse below stable, and the parse's
   // object identity is load-bearing: `loadDiffFiles` hydrates that exact object
@@ -210,13 +204,18 @@ export function DiffPane({
   // an expanded region. With it ON the patch really does depend on the
   // annotations, so an edit re-parses and expansions reset — the honest
   // behaviour, not something to paper over.
-  const keepByPath = useMemo(() => {
-    if (!hideWhitespace) return NO_KEEP_BY_PATH;
-    const map = new Map<string, KeepLines>();
-    for (const [path, annos] of annotationsByPath)
-      map.set(path, keepLinesOf(annos));
-    return map;
-  }, [hideWhitespace, annotationsByPath]);
+  const keepByPath = useMemo(
+    () =>
+      hideWhitespace
+        ? keepLinesByPath({
+            threads,
+            pendingComments,
+            findings,
+            composerTarget,
+          })
+        : NO_KEEP_BY_PATH,
+    [hideWhitespace, threads, pendingComments, findings, composerTarget],
+  );
 
   // Patch and parse together: they recompute on exactly the same inputs, and
   // pairing them is what lets the loader prove a patch belongs to the fileDiff
@@ -228,11 +227,13 @@ export function DiffPane({
     >();
     const whitespaceOnly = new Set<string>();
     for (const file of files) {
-      const raw = buildFilePatch(file);
-      if (!raw) continue; // binary / tooLarge — listed in the FileTree with a badge instead
-      const patch = hideWhitespace
-        ? hideWhitespaceChanges(raw, keepByPath.get(file.path))
-        : raw;
+      // binary / tooLarge — listed in the FileTree with a badge instead
+      const patch = renderedPatch(
+        file,
+        hideWhitespace,
+        keepByPath.get(file.path),
+      );
+      if (patch === null) continue;
       // Headers but no hunks: everything this file changed was whitespace.
       if (hideWhitespace && !hasHunks(patch)) whitespaceOnly.add(file.path);
       const fileDiff = parsePatchFiles(
@@ -301,9 +302,10 @@ export function DiffPane({
   /**
    * The library keeps exactly ONE selected line range for the whole view, and
    * that is the right budget: it marks what you are talking about right now.
-   * The composer's range owns it while a composer is open; otherwise the
-   * focused finding lights up its own span, which is the only way a range
-   * finding shows its height instead of just its anchor line.
+   * The composer's range owns it while a composer is open; then the find-in-
+   * diff hit, because while the bar is open that IS what you are pointed at;
+   * otherwise the focused card or finding lights up its own span, which is the
+   * only way a range finding shows its height instead of just its anchor line.
    *
    * Selection is UNCONTROLLED (no `selectedLines` prop): the library paints a
    * drag itself, with no React work per pointermove. This only writes the
@@ -335,12 +337,14 @@ export function DiffPane({
     const finding = findings.find((f) => f.id === focusedFindingId);
     return (
       anchored(composer, composer?.line) ??
+      anchored(searchHit ?? undefined, searchHit?.line) ??
       anchored(comment, comment?.line) ??
       anchored(thread, thread?.line) ??
       anchored(finding, finding?.endLine)
     );
   }, [
     composerTarget,
+    searchHit,
     pendingComments,
     threads,
     findings,
