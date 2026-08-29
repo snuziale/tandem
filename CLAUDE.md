@@ -741,7 +741,7 @@ teams.json     named lists of GitHub logins (no defaults — a team is a claim a
 pulse.json     ONE row per view per day: five pulse counts + total, 90-day cap
 runs.json      AgentRun by prId@headSha + spendByDay     claude.log  harness stderr
 chats.json     ChatSession by prId@headSha[#findingId], LRU-capped at 100
-seen.json      last-seen updatedAt per prId (drives the unseen-changes dot)
+seen.json      per prId at last open: head sha, comment + thread counts, updatedAt
 sandbox/       cwd for the read-only claude passes
 localStorage   tandem:theme:v1 · tandem:ui:v1 (diffStyle, hideWhitespace, lastViewId,
                panes + stats toggles) — display prefs ONLY
@@ -1123,6 +1123,15 @@ picks by `process.platform` at init-script build time.
   many approvals a PR has. The badge (`ReviewCell`) and `reviewBucket` therefore read
   `viewerLatestReview` too and let YOUR verdict win — otherwise a PR you approved yourself
   renders "No review". Keep those two in step.
+- **The unseen dot is NOT `updatedAt`** (`hasUnseenChanges`, `shared/review-types.ts`, TESTED).
+  GitHub moves a PR's `updatedAt` for a label, an assignee, a milestone or a title edit as
+  readily as for a push, so a timestamp comparison mostly reported bot churn. The record stores
+  the head SHA and the comment + review-thread totals as well, and the dot lights when the sha
+  MOVED or either count GREW — a deleted comment is not something new to read, and an absent sha
+  (`""`, a response with no commit node) is absent, not different. A record written before the
+  widening keeps the old timestamp answer rather than going silent. Check status is deliberately
+  not an input: it doesn't move `updatedAt` either, and a flapping CI run is not a re-read.
+
 - **`REVIEW_REQUIRED` names no person.** It means "a required review is still missing", never
   whose — so on a view of your OWN PRs it is the codeowners', not you. `ReviewCell` resolves it
   through `awaitsViewer` ("Awaiting you" vs "Awaiting review") and the drawer's bucket is labelled

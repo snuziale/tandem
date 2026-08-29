@@ -1,9 +1,10 @@
-// Last-seen tracking, ~/.tandem/seen.json: when the reviewer last opened each
-// PR and how fresh it was then. The queue compares a PR's updatedAt against
-// this to show the "unseen changes" marker. Pruned so PRs that left every
-// view don't accumulate forever.
+// Last-seen tracking, ~/.tandem/seen.json: what each PR looked like when the
+// reviewer last opened it — head sha, comment and thread counts, updatedAt.
+// The queue compares today's PR against this to show the "unseen changes"
+// marker (hasUnseenChanges, shared/review-types.ts). Pruned so PRs that left
+// every view don't accumulate forever.
 import { isPlainObject } from "../../shared/is-plain-object";
-import type { SeenRecord } from "../../shared/review-types";
+import type { SeenRecord, SeenSignal } from "../../shared/review-types";
 import {
   enqueueMutation,
   readTextFile,
@@ -35,10 +36,13 @@ export async function loadSeen(): Promise<Record<string, SeenRecord>> {
   return readAll();
 }
 
-export async function markSeen(prId: string, updatedAt: string): Promise<void> {
+export async function markSeen(
+  prId: string,
+  signal: SeenSignal,
+): Promise<void> {
   await enqueueMutation(file(), async () => {
     const seen = await readAll();
-    seen[prId] = { prId, updatedAt, seenAt: new Date().toISOString() };
+    seen[prId] = { prId, ...signal, seenAt: new Date().toISOString() };
     // Cheap prune: drop the oldest-seen entries past the cap.
     const entries = Object.entries(seen);
     if (entries.length > MAX_RECORDS) {

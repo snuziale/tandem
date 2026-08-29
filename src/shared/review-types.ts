@@ -76,9 +76,66 @@ export type PullRequest = {
   url: string;
 };
 
-/** Last time the reviewer opened a PR in Tandem, and how fresh it was then —
- * drives the queue's "unseen changes" marker. */
-export type SeenRecord = { prId: PrId; updatedAt: string; seenAt: string };
+/** What a PR looked like when the reviewer last opened it in Tandem — the
+ * queue's "unseen changes" marker is this compared against the PR today.
+ *
+ * `updatedAt` was once the WHOLE record, and GitHub moves it for label,
+ * assignee, milestone and title churn as readily as for a push — so the dot
+ * mostly meant "a bot touched this". The head sha and the two conversation
+ * counts are the half that means there is something new to READ. The three
+ * are optional because records written before that widening are still on
+ * disk and must keep answering. */
+export type SeenRecord = {
+  prId: PrId;
+  updatedAt: string;
+  seenAt: string;
+  headSha?: string;
+  commentCount?: number;
+  threadCount?: number;
+};
+
+/** The part of a PR that decides whether it changed. Written by the detail
+ * screen, read back by the queue — the two must name the same quantities,
+ * which is why this is one type rather than a PUT body spelled twice. */
+export type SeenSignal = {
+  updatedAt: string;
+  headSha: string;
+  /** Issue-level comments. `reviewThreads.totalCount` is the other half, and
+   * both are asked for by the queue fragment AND the detail query. */
+  commentCount: number;
+  threadCount: number;
+};
+
+export function seenSignalOf(pr: PullRequest): SeenSignal {
+  return {
+    updatedAt: pr.updatedAt,
+    headSha: pr.headSha,
+    commentCount: pr.commentCount,
+    threadCount: pr.threadCount,
+  };
+}
+
+/** True when the PR changed in a way worth re-opening it for, or was never
+ * opened at all. */
+export function hasUnseenChanges(
+  seen: Record<string, SeenRecord> | undefined,
+  pr: PullRequest,
+): boolean {
+  if (!seen) return false;
+  const record = seen[pr.prId];
+  if (!record) return true;
+  // A record from before the widening (or one whose search returned no
+  // commit) knows a timestamp and nothing else — answer with what it has
+  // rather than silently going quiet on a PR that really did move.
+  if (!record.headSha) return pr.updatedAt > record.updatedAt;
+  // An empty sha on the PR claims nothing either: absent is not "moved".
+  if (pr.headSha && pr.headSha !== record.headSha) return true;
+  // Counts must GROW. A deleted comment left nothing new to read.
+  return (
+    pr.commentCount > (record.commentCount ?? 0) ||
+    pr.threadCount > (record.threadCount ?? 0)
+  );
+}
 
 export type FileChangeStatus =
   | "added"

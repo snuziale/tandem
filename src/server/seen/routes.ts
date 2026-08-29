@@ -4,6 +4,12 @@ import { matchIdPath } from "../pathMatch";
 import { parseJsonBody } from "../requestJson";
 import { loadSeen, markSeen } from "./store";
 
+function count(value: unknown): number {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0
+    ? Math.floor(value)
+    : 0;
+}
+
 export async function handleSeen(req: Request): Promise<Response> {
   const url = new URL(req.url);
 
@@ -16,11 +22,18 @@ export async function handleSeen(req: Request): Promise<Response> {
     const body = await parseJsonBody(req);
     if (!isPlainObject(body) || typeof body.updatedAt !== "string") {
       return Response.json(
-        { error: "expected { updatedAt }" },
+        { error: "expected { updatedAt, headSha, commentCount, threadCount }" },
         { status: 400 },
       );
     }
-    await markSeen(match.id, body.updatedAt);
+    // Only updatedAt is required: the three that widened the record degrade to
+    // the empty reading, which hasUnseenChanges already treats as "knows less".
+    await markSeen(match.id, {
+      updatedAt: body.updatedAt,
+      headSha: typeof body.headSha === "string" ? body.headSha : "",
+      commentCount: count(body.commentCount),
+      threadCount: count(body.threadCount),
+    });
     return Response.json({ ok: true });
   }
 

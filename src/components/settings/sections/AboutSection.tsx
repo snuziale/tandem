@@ -19,7 +19,7 @@ const STORAGE: Array<[file: string, what: string]> = [
   ["reviews.json", "your pending review drafts, keyed by PR"],
   ["runs.json", "agent runs and their findings, plus spend by day"],
   ["chats.json", "chat transcripts per (PR, sha, finding), 100 most recent"],
-  ["seen.json", "last-seen timestamp per PR (the unseen-changes dot)"],
+  ["seen.json", "head sha + comment counts per PR (the unseen-changes dot)"],
   ["pulse.json", "one row of pulse counts per view per day, 90-day cap"],
   ["claude.log", "stderr from the CLI harness"],
   ["sandbox/", "working directory for the read-only claude passes"],

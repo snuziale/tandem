@@ -104,7 +104,7 @@ export function QueueRow({
               </TooltipTrigger>
               <TooltipPortal>
                 <TooltipContent>
-                  Changed since you last opened it
+                  New commits or comments since you last opened it
                 </TooltipContent>
               </TooltipPortal>
             </Tooltip>

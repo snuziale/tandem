@@ -2,10 +2,10 @@ import { useEffect, useMemo } from "react";
 import { Button, Skeleton, cn } from "@uipath/apollo-wind";
 import { useUiStore } from "../../state/uiStore";
 import type { PulseOptions } from "../../shared/pulse";
-import type { PullRequest } from "../../shared/review-types";
+import { hasUnseenChanges, type PullRequest } from "../../shared/review-types";
 import { openPrDetail } from "../../hooks/useKeyboardNav";
 import { runFor, useAgentRuns } from "../../hooks/useAgentRuns";
-import { hasUnseenChanges, useSeen } from "../../hooks/useSeen";
+import { useSeen } from "../../hooks/useSeen";
 import { useNow } from "../../hooks/useNow";
 import { QUEUE_GRID, QueueRow } from "./QueueRow";
 

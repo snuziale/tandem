@@ -1,5 +1,5 @@
 import { API_PATHS } from "../shared/api-paths";
-import type { PrId, SeenRecord } from "../shared/review-types";
+import type { PrId, SeenRecord, SeenSignal } from "../shared/review-types";
 import { apiRequest } from "./http";
 
 export async function fetchSeen(): Promise<Record<string, SeenRecord>> {
@@ -9,9 +9,9 @@ export async function fetchSeen(): Promise<Record<string, SeenRecord>> {
   return seen;
 }
 
-export function putSeen(prId: PrId, updatedAt: string): Promise<{ ok: true }> {
+export function putSeen(prId: PrId, signal: SeenSignal): Promise<{ ok: true }> {
   return apiRequest<{ ok: true }>(
     `${API_PATHS.SEEN}/${encodeURIComponent(prId)}`,
-    { method: "PUT", body: { updatedAt } },
+    { method: "PUT", body: signal },
   );
 }
