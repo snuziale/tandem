@@ -48,7 +48,11 @@ export async function startRunAction(
   runsInFlight.add(prId);
   try {
     await startRun(prId);
-    queryClient.invalidateQueries({ queryKey: ["runs"] });
+    // AWAITED: the caller's pending state is what the queue row renders while
+    // the run starts, and `startRun` resolves before the run RECORD exists.
+    // Returning here would flip the button back to "Run agent" until the next
+    // refetch landed, which reads as a click that did nothing.
+    await queryClient.invalidateQueries({ queryKey: ["runs"] });
   } catch (e) {
     toast.error(`Could not start run for ${prId}`, {
       description: e instanceof Error ? e.message : undefined,

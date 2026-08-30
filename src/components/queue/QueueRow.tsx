@@ -11,7 +11,7 @@ import { Check, ExternalLink } from "lucide-react";
 import { approvePrAction, openPrExternal } from "../../actions/queue";
 import { SHIFT } from "../../keyboard/platform";
 import { Shortcut } from "../common/Kbd";
-import type { AgentRun } from "../../shared/agent-types";
+import type { AgentRun, SkipReason } from "../../shared/agent-types";
 import type { PulseOptions } from "../../shared/pulse";
 import type { PullRequest } from "../../shared/review-types";
 import {
@@ -41,6 +41,11 @@ type Props = {
   run: AgentRun | undefined;
   /** The PR changed since the reviewer last opened it here (or never opened). */
   unseen: boolean;
+  /** Why a run here would be skipped, when the queue can know it exactly —
+   * the agent cell says so instead of offering a button that would spend a
+   * fetch to write a Skipped record. Null means nothing visible would stop
+   * one. */
+  runGate: SkipReason | null;
   /** Largest churn among the rows on screen — the churn bar's shared scale. */
   maxChurn: number;
   /** Viewer + staleness line, so the pulse cell means the same thing here as
@@ -56,6 +61,7 @@ export function QueueRow({
   pr,
   run,
   unseen,
+  runGate,
   maxChurn,
   pulseOpts,
   now,
@@ -132,7 +138,7 @@ export function QueueRow({
       </div>
       <SizeCell pr={pr} maxChurn={maxChurn} />
       <AgeCell pr={pr} now={now} />
-      <AgentCell prId={pr.prId} run={run} />
+      <AgentCell prId={pr.prId} run={run} gate={runGate} />
       {/* invisible (not hidden): the actions always occupy their column, so
           hovering never reflows the row. */}
       <div className="invisible group-hover:visible flex items-center justify-end gap-1">

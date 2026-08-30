@@ -5,7 +5,7 @@ import {
   DEFAULT_SETTINGS,
   type TandemSettings,
 } from "../../shared/settings-types";
-import { preflightOf, priorReviewFor } from "./preflight";
+import { preflightOf, priorReviewFor, queueRunGate } from "./preflight";
 
 function pr(over: Partial<PullRequest> = {}): PullRequest {
   return {
@@ -237,5 +237,56 @@ describe("priorReviewFor", () => {
       }),
     ]);
     expect(out).toMatchObject({ live: 1, total: 1 });
+  });
+});
+
+describe("queueRunGate", () => {
+  const ask = (
+    over: Partial<PullRequest>,
+    set: Partial<TandemSettings> = {},
+    spentTodayUsd = 0,
+  ) => queueRunGate({ pr: pr(over), settings: settings(set), spentTodayUsd });
+
+  it("offers the run when nothing the queue can see would stop it", () => {
+    expect(ask({})).toBeNull();
+  });
+
+  it("names the gates a search response answers exactly", () => {
+    expect(ask({ isDraft: true })).toBe("draft");
+    expect(ask({ changedFiles: 999 }, { maxChangedFiles: 40 })).toBe(
+      "too-many-files",
+    );
+    expect(ask({}, { dailyCostUsd: 5 }, 5)).toBe("budget");
+    expect(ask({}, { agentEnabledByDefault: false })).toBe("agent-disabled");
+  });
+
+  it("reads the per-repo toggle, not just the default", () => {
+    expect(
+      ask(
+        { owner: "o", repo: "r" },
+        { repos: { "o/r": { agentEnabled: false } } },
+      ),
+    ).toBe("agent-disabled");
+    expect(
+      ask(
+        { owner: "o", repo: "r" },
+        {
+          agentEnabledByDefault: false,
+          repos: { "o/r": { agentEnabled: true } },
+        },
+      ),
+    ).toBeNull();
+  });
+
+  it("honours skipDrafts rather than hard-coding drafts", () => {
+    expect(ask({ isDraft: true }, { skipDrafts: false })).toBeNull();
+  });
+
+  // The two gates a queue row cannot evaluate — it has counts, never patches.
+  // Staying silent means the pipeline can still record a Skip; claiming one
+  // would disable a button on a guess, which is the direction that costs the
+  // reviewer a review.
+  it("never refuses a run on a gate it cannot evaluate", () => {
+    expect(ask({ additions: 100_000, deletions: 100_000 })).toBeNull();
   });
 });

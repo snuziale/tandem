@@ -13,7 +13,7 @@
 // review of a different sha is evidence, not an answer.
 import { skipDecision, type SkipDecision } from "../../shared/agent-decide";
 import { analyzableFiles, clusterFiles } from "../../shared/agent-cluster";
-import type { AgentRun, Finding } from "../../shared/agent-types";
+import type { AgentRun, Finding, SkipReason } from "../../shared/agent-types";
 import { countDiffLines } from "../../shared/gh/patch";
 import type { FileChange, PrId, PullRequest } from "../../shared/review-types";
 import { agentEnabledFor } from "../../shared/settings-types";
@@ -69,6 +69,44 @@ export function preflightOf(input: {
     spentTodayUsd: input.spentTodayUsd,
     dailyCostUsd: input.settings.dailyCostUsd,
   };
+}
+
+/**
+ * What a QUEUE ROW can know about a run it has not started.
+ *
+ * The row has no diff — the queue search carries counts, never patches — so
+ * the two gates that need one are handed the values that provably cannot trip
+ * them (`diffLines: 0`, `allGenerated: false`) and `skipDecision` stays the
+ * ONE place these rules live. Delegating rather than re-checking four of its
+ * branches is what keeps the queue's answer in that function's order by
+ * construction: a gate added or reordered there reaches this caller for free.
+ *
+ * The omission is one-directional and safe: a run this gate offers can still
+ * come back Skipped for `diff-too-large` or `generated-only`, which is exactly
+ * what happens today, but a run it refuses is one the pipeline would certainly
+ * have refused too — the row never withholds the button on a guess. The one
+ * imprecision is the WORD: a PR both over the line cap and past the budget is
+ * reported as `budget`, where the pipeline says `diff-too-large`. Both are
+ * skips, and the pane tells the exact story once you open the PR.
+ */
+export function queueRunGate(input: {
+  pr: PullRequest;
+  settings: TandemSettings;
+  spentTodayUsd: number;
+}): SkipReason | null {
+  const { pr, settings } = input;
+  const decision = skipDecision(
+    {
+      isDraft: pr.isDraft,
+      changedFiles: pr.changedFiles,
+      diffLines: 0,
+      allGenerated: false,
+      agentEnabled: agentEnabledFor(settings, `${pr.owner}/${pr.repo}`),
+      spentTodayUsd: input.spentTodayUsd,
+    },
+    settings,
+  );
+  return decision.skip ? decision.reason : null;
 }
 
 /**

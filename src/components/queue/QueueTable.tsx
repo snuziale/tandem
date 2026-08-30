@@ -6,6 +6,8 @@ import { hasUnseenChanges, type PullRequest } from "../../shared/review-types";
 import { openPrDetail } from "../../hooks/useKeyboardNav";
 import { runFor, useAgentRuns } from "../../hooks/useAgentRuns";
 import { useSeen } from "../../hooks/useSeen";
+import { useSettings } from "../../hooks/useSettings";
+import { queueRunGate } from "../agent/preflight";
 import { useNow } from "../../hooks/useNow";
 import { QUEUE_GRID, QueueRow } from "./QueueRow";
 
@@ -50,6 +52,9 @@ export function QueueTable({
   const setQueueRows = useUiStore((s) => s.setQueueRows);
   const runs = useAgentRuns();
   const seen = useSeen();
+  // Read ONCE here, not per row: `useSettings` is cached and infinitely stale,
+  // but fifty rows subscribing to it is fifty subscriptions for one object.
+  const settings = useSettings();
   const now = useNow();
 
   // One shared scale for the size column's churn bars: the biggest PR on
@@ -84,12 +89,23 @@ export function QueueTable({
       setFocusedPr(refs[0]?.prId ?? null);
   }, [rows, runsData, setQueueRows, setFocusedPr]);
 
+  // Before settings land nothing is claimed: no gate, so the button offers the
+  // run and the pipeline stays the authority — the same degradation the pane
+  // makes when it has no files yet.
+  const settingsData = settings.data;
+  const spentTodayUsd = runs.data?.spendTodayUsd ?? 0;
+
   const renderRow = (pr: PullRequest) => (
     <QueueRow
       key={pr.prId}
       pr={pr}
       run={runFor(runs.data, pr.prId, pr.headSha)}
       unseen={hasUnseenChanges(seen.data, pr)}
+      runGate={
+        settingsData
+          ? queueRunGate({ pr, settings: settingsData, spentTodayUsd })
+          : null
+      }
       maxChurn={maxChurn}
       pulseOpts={pulseOpts}
       now={now}

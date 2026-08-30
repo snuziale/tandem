@@ -12,6 +12,7 @@ import {
   SKIP_REASON_LABEL,
   type AgentRun,
   type Severity,
+  type SkipReason,
 } from "../../shared/agent-types";
 import {
   PULSE_LABELS,
@@ -420,23 +421,53 @@ const TALLY_ORDER: Severity[] = [
  * "Nothing to flag" (as legible as a finding — it earns the trust), and
  * Skipped with its reason. Violet marks it all as machine-authored.
  *
- * ONE SHAPE for every state: a status line, and a second line reserved for
- * severity chips whether or not there are any. The states used to be one line
- * or two depending on which they were, so scrolling the queue slid this
- * column's text up and down against the five beside it that never move.
+ * ONE SHAPE for every RUN state: a status line, and a second line reserved for
+ * severity chips whether or not there are any. Those states used to be one
+ * line or two depending on which they were, so scrolling the queue slid this
+ * column's text up and down against the five beside it that never move. The
+ * fifth state — no run at all — is a lone control rather than text, and is
+ * centred in the cell instead (see below).
  */
 export function AgentCell({
   prId,
   run,
+  gate,
 }: {
   prId: PrId;
   run: AgentRun | undefined;
+  /** Why the pipeline would refuse a run here, when the queue can know it
+   * exactly (`queueRunGate`); null means nothing it can see would stop one. */
+  gate: SkipReason | null;
 }) {
+  // The never-run state is the DEFAULT one — `settings.autoRunEnabled` is off,
+  // so nothing runs on its own — and it is the ONE state with nothing to say
+  // on the second line: the chip row is reserved for a run's severity tally,
+  // and there is no run. So the button gets the whole cell and is centred in
+  // it, at the size the control actually is. It used to be clamped to `h-4` to
+  // sit on the first line of a two-line frame whose second line was empty
+  // anyway — a 16px target inside a row that opens the PR when clicked, which
+  // made a near-miss navigate away instead of starting a run.
+  //
+  // A gated PR gets the REASON instead of a disabled button, the way the
+  // pre-flight card does it: a manual run applies `skipDecision` too (`force`
+  // only bypasses the sha cache), so offering the click would spend a fetch to
+  // write a Skipped record and say nothing this line does not already say.
+  // "would skip" rather than "Skipped", which is a run that actually ran.
+  if (!run)
+    return (
+      <span className="flex items-center min-w-0">
+        {gate ? (
+          <span className="text-xs truncate text-muted-foreground">
+            would skip · {SKIP_REASON_LABEL[gate]}
+          </span>
+        ) : (
+          <RunAgentButton prId={prId} />
+        )}
+      </span>
+    );
   return (
     <span className="flex flex-col gap-1 min-w-0">
-      <span className="text-xs truncate">
-        {run ? statusLine(run) : <RunAgentButton prId={prId} />}
-      </span>
+      <span className="text-xs truncate">{statusLine(run)}</span>
       {/* Reserved, and it never wraps: the row is a fixed h-14 and clips, so a
           wrapping chip list would silently lose its own second row. */}
       <span className="flex gap-1 h-4 items-center overflow-hidden">
@@ -447,12 +478,11 @@ export function AgentCell({
 }
 
 /**
- * The never-run state is the DEFAULT one (`settings.autoRunEnabled` is off, so
- * nothing runs on its own) — it used to be an em-dash, which said the agent had
- * nothing to say rather than that nobody had asked it. The button lives on the
- * first line and is height-clamped to it: the agent column is always two lines
- * and an h-7 control here would push the chip row down on exactly the rows that
- * have no chips, which is the drift the two-line rule exists to prevent.
+ * Start the agent on this PR.
+ *
+ * Same `size="2xs" variant="outline"` as the row's Approve button: the queue
+ * has one button vocabulary, and a ghost control in muted-foreground read as a
+ * label rather than as something you press.
  */
 function RunAgentButton({ prId }: { prId: PrId }) {
   const queryClient = useQueryClient();
@@ -462,8 +492,7 @@ function RunAgentButton({ prId }: { prId: PrId }) {
   return (
     <Button
       size="2xs"
-      variant="ghost"
-      className="h-4 -ml-1.5 px-1.5 gap-1 text-muted-foreground hover:text-foreground"
+      variant="outline"
       disabled={start.isPending}
       onClick={(e) => {
         e.stopPropagation();
@@ -471,11 +500,14 @@ function RunAgentButton({ prId }: { prId: PrId }) {
       }}
     >
       {start.isPending ? (
-        <AgentSpinner className="size-3" />
+        <>
+          <AgentSpinner /> Starting…
+        </>
       ) : (
-        <Play className="size-3" />
+        <>
+          <Play /> Run agent
+        </>
       )}
-      Run agent
     </Button>
   );
 }

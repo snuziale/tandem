@@ -805,9 +805,30 @@ Eight columns (`QUEUE_GRID` in `QueueRow.tsx`), and two rules hold the column ed
   `invisible`, never `hidden`, so hovering still never reflows the row.
 - **Review and agent cells are always TWO lines**, whether or not the second has content:
   `SignalsCell` renders an empty track for a PR with no reviews or comments, and `AgentCell`
-  reserves its severity-chip row in every state including "—". Before that, a one-line state and
+  reserves its severity-chip row in every RUN state. Before that, a one-line state and
   a two-line state centred differently, so the two most-scanned columns slid up and down against
-  the six that never move.
+  the six that never move. **The no-run state is the one exemption**: it is a lone control, not
+  text, so the Run agent button takes the whole cell and is centred in it at the size the
+  control actually is. It used to be clamped to `h-4` to ride the first line of a frame whose
+  second line is empty by definition in that state — a 16px target inside a row that opens the
+  PR when clicked, so a near-miss navigated away instead of starting a run. It wears the row's
+  own button vocabulary (`size="2xs" variant="outline"`, like Approve); ghost + muted-foreground
+  read as a label.
+- **The Run agent button is GATED, and the gate is the pre-flight rule at row scale**
+  (`queueRunGate` in `components/agent/preflight.ts`, TESTED). A manual run applies
+  `skipDecision` too — `force` only bypasses the sha cache — so a click on a draft would spend a
+  fetch to write a Skipped record. The row has no diff, so it CALLS `skipDecision` with the
+  values that provably cannot trip the two gates needing one (`diffLines: 0`, `allGenerated:
+false`) rather than re-checking four of its branches by hand — the rule stays in one place and
+  a gate added there reaches the queue for free. It answers only the gates a search response
+  knows exactly (repo toggle, drafts, file cap, today's spend) and stays silent on
+  `diff-too-large`/`generated-only`. The omission is one-directional — a run it OFFERS can still
+  come back Skipped, exactly as today, but a run it REFUSES the pipeline would have refused too,
+  so the row never withholds the button on a guess. A gated row shows the REASON
+  (`would skip · draft`) in place of the button rather than a disabled one — same call the
+  pre-flight card makes, and "would skip" is not "Skipped", which is a run that actually ran.
+  `QueueTable` calls `useSettings` ONCE and computes the gate per row — fifty rows subscribing
+  to one cached object is fifty subscriptions.
 
 ## Queue header zones
 
