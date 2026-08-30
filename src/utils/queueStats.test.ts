@@ -40,6 +40,7 @@ function pr(over: Partial<PullRequest> = {}): PullRequest {
     viewerReviewState: null,
     checkRollup: "SUCCESS",
     checkRuns: [],
+    checkTotal: 0,
     threadCount: 0,
     unresolvedThreadCount: 0,
     approvalCount: 0,
@@ -80,6 +81,27 @@ describe("buckets", () => {
       "awaiting",
     );
     expect(reviewBucket(pr({ reviewDecision: null }))).toBe("none");
+  });
+
+  // Same null decision, someone ELSE's approval. Rescuing only the viewer's
+  // own review left this half-patched: "no review" is a filter, so the bucket
+  // used to hand you a slice of approved PRs under that label.
+  it("counts a teammate's approval when the repo reports no decision", () => {
+    expect(reviewBucket(pr({ reviewDecision: null, approvalCount: 1 }))).toBe(
+      "approved",
+    );
+    expect(
+      reviewBucket(pr({ reviewDecision: null, changesRequestedCount: 1 })),
+    ).toBe("changes");
+    expect(
+      reviewBucket(
+        pr({
+          reviewDecision: null,
+          approvalCount: 1,
+          changesRequestedCount: 1,
+        }),
+      ),
+    ).toBe("changes");
   });
 
   // A base branch with no required-reviews rule reports reviewDecision: null

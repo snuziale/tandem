@@ -47,9 +47,16 @@ export const PULSE_LABELS: Record<PulseState, string> = {
   moving: "moving",
 };
 
-/** One line each, shown under the chart and in the xbar menu. */
+/**
+ * One line each, shown under the chart and in the xbar menu — these describe
+ * a BUCKET, so they are what aggregate surfaces (the header pill, the drawer
+ * legend) say. A single PR gets `pulseOf().hint`, which is narrower.
+ *
+ * `blocked-on-you` therefore names both of its entrances rather than one: see
+ * `pulseReasonOf`.
+ */
 export const PULSE_HINTS: Record<PulseState, string> = {
-  "blocked-on-you": "your review is what it is waiting for",
+  "blocked-on-you": "waiting on you — your review, or your own branch",
   rotting: "nobody has touched it in a while",
   "blocked-on-them": "the author has to act — changes requested or checks red",
   ready: "approved and green; someone just has to merge it",
@@ -75,24 +82,45 @@ export function idleDaysOf(pr: PullRequest, now: number): number {
   return Math.max(0, (now - then) / DAY);
 }
 
+/** Where a PR's review stands — one closed set, resolved in ONE place. */
+export type ReviewStanding =
+  "approved" | "changes-requested" | "awaiting" | "none";
+
 /**
- * Approved in the sense that MATTERS here: nobody's sign-off is still owed.
+ * The ONE reading of "where does this PR's review stand".
  *
- * The raw count is only the fallback, and it must not beat an explicit
- * REVIEW_REQUIRED. That verdict is GitHub's own answer to "are the required
- * approvals in?", and under CODEOWNERS (or any required-reviewers rule) a
- * teammate's approval leaves it at REVIEW_REQUIRED with the codeowners still
- * outstanding. Counting that as approved sent the PR to `ready` — "approved
- * and green; someone just has to merge it" — which is the one state read as a
- * one-click close-out, so it was the most expensive place to be wrong.
+ * `reviewDecision` is GitHub's own verdict and wins whenever it exists. It is
+ * NULL on any base branch with no required-reviews rule, however many
+ * approvals the PR has — and in that case the counts are the only verdict
+ * there is, so they are read rather than ignored. That fallback is why this
+ * function exists at all: the pulse column read the counts (via `isApproved`)
+ * while the review badge and the drawer's bucket read only the decision, so
+ * one row could say "ready to merge", "No review" and "✓1" on the same line.
  *
- * The count still carries repos with no branch protection, where the decision
- * is null however many approvals a PR has (see ReviewCell).
+ * Two orderings are load-bearing:
+ *  - An explicit REVIEW_REQUIRED BEATS the count. Under CODEOWNERS a
+ *    teammate's approval leaves the decision required with the codeowners
+ *    still outstanding; counting that as approved sent the PR to `ready` —
+ *    "someone just has to merge it" — the most expensive place to be wrong.
+ *  - Among the counts, a change request beats an approval. `approvals` is a
+ *    totalCount of approving reviews and a review stays in it after the same
+ *    person later submits CHANGES_REQUESTED, so the stricter verdict has to
+ *    win or a resolved-then-reopened review reads as a sign-off.
+ *
+ * It says nothing about WHO: `awaitsViewer` and `reviewBadge` layer that on.
  */
+export function reviewStandingOf(pr: PullRequest): ReviewStanding {
+  if (pr.reviewDecision === "APPROVED") return "approved";
+  if (pr.reviewDecision === "CHANGES_REQUESTED") return "changes-requested";
+  if (pr.reviewDecision === "REVIEW_REQUIRED") return "awaiting";
+  if (pr.changesRequestedCount > 0) return "changes-requested";
+  if (pr.approvalCount > 0) return "approved";
+  return "none";
+}
+
+/** Approved in the sense that MATTERS here: nobody's sign-off is still owed. */
 export function isApproved(pr: PullRequest): boolean {
-  if (pr.reviewDecision === "APPROVED") return true;
-  if (pr.reviewDecision === "REVIEW_REQUIRED") return false;
-  return pr.approvalCount > 0;
+  return reviewStandingOf(pr) === "approved";
 }
 
 /**
@@ -165,6 +193,60 @@ export function pulseStateOf(pr: PullRequest, opts: PulseOptions): PulseState {
   if (idleDaysOf(pr, opts.now) >= rottingDays) return "rotting";
   if (side) return "blocked-on-them";
   return "moving";
+}
+
+/** The two doors into `blocked-on-you`. Nothing else has more than one. */
+export const PULSE_REASONS = ["your-review", "your-branch"] as const;
+export type PulseReason = (typeof PULSE_REASONS)[number];
+
+/**
+ * WHICH door a PR came in by — null for every other state.
+ *
+ * `blocked-on-you` collapses two genuinely different asks: a review you owe
+ * someone, and your OWN PR whose branch has to move (checks red, or changes
+ * requested against you). The court is the same and the urgency is the same,
+ * which is why this is not a sixth state — but the sentence explaining it is
+ * not, and a flat hint table told every author of a red-checked PR that their
+ * review was what it was waiting for.
+ */
+export function pulseReasonOf(
+  pr: PullRequest,
+  opts: PulseOptions,
+): PulseReason | null {
+  return pulseOf(pr, opts).reason;
+}
+
+export const PULSE_REASON_HINTS: Record<PulseReason, string> = {
+  "your-review": "your review is what it is waiting for",
+  "your-branch":
+    "your PR — changes requested or checks red, so the branch has to move",
+};
+
+/**
+ * State, reason and the ONE sentence a single row should show, resolved
+ * together in one pass.
+ *
+ * Separate `pulseStateOf` / `pulseReasonOf` calls would each re-derive the
+ * state, and — worse — a reason resolved without its state could describe a
+ * PR that is not blocked on you at all. `pulseStateOf` stays the entry point
+ * for everything that only counts (charts, groups, the journal, facets).
+ */
+export function pulseOf(
+  pr: PullRequest,
+  opts: PulseOptions,
+): { state: PulseState; reason: PulseReason | null; hint: string } {
+  const state = pulseStateOf(pr, opts);
+  const reason =
+    state === "blocked-on-you"
+      ? blockedOn(pr) === "author"
+        ? "your-branch"
+        : "your-review"
+      : null;
+  return {
+    state,
+    reason,
+    hint: reason ? PULSE_REASON_HINTS[reason] : PULSE_HINTS[state],
+  };
 }
 
 export type PulseCounts = Record<PulseState, number>;

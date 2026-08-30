@@ -27,8 +27,37 @@ export type ReviewVerdict = "APPROVE" | "REQUEST_CHANGES" | "COMMENT";
 
 export type CheckRun = {
   name: string;
-  status: "success" | "failure" | "pending" | "neutral" | "skipped";
+  /** `cancelled` is its own status and not a synonym for `failure`: GitHub
+   * names it separately, so folding it in made the queue say "1 failing"
+   * about a run nothing had failed. It still reads as not-green — GitHub's
+   * own rollup goes FAILURE for it — it just has to be called what it is. */
+  status:
+    "success" | "failure" | "cancelled" | "pending" | "neutral" | "skipped";
   url?: string;
+  /** When this run last said anything (completed, else started; a status
+   * context's creation). ISO-8601, comparable as a string. Absent on a
+   * response that didn't ask for it — `dedupeChecks` then falls back to
+   * list order. */
+  at?: string | null;
+};
+
+/**
+ * A better answer to the check fields of ONE PR, fetched separately.
+ *
+ * The queue search cannot afford per-check nodes, so a queue row starts with
+ * GitHub's rollup and no runs; this is what the refinement pass brings back
+ * (shared/gh/checksQuery.ts). `headSha` is carried so a snapshot can never be
+ * applied to a commit it wasn't taken on.
+ */
+export type ChecksSnapshot = {
+  headSha: string;
+  checkRollup: CheckRollup;
+  checkRuns: CheckRun[];
+  checkTotal: number;
+};
+
+export type ChecksResult = {
+  checks: Record<PrId, ChecksSnapshot>;
 };
 
 export type PullRequest = {
@@ -54,6 +83,10 @@ export type PullRequest = {
   checkRollup: CheckRollup;
   /** Individual check contexts (first 30). Present on queue and detail responses. */
   checkRuns: CheckRun[];
+  /** How many contexts GitHub HAS on the head commit, which is not how many
+   * are in `checkRuns`: the query fetches a window. Counts derived from the
+   * window are only exact when the two agree — see shared/checks.ts. */
+  checkTotal: number;
   threadCount: number;
   unresolvedThreadCount: number;
   /** Submitted APPROVED reviews. Counted, not listed — the queue only needs

@@ -11,12 +11,18 @@ export type GqlCheckContext =
       status: string;
       conclusion: string | null;
       detailsUrl?: string | null;
+      /** Fetched by the DETAIL query only — the queue asks for no nodes at
+       * all. Together they answer "which of these same-named runs is the
+       * latest", which is the whole basis of collapsing re-runs. */
+      startedAt?: string | null;
+      completedAt?: string | null;
     }
   | {
       __typename: "StatusContext";
       context: string;
       state: string;
       targetUrl?: string | null;
+      createdAt?: string | null;
     };
 
 export type GqlCommitWithChecks = {
@@ -24,7 +30,11 @@ export type GqlCommitWithChecks = {
     oid: string;
     statusCheckRollup: {
       state: string;
-      contexts: { nodes: GqlCheckContext[] };
+      /** `totalCount` is what GitHub HAS and is always asked for; `nodes` is
+       * the per-check breakdown and ONLY the detail query pays for it (see
+       * queueQuery.ts for the measurement). A count taken from a windowed
+       * `nodes` is a count of the window, never of the PR. */
+      contexts: { totalCount?: number; nodes?: GqlCheckContext[] };
     } | null;
   };
 };

@@ -55,6 +55,7 @@ live server-side only. `GITHUB_TOKEN` env seeds `~/.tandem/config.json` on first
 browser → /api/* → Vite proxy (dev) → Bun server (src/server/worker.ts)
   /api/config/*    config/routes.ts      PAT store, /user probe (login), test/save
   /api/queue       github/queue.ts       one GraphQL search PER VIEW, parallel (see below)
+  /api/queue/checks  github/checks.ts    the per-check refinement a search can't carry (below)
   /api/prs/:o/:r/:n[...]  github/routes.ts  detail (GraphQL) · files (REST+fallback) ·
                                             blob (one file at a commit, for diff-pane
                                             context expansion) ·
@@ -662,7 +663,10 @@ src/
   shared/              client↔server bridge (tsconfig.server compiles ONLY server+shared)
     api-paths.ts  config-types.ts  github-credentials.ts  review-types.ts  agent-types.ts
     finding-schema.ts (zod)  settings-types.ts  is-plain-object  runtime  user-agent
-    team-types.ts  pulse.ts (TESTED: states, blockedOn, grouping)
+    team-types.ts  pulse.ts (TESTED: states, blockedOn, grouping, reviewVerdictOf)
+    checks.ts (TESTED: what may be SAID about a PR's CI — dedupe to the latest
+                     attempt per name, the headline's word/count rules, and
+                     applyChecks folding the refinement into a queue row)
     agent-decide.ts (TESTED: skipDecision) · agent-cluster.ts (TESTED: the
                      pass-2 grouping) — SHARED because the PR pane's pre-flight
                      card answers "would this even run, and how big is it"
@@ -676,7 +680,8 @@ src/
                      normalize.ts, queueQuery.ts, detailQuery.ts, patch.ts (buildFilePatch,
                      splitRawDiff, diffLineIndex, clampCommentRange, patchLineText),
                      generated.ts, prKey.ts (prId = "owner/repo#n"),
-                     team.ts ({team} expansion + sharding)
+                     team.ts ({team} expansion + sharding),
+                     checksQuery.ts (the deferred per-PR checks batch)
   server/            Bun-only
     worker.ts (flat prefix router, port scan 5274-81, idleTimeout 0)  app.ts (webview host)
     runtime.ts  platform.ts (IS_WINDOWS/IS_DARWIN)  assets.ts (+generated
@@ -693,7 +698,8 @@ src/
   api/               plain-fetch clients (http.ts wrapper + one file per resource, named for
                      the resource: config, settings, queue, prs, reviews, runs, seen, views,
                      teams, pulse)
-  hooks/             useQueue (60s poll + focus refetch)  usePrDetail/usePrFiles (files:
+  hooks/             useQueue (60s poll + focus refetch)  useQueueChecks (the
+                     checks refinement, keyed by the rows' own prId@headSha)  usePrDetail/usePrFiles (files:
                      staleTime Infinity per sha)  usePendingReview (optimistic)  useAgentRuns
                      (30s poll, byKey index)  useRunStream (SSE)  useChat (transcript + turn
                      stream + apply)  useSettings
@@ -1110,19 +1116,82 @@ picks by `process.platform` at init-script build time.
 - **Annotations don't move/appear**: item `version` didn't change — check `versionOf` inputs.
 - **GraphQL 502s**: that's GitHub's ~10s budget. Never batch searches; keep the single retry.
 - **Don't raise the queue page size.** MEASURED 2026-08-23: a 521-match `review-requested:@me`
-  search already runs 6.5-6.8s at `first: 50`, and 504/502s start at 60. Trimming node fields
-  doesn't buy it back — the same search with no check contexts and no threads still took
-  7.5-9.3s at 100, so the cost is the SEARCH, not the payload. Removing the org-wide view
-  didn't change this. More coverage needs a different mechanism (cursor paging on demand),
-  not a bigger `first`.
+  search already runs 6.5-6.8s at `first: 50`, and 504/502s start at 60. Raising `first` is what
+  does not work — the same search at 100 took 7.5-9.3s even stripped of check contexts and
+  threads. More coverage needs a different mechanism (cursor paging on demand), not a bigger
+  `first`.
+  **Node fields are a different story, and the 2026-08-23 note that trimming them "doesn't buy it
+  back" was over-generalised from a repo with few checks.** MEASURED 2026-08-29 on the real built
+  query over `repo:UiPath/flow-workbench` (50 rows, 20-86 check contexts each), three runs each:
+  with `contexts(first: 20) { nodes }` 6.3-7.3s / 243KB; with `contexts { totalCount }` and no
+  nodes 4.3-4.6s / 49KB. The check contexts were a third of the queue's latency. They are gone
+  from the queue query — see below.
+- **The queue's checks arrive in a SECOND request, and that is what makes the row and the PR page
+  agree** (`shared/gh/checksQuery.ts` TESTED + `server/github/checks.ts` + `useQueueChecks`).
+  Per-check nodes are unaffordable inside a `search` (above) but cheap through
+  `repository.pullRequest` — MEASURED 2026-08-29: 10 PRs 1.2s, 25 PRs 2.4s, because the cost was
+  never the check runs, it was materializing them across a search result set. So the table paints
+  from the rollup and sharpens a couple of seconds later, in parallel chunks of 25 under a
+  fan-out cap, a failed chunk leaving those rows exactly as they were.
+  **The refinement is folded in at `QueueView`, not in the table**, so ONE set of rows feeds the
+  table, the stats drawer, the pulse pill and the facets. `applyChecks` (`shared/checks.ts`,
+  TESTED) refuses a snapshot from another head sha — a queue poll and this request race — and
+  re-derives `checkRollup` from the deduped runs, because pulse's `blockedOn` reads that field:
+  "checks passing" beside "blocked on you · checks red" is the same contradiction one column over.
+  A WINDOWED snapshot keeps GitHub's rollup instead, since a window cannot be deduped safely.
+  The server's own pulse (xbar, the journal) has no refinement pass and still reads the raw
+  rollup, so a menu-bar line can lag the app on a PR whose only red mark is a superseded attempt.
+- **Check COUNTS come from the runs when they exist** (`shared/checks.ts`, TESTED). The queue
+  SEARCH asks the rollup for `state` and `contexts { totalCount }` and NO nodes: they cost ~2.2s
+  a poll, and a window of them cannot be counted honestly — 47 of 50 rows on a real view had more
+  than the 20 contexts we fetched, so "18 passing" on a PR with 40 green checks was a count of the
+  window. `checkHeadlineOf` is the one place that decides what may be said, and it phrases the
+  SAME claim at two widths: `35/47 passing` in the column, "35 of 47 checks passing" in the chip.
+  Before the refinement lands it prints the rollup's word beside the exact total
+  (`not passing · 53`) — "not passing" is GitHub's own wording for a rollup whose cause we cannot
+  see, and unlike "failing" it stays true when that cause is a cancellation. A windowed count
+  renders as `n+`, never as a ratio.
+- **Re-runs collapse: one row per check NAME, latest attempt wins** (`dedupeChecks`,
+  `shared/checks.ts`, TESTED). A commit collects a run per workflow ATTEMPT, so #3468 carried 53
+  contexts for 47 checks — `demo-exists` appeared as CANCELLED and then SUCCESS twice, ten seconds
+  apart. Every raw count was therefore a count of attempts, and the superseded cancellation dragged
+  the PR red. The name is the key because it is what branch protection matches a required check
+  on; recency is `completedAt ?? startedAt` (a running re-run has no completion and is still the
+  newer one), fetched by the DETAIL query only.
+  **The deduped runs then OUTRANK GitHub's rollup** — deferring to it would undo the collapse,
+  since the rollup keeps counting the attempt the re-run replaced. #3468 reads "35 of 47 checks
+  passing" while GitHub still says failure, so `rollupDisagrees` puts one sentence in the popover
+  saying why. The rollup is still in charge when there are no runs or the fetch is short of the
+  total: a window cannot be deduped safely, because the later attempt may be outside it.
+  **The QUEUE therefore cannot collapse anything and does not pretend to** — it has no nodes, so
+  its cell shows the rollup's coarse word (`not passing · 53`), which is also what github.com's own
+  PR LIST shows. MEASURED 2026-08-29: even the leanest useful nodes — name, status, conclusion,
+  `completedAt` — cost 8.5-9.2s / 389KB against 4.3-4.6s / 49KB without them, i.e. straight into
+  GitHub's ~10s 502 cliff. Detail is where a check gets named.
+- **The popover is grouped, then alphabetical**: what is wrong (failure, cancelled, pending), then
+  success, then what never ran (neutral, skipped) — with names sorted numerically inside each
+  group, so a matrix's `[2/5]` precedes its `[10/5]`. Skipped jobs sat beside the failures before,
+  and on a repo where a third of the matrix is conditional they pushed the runs that actually
+  reported below the fold.
+- **`cancelled` is not `failure`.** The normalizer used to fold CANCELLED in with TIMED_OUT and
+  the rest, so a run superseded by a green re-run ten seconds later rendered as "1 failing" in red
+  on a PR whose checks GitHub lists as cancelled. It is its own `CheckRun["status"]` with its own
+  dot in the detail popover. The TONE does not change — GitHub's own rollup goes FAILURE for a
+  cancelled run, so the row stays red; only the word was wrong.
 - **`useQuery` detail-vs-queue thread counts differ**: queue fetches `reviewThreads(first:1)`
   totalCount only; `unresolvedThreadCount` is accurate only on detail. Same field with different
   args in one query is a GraphQL conflict — that's why detailQuery.ts doesn't reuse the fragment.
-- **`reviewDecision` is null without branch protection.** GitHub only computes the repo-wide
-  verdict when the BASE branch has a required-reviews rule; without one it stays null however
-  many approvals a PR has. The badge (`ReviewCell`) and `reviewBucket` therefore read
-  `viewerLatestReview` too and let YOUR verdict win — otherwise a PR you approved yourself
-  renders "No review". Keep those two in step.
+- **`reviewDecision` is null without branch protection, and `reviewVerdictOf` is the ONE reading
+  of it** (`shared/pulse.ts`). GitHub only computes the repo-wide verdict when the BASE branch has
+  a required-reviews rule; without one it stays null however many approvals a PR has. So three
+  surfaces answer "where does this review stand" — the badge (`ReviewCell`), the drawer's
+  `reviewBucket`, and pulse's `isApproved` — and they must not each re-derive it. They did: pulse
+  fell back to `approvalCount` while the other two read the decision alone, so an approved PR on
+  an unprotected branch said "ready to merge", "No review" and `✓1` on one row. All three now go
+  through `reviewVerdictOf` (decision first; then counts, change-requests winning the tie, since
+  an approving review stays in `approvals` after the same person later requests changes).
+  `viewerLatestReview` still wins the BADGE ahead of all of it — your own verdict is the one thing
+  this app cannot be wrong about, and it is what makes the label read "Approved by you".
 - **The unseen dot is NOT `updatedAt`** (`hasUnseenChanges`, `shared/review-types.ts`, TESTED).
   GitHub moves a PR's `updatedAt` for a label, an assignee, a milestone or a title edit as
   readily as for a push, so a timestamp comparison mostly reported bot churn. The record stores
@@ -1136,10 +1205,20 @@ picks by `process.platform` at init-script build time.
   whose — so on a view of your OWN PRs it is the codeowners', not you. `ReviewCell` resolves it
   through `awaitsViewer` ("Awaiting you" vs "Awaiting review") and the drawer's bucket is labelled
   "awaiting review"; reading it as "you" was right only by coincidence on `review-requested:@me`.
-  For the same reason `isApproved` (`shared/pulse.ts`) lets an explicit `REVIEW_REQUIRED` BEAT
-  `approvalCount` — under CODEOWNERS a teammate's approval leaves the decision required, and
-  counting it as approved put the PR in `ready`, the one state that reads as a one-click merge.
-  The raw count is the fallback for repos with no branch protection, nothing more.
+  For the same reason `reviewVerdictOf` lets an explicit `REVIEW_REQUIRED` BEAT `approvalCount` —
+  under CODEOWNERS a teammate's approval leaves the decision required, and counting it as approved
+  put the PR in `ready`, the one state that reads as a one-click merge. The raw count is the
+  fallback for repos with no branch protection, nothing more.
+- **`blocked on you` has TWO entrances, and only one of them is a review** (`pulseOf`,
+  `shared/pulse.ts`, TESTED). Your own PR with red checks is blocked on you exactly as much as a
+  review you owe someone — same court, same urgency — so it is one state, not six. But the hint
+  was a flat `Record<PulseState, string>` saying "your review is what it is waiting for", which
+  told every author of a failing PR to review their own work. A ROW resolves state, reason and
+  hint together (`pulseOf`) and paints the reason's icon (`PULSE_REASON_ICON`: eye vs wrench);
+  aggregate surfaces — the header pill, the drawer legend — are counting a bucket that mixes both
+  and keep `PULSE_HINTS`, which now names both doors. The LABEL does not fork: a row reading
+  "needs your fix" would stop echoing the pill segment you filtered with. Neither does the COLOR —
+  pulse wears the reserved status tokens, not a per-reason palette.
 - **A description image or demo video renders as a broken box**: something bypassed the attachment
   proxy. Either the response was fetched without `bodyHTML` (nothing to resolve against, so the
   markdown is left untouched by design) or a `<video>` lost its tag to the sanitizer. Never "fix"

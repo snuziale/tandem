@@ -14,9 +14,10 @@ import {
   GitMerge,
   Hourglass,
   MessageSquare,
+  Wrench,
   type LucideIcon,
 } from "lucide-react";
-import type { PulseState } from "../../shared/pulse";
+import type { PulseReason, PulseState } from "../../shared/pulse";
 
 export const PULSE_ICON: Record<PulseState, LucideIcon> = {
   "blocked-on-you": Eye,
@@ -24,6 +25,21 @@ export const PULSE_ICON: Record<PulseState, LucideIcon> = {
   "blocked-on-them": Ban,
   ready: CircleCheck,
   moving: Activity,
+};
+
+/**
+ * `blocked-on-you` has two entrances (shared/pulse.ts `pulseOf`) and the eye
+ * only fits one of them: on your OWN red-checked PR it says you owe a review
+ * of your own work. A single ROW knows which door it came in by, so it draws
+ * the reason; the header pill and the drawer are counting a bucket that mixes
+ * both, so they keep the eye.
+ *
+ * The COLOR does not fork — it is the same court and the same urgency, and
+ * pulse colors are the reserved status tokens, not a per-reason palette.
+ */
+export const PULSE_REASON_ICON: Record<PulseReason, LucideIcon> = {
+  "your-review": Eye,
+  "your-branch": Wrench,
 };
 
 /** Row signals: an approval, a change request, a conversation, auto-merge. */

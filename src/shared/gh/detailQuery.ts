@@ -67,11 +67,19 @@ query TandemPrDetail($owner: String!, $name: String!, $number: Int!) {
             oid
             statusCheckRollup {
               state
-              contexts(first: 30) {
+              contexts(first: 100) {
+                totalCount
                 nodes {
                   __typename
-                  ... on CheckRun { name status conclusion detailsUrl }
-                  ... on StatusContext { context state targetUrl }
+                  ... on CheckRun {
+                    name
+                    status
+                    conclusion
+                    detailsUrl
+                    startedAt
+                    completedAt
+                  }
+                  ... on StatusContext { context state targetUrl createdAt }
                 }
               }
             }

@@ -14,16 +14,30 @@ import {
   type Severity,
 } from "../../shared/agent-types";
 import {
-  PULSE_HINTS,
   PULSE_LABELS,
   awaitsViewer,
   isAutoMerging,
-  pulseStateOf,
+  pulseOf,
+  reviewStandingOf,
   type PulseOptions,
+  type ReviewStanding,
 } from "../../shared/pulse";
+import {
+  checkHeadlineOf,
+  countByStatus,
+  dedupeChecks,
+  shortCheckLabel,
+  type CheckHeadline,
+  type CheckTone,
+} from "../../shared/checks";
 import { Check, Play } from "lucide-react";
 import type { PrId, PullRequest } from "../../shared/review-types";
-import { PULSE_COLOR, PULSE_ICON, SIGNAL_ICON } from "./pulseIcons";
+import {
+  PULSE_COLOR,
+  PULSE_ICON,
+  PULSE_REASON_ICON,
+  SIGNAL_ICON,
+} from "./pulseIcons";
 import { startRunAction } from "../../actions/queue";
 import { relativeAge } from "../../utils/time";
 import { AgentSpinner } from "../agent/AgentSpinner";
@@ -37,8 +51,11 @@ export function PulseCell({
   pr: PullRequest;
   opts: PulseOptions;
 }) {
-  const state = pulseStateOf(pr, opts);
-  const Icon = PULSE_ICON[state];
+  // A row knows WHICH door it came in by, so it says so — the label stays the
+  // bucket's ("needs your fix" here would stop echoing the pill segment you
+  // filtered with), and the icon and the tooltip carry the difference.
+  const { state, reason, hint } = pulseOf(pr, opts);
+  const Icon = reason ? PULSE_REASON_ICON[reason] : PULSE_ICON[state];
   return (
     <Tooltip>
       <TooltipTrigger asChild>
@@ -54,7 +71,7 @@ export function PulseCell({
         </span>
       </TooltipTrigger>
       <TooltipPortal>
-        <TooltipContent>{PULSE_HINTS[state]}</TooltipContent>
+        <TooltipContent>{hint}</TooltipContent>
       </TooltipPortal>
     </Tooltip>
   );
@@ -122,50 +139,98 @@ export function SignalsCell({ pr }: { pr: PullRequest }) {
   );
 }
 
-export function ChecksCell({ pr }: { pr: PullRequest }) {
-  if (pr.checkRollup === "NONE") {
-    return (
-      <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-        <Dot className="bg-muted-foreground/40" /> no checks
-      </span>
-    );
-  }
-  const failing = pr.checkRuns.filter((c) => c.status === "failure").length;
-  const pending = pr.checkRuns.filter((c) => c.status === "pending").length;
-  const passing = pr.checkRuns.filter((c) => c.status === "success").length;
+/** Tone → the reserved check tokens. One table, so the dot and the text can
+ * never drift apart. */
+const CHECK_TONE: Record<CheckTone, { text: string; dot: string }> = {
+  failure: {
+    text: "font-medium text-red-500 dark:text-red-400",
+    dot: "bg-red-500 dark:bg-red-400",
+  },
+  pending: {
+    text: "font-medium text-yellow-600 dark:text-yellow-400",
+    dot: "bg-yellow-500 dark:bg-yellow-400",
+  },
+  success: {
+    text: "font-medium text-emerald-600 dark:text-emerald-400",
+    dot: "bg-emerald-500 dark:bg-emerald-400",
+  },
+  none: { text: "text-muted-foreground", dot: "bg-muted-foreground/40" },
+};
 
-  if (pr.checkRollup === "FAILURE") {
-    return (
-      <span className="flex items-center gap-1.5 text-xs font-medium text-red-500 dark:text-red-400">
-        <Dot className="bg-red-500 dark:bg-red-400" /> {failing || 1} failing
-      </span>
-    );
-  }
-  if (pr.checkRollup === "PENDING") {
-    return (
-      <span className="flex items-center gap-1.5 text-xs font-medium text-yellow-600 dark:text-yellow-400">
-        <Dot className="bg-yellow-500 dark:bg-yellow-400" /> {pending || 1}{" "}
-        pending
-      </span>
-    );
-  }
+export function ChecksCell({ pr }: { pr: PullRequest }) {
+  // Counting is `checkHeadlineOf`'s job, not this cell's — the numbers here
+  // used to be counts of the fetched WINDOW, and `|| 1` invented one whenever
+  // the window held no failure to count.
+  const head = checkHeadlineOf(pr);
+  const tone = CHECK_TONE[head.tone];
+  const label = shortCheckLabel(head);
   return (
-    <span className="flex items-center gap-1.5 text-xs font-medium text-emerald-600 dark:text-emerald-400">
-      <Dot className="bg-emerald-500 dark:bg-emerald-400" />{" "}
-      {passing || pr.checkRuns.length} passing
-    </span>
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span className={cn("flex items-center gap-1.5 text-xs", tone.text)}>
+          <Dot className={tone.dot} /> {label}
+        </span>
+      </TooltipTrigger>
+      <TooltipPortal>
+        <TooltipContent>{checkTooltip(pr, head)}</TooltipContent>
+      </TooltipPortal>
+    </Tooltip>
   );
+}
+
+/**
+ * The queue fetches no per-check nodes, so this says what IS known and points
+ * at where the breakdown lives — rather than counting a window (which is what
+ * printed "18 passing" about a PR with 40 green checks).
+ */
+function checkTooltip(pr: PullRequest, head: CheckHeadline): string {
+  if (head.tone === "none") return "no checks on the head commit";
+  const scale = `${head.total} check${head.total === 1 ? "" : "s"} on the head commit`;
+  if (pr.checkRuns.length === 0) {
+    const verdict =
+      head.tone === "failure"
+        ? "GitHub reports some are not passing"
+        : head.tone === "pending"
+          ? "GitHub reports some still running"
+          : "GitHub reports them green";
+    return `${scale} · ${verdict} — open the PR for the per-check breakdown`;
+  }
+  const runs = dedupeChecks(pr.checkRuns);
+  const parts = (
+    [
+      ["failing", "failure"],
+      ["cancelled", "cancelled"],
+      ["running", "pending"],
+      ["passing", "success"],
+      ["neutral", "neutral"],
+      ["skipped", "skipped"],
+    ] as const
+  )
+    .map(([word, status]) => {
+      const n = countByStatus(runs, status);
+      return n > 0 ? `${n} ${word}` : null;
+    })
+    .filter((part): part is string => part !== null);
+  const body = `${parts.join(" · ")} of ${head.total}`;
+  return head.partial
+    ? `${body} — only ${pr.checkRuns.length} were fetched, so these are lower bounds`
+    : body;
 }
 
 /**
  * `showDraft={false}` where a state pill already says Draft (the PR header).
  *
- * TWO fields, and the order matters. `reviewDecision` is the repo-wide verdict
- * and it is null on any base branch WITHOUT a required-reviews rule — so on a
- * repo with no branch protection, a PR you approved yourself still reports
- * null and used to render "No review", which reads as "nobody has looked at
- * this" when in fact you signed off on it. Your own review is the one thing
- * this app can never be wrong about, so it wins the badge.
+ * YOUR OWN review is checked first and wins the badge: it is the one thing
+ * this app can never be wrong about, and `reviewDecision` is null on any base
+ * branch without a required-reviews rule — so a PR you approved yourself
+ * reported null and rendered "No review", which reads as "nobody has looked at
+ * this".
+ *
+ * Everything after that is `reviewStandingOf`, NOT `reviewDecision`. That same
+ * null covers a TEAMMATE's approval too, and rescuing only your own left the
+ * hole half-patched: the pulse column reads the counts (via `isApproved`) and
+ * SignalsCell prints them one line below, so an approved PR on an unprotected
+ * branch said "ready to merge", "No review" and "✓1" all at once.
  */
 export function ReviewCell({
   pr,
@@ -202,13 +267,6 @@ type ReviewBadge = {
   extra?: string;
 };
 
-/** The two verdicts that name no person — they read the same whoever is
- * looking. REVIEW_REQUIRED is the third and is resolved in `reviewBadge`. */
-const DECISION_BADGE: Record<string, ReviewBadge> = {
-  CHANGES_REQUESTED: { variant: "error", label: "Changes requested" },
-  APPROVED: { variant: "success", label: "Approved" },
-};
-
 /**
  * Same warning token either way: "awaiting" is ONE review state and the color
  * is the state, not how much it is your problem. Whose court it is in is the
@@ -218,6 +276,20 @@ const AWAITING_YOU: ReviewBadge = { variant: "warning", label: "Awaiting you" };
 const AWAITING_REVIEW: ReviewBadge = {
   variant: "warning",
   label: "Awaiting review",
+};
+
+/** One badge per verdict, and none of them names a person — they read the
+ * same whoever is looking. `awaiting` is the one that can be narrowed to YOU,
+ * which `reviewBadge` does before it gets here.
+ *
+ * "Approved" is deliberately not softened for the count-derived case: a null
+ * decision means there is no required-reviews rule, so "one approval and
+ * nothing outstanding" IS the complete truth about that PR. */
+const VERDICT_BADGE: Record<ReviewStanding, ReviewBadge> = {
+  approved: { variant: "success", label: "Approved" },
+  "changes-requested": { variant: "error", label: "Changes requested" },
+  awaiting: AWAITING_REVIEW,
+  none: { variant: "secondary", label: "No review" },
 };
 
 function reviewBadge(
@@ -247,14 +319,10 @@ function reviewBadge(
   // the missing review is the codeowners'. `awaitsViewer` is the one rule for
   // "it is yours" (and it already refuses a team request, which is not
   // resolvable to a membership here).
-  if (pr.reviewDecision === "REVIEW_REQUIRED")
-    return awaitsViewer(pr, viewerLogin) ? AWAITING_YOU : AWAITING_REVIEW;
-  return (
-    DECISION_BADGE[pr.reviewDecision ?? ""] ?? {
-      variant: "secondary",
-      label: "No review",
-    }
-  );
+  const verdict = reviewStandingOf(pr);
+  if (verdict === "awaiting" && awaitsViewer(pr, viewerLogin))
+    return AWAITING_YOU;
+  return VERDICT_BADGE[verdict];
 }
 
 /**

@@ -56,6 +56,7 @@ function pr(over: Partial<PullRequest> = {}): PullRequest {
     viewerReviewState: null,
     checkRollup: "NONE",
     checkRuns: [],
+    checkTotal: 0,
     threadCount: 0,
     unresolvedThreadCount: 0,
     approvalCount: 0,

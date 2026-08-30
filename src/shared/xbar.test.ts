@@ -26,6 +26,7 @@ function pr(overrides: Partial<PullRequest> = {}): PullRequest {
     viewerReviewState: null,
     checkRollup: "SUCCESS",
     checkRuns: [],
+    checkTotal: 0,
     threadCount: 0,
     unresolvedThreadCount: 0,
     approvalCount: 0,

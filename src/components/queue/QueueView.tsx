@@ -28,6 +28,8 @@ import { AppHeader, HeaderDivider } from "../layout/AppHeader";
 import { PulsePill } from "./PulsePill";
 import { QueryBar } from "./QueryBar";
 import { QueueTable } from "./QueueTable";
+import { useQueueChecks } from "../../hooks/useQueueChecks";
+import { applyChecks } from "../../shared/checks";
 import { TeamManagerDialog } from "./TeamDialogs";
 import { StatsDrawer } from "./StatsDrawer";
 import { DeleteViewDialog, ViewEditorDialog } from "./ViewDialogs";
@@ -66,7 +68,21 @@ export function QueueView() {
   const queue = useQueue(views);
   // The view's whole result set — the stats drawer's denominator, and what the
   // facet narrows for the table.
-  const allRows = activeViewId ? queue.data?.views[activeViewId] : undefined;
+  const searchRows = activeViewId ? queue.data?.views[activeViewId] : undefined;
+
+  // The second checks request, folded in here rather than in the table so that
+  // ONE set of rows feeds the table, the stats drawer, the pulse pill and the
+  // facets. Until it lands (or if it fails) every row keeps GitHub's rollup,
+  // which is what it showed before this existed.
+  const checks = useQueueChecks(searchRows);
+  const checksData = checks.data?.checks;
+  const allRows = useMemo(
+    () =>
+      searchRows && checksData
+        ? searchRows.map((pr) => applyChecks(pr, checksData[pr.prId]))
+        : searchRows,
+    [searchRows, checksData],
+  );
 
   // A facet only makes sense with the breakdown that produced it on screen, so
   // a facet in the URL implies an open drawer (and closing the drawer clears

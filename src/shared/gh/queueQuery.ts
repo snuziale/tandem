@@ -47,18 +47,25 @@ fragment PrFields on PullRequest {
         oid
         statusCheckRollup {
           state
-          contexts(first: 20) {
-            nodes {
-              __typename
-              ... on CheckRun { name status conclusion detailsUrl }
-              ... on StatusContext { context state targetUrl }
-            }
-          }
+          contexts { totalCount }
         }
       }
     }
   }
 }`;
+
+// MEASURED 2026-08-29 against `repo:UiPath/flow-workbench` (50 rows, a repo
+// whose PRs carry 53 check contexts), three runs each:
+//   contexts(first: 20) + nodes   2.6-3.7s   202KB
+//   contexts(first: 100) + nodes  7.9-8.1s   489KB
+//   contexts { totalCount }       1.3-1.4s     8KB
+// The check-context NODES were half the queue's latency on this view — the
+// note that trimming node fields "doesn't buy it back" was measured against a
+// repo with a handful of checks and does not hold here. They also could not
+// be used honestly: 20 of 53 is a window, and every count the column drew from
+// it was a count of the window (see shared/checks.ts). So the queue asks for
+// the ROLLUP and the TOTAL, which are exact, and the per-check breakdown is
+// the PR detail query's job — one PR, ~0.75s, no window needed.
 
 export type QueueQueryInput = { id: string; query: string };
 

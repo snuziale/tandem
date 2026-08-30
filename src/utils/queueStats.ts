@@ -12,6 +12,7 @@
 import {
   PULSE_STATES,
   pulseStateOf,
+  reviewStandingOf,
   type PulseOptions,
   type PulseState,
 } from "../shared/pulse";
@@ -79,6 +80,12 @@ export function checkBucket(pr: PullRequest): CheckBucket {
  * (see ReviewCell: a repo with no required-reviews rule reports null even
  * when you have approved). Keep these two in step or the drawer and the row
  * disagree about the same PR.
+ *
+ * Everything past those two is `reviewStandingOf` — the SAME resolution the
+ * badge and the pulse column use, rather than a third hand-rolled read of
+ * `reviewDecision`. This bucket's own name is why it matters: "no review" is
+ * a filter, so on a repo without branch protection it used to select approved
+ * PRs and hand you a slice that contradicts its label.
  */
 export function reviewBucket(pr: PullRequest): ReviewBucket {
   if (pr.isDraft) return "draft";
@@ -89,12 +96,12 @@ export function reviewBucket(pr: PullRequest): ReviewBucket {
     pr.reviewDecision !== "CHANGES_REQUESTED"
   )
     return "changes";
-  switch (pr.reviewDecision) {
-    case "APPROVED":
+  switch (reviewStandingOf(pr)) {
+    case "approved":
       return "approved";
-    case "CHANGES_REQUESTED":
+    case "changes-requested":
       return "changes";
-    case "REVIEW_REQUIRED":
+    case "awaiting":
       return "awaiting";
     default:
       return "none";

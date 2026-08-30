@@ -8,6 +8,8 @@ export const API_PATHS = {
   CONFIG_STATUS: "/api/config/status",
   CONFIG_TEST: "/api/config/test",
   QUEUE: "/api/queue",
+  /** The per-check refinement the search itself can't afford to carry. */
+  QUEUE_CHECKS: "/api/queue/checks",
   PRS: "/api/prs",
   REVIEWS: "/api/reviews",
   RUNS: "/api/runs",

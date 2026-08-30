@@ -36,6 +36,9 @@ function prNode(overrides: Partial<GqlPrNode> = {}): GqlPrNode {
             statusCheckRollup: {
               state: "FAILURE",
               contexts: {
+                // More than the four nodes below: a real repo's rollup is
+                // windowed by the query, and the total is what GitHub HAS.
+                totalCount: 53,
                 nodes: [
                   {
                     __typename: "CheckRun",
@@ -98,17 +101,22 @@ describe("checkRunOf", () => {
         __typename: "CheckRun",
         name: "x",
         status: "COMPLETED",
-        conclusion: "CANCELLED",
+        conclusion: "NEUTRAL",
       }).status,
-    ).toBe("failure");
+    ).toBe("neutral");
+  });
+  // Cancelled is its own status: it is usually a run superseded by a re-run,
+  // and folding it into failure made the queue say "1 failing" about a PR
+  // GitHub lists as cancelled.
+  it("keeps cancelled apart from failure", () => {
     expect(
       checkRunOf({
         __typename: "CheckRun",
         name: "x",
         status: "COMPLETED",
-        conclusion: "NEUTRAL",
+        conclusion: "CANCELLED",
       }).status,
-    ).toBe("neutral");
+    ).toBe("cancelled");
   });
   it("maps incomplete runs and pending status contexts to pending", () => {
     expect(
@@ -137,6 +145,8 @@ describe("normalizePr", () => {
     expect(pr!.headSha).toBe("a3f9c21");
     expect(pr!.checkRollup).toBe("FAILURE");
     expect(pr!.checkRuns).toHaveLength(4);
+    // What GitHub has, not what came back in the window.
+    expect(pr!.checkTotal).toBe(53);
     expect(pr!.checkRuns.map((c) => c.status)).toEqual([
       "success",
       "failure",

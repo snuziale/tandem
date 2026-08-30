@@ -43,12 +43,16 @@ export function checkRunOf(ctx: GqlCheckContext): CheckRun {
       name: ctx.name,
       status: checkRunStatus(ctx.status, ctx.conclusion),
       url: ctx.detailsUrl ?? undefined,
+      // `completedAt` first, then `startedAt`: a run still going has no
+      // completion, and it is newer than the finished one it replaces.
+      at: ctx.completedAt ?? ctx.startedAt ?? null,
     };
   }
   return {
     name: ctx.context,
     status: statusContextStatus(ctx.state),
     url: ctx.targetUrl ?? undefined,
+    at: ctx.createdAt ?? null,
   };
 }
 
@@ -64,8 +68,13 @@ function checkRunStatus(
       return "neutral";
     case "SKIPPED":
       return "skipped";
-    // FAILURE, TIMED_OUT, CANCELLED, ACTION_REQUIRED, STALE, STARTUP_FAILURE —
-    // anything that isn't a pass reads as failing in a review queue.
+    // Cancelled is not failed. A cancelled run is usually one superseded by a
+    // re-run seconds later, and calling it "failing" put a red count on a PR
+    // whose checks GitHub lists as cancelled — a different claim.
+    case "CANCELLED":
+      return "cancelled";
+    // FAILURE, TIMED_OUT, ACTION_REQUIRED, STALE, STARTUP_FAILURE — anything
+    // else that isn't a pass reads as failing in a review queue.
     default:
       return "failure";
   }
@@ -133,7 +142,15 @@ export function normalizePr(node: GqlPrNode | null): PullRequest | null {
     reviewDecision: node.reviewDecision,
     viewerReviewState: node.viewerLatestReview?.state ?? null,
     checkRollup: rollupOf(rollup?.state),
+    // Empty on a QUEUE response: the search asks for the rollup and the total
+    // only, because the nodes cost half the queue's latency and 20 of 53 of
+    // them cannot be counted honestly anyway (queueQuery.ts).
     checkRuns: (rollup?.contexts.nodes ?? []).map(checkRunOf),
+    // What GitHub HAS, which is the number the column can state. `??` covers a
+    // response from before this was queried: falling back to the nodes' own
+    // length reports "not truncated", which adds no false precision.
+    checkTotal:
+      rollup?.contexts.totalCount ?? (rollup?.contexts.nodes ?? []).length,
     threadCount: node.reviewThreads.totalCount,
     // Pulse inputs. Absent on any response fetched before these fields were
     // added (or by a caller that doesn't need them) — zero is the honest

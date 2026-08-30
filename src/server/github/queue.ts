@@ -30,6 +30,8 @@ import { recordQueuePulse } from "../pulse/journal";
 import { parseJsonBody } from "../requestJson";
 import { teamMap } from "../teams/store";
 import { graphql, GitHubError } from "./client";
+import { handleQueueChecks } from "./checks";
+import { API_PATHS } from "../../shared/api-paths";
 
 const MAX_VIEWS = 10;
 /**
@@ -47,6 +49,10 @@ export type QueueViewInput = {
 };
 
 export async function handleQueue(req: Request): Promise<Response> {
+  // Same prefix, different question: `/api/queue/checks` is the deferred
+  // per-check refinement the search itself cannot afford to carry.
+  if (new URL(req.url).pathname.startsWith(API_PATHS.QUEUE_CHECKS))
+    return handleQueueChecks(req);
   if (req.method !== "POST")
     return new Response("Method Not Allowed", { status: 405 });
   const cfg = await loadConfig();
