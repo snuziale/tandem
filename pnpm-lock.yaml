@@ -1762,13 +1762,13 @@ packages:
     hasBin: true
 
   '@uipath/apollo-core@5.13.0':
-    resolution: {integrity: sha512-5UumwaxCPpPz9pLgPNwa4fntP97+/GUWVcb06gb1WE+WlsUKgJ1m2r8J5YYFPLBtf7BsbzRdgEdfbsrVK5ZhkQ==}
+    resolution: {integrity: sha512-5UumwaxCPpPz9pLgPNwa4fntP97+/GUWVcb06gb1WE+WlsUKgJ1m2r8J5YYFPLBtf7BsbzRdgEdfbsrVK5ZhkQ==, tarball: https://npm.pkg.github.com/download/@UiPath/apollo-core/5.13.0/3e0e6019e9a4e01217bf4375ec0e79a31192ab4e}
 
   '@uipath/apollo-ui-icons@1.0.0':
-    resolution: {integrity: sha512-6YivqgcCWBluXQbkRAzCPSIZafLPy+RfmcybPAEKORvA5KCO10UIAhLU9mefqnkhxBx+9TjNahABlZKnaCa2cQ==}
+    resolution: {integrity: sha512-6YivqgcCWBluXQbkRAzCPSIZafLPy+RfmcybPAEKORvA5KCO10UIAhLU9mefqnkhxBx+9TjNahABlZKnaCa2cQ==, tarball: https://npm.pkg.github.com/download/@uipath/apollo-ui-icons/1.0.0/66551e7baa5bb88ab9b05911c94cc0a81df09917}
 
   '@uipath/apollo-wind@2.36.0':
-    resolution: {integrity: sha512-h9ICie7M7lWNIxJbp88IGQEsE3QMlV8YSwY/szHU8rH9v8Uy/mmbGMFiKxT0+A4FF2Lx0FtB2C/ZyVuMIT5lAA==}
+    resolution: {integrity: sha512-h9ICie7M7lWNIxJbp88IGQEsE3QMlV8YSwY/szHU8rH9v8Uy/mmbGMFiKxT0+A4FF2Lx0FtB2C/ZyVuMIT5lAA==, tarball: https://npm.pkg.github.com/download/@uipath/apollo-wind/2.36.0/0b13fe02addc4741fd58c5c8f435302bc5617577}
     peerDependencies:
       react: '>=18.0.0'
       react-dom: '>=18.0.0'
