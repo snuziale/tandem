@@ -81,7 +81,8 @@ export const SHORTCUT_GROUPS: ShortcutGroup[] = [
       },
       {
         keys: [`${MOD}+↵`],
-        action: "submit review (stages the comment while composing)",
+        action:
+          "open submit review, then submit (stages the comment while composing)",
       },
       { keys: ["↵", `${MOD}+↵`], action: "chat: send" },
       { keys: [`${SHIFT}+↵`], action: "chat: newline" },

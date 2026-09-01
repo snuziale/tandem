@@ -22,6 +22,21 @@ type Props = {
   agentPaths?: ReadonlySet<string>;
   /** Hands the caller the tree model for scroll/select from keyboard + findings. */
   onModelReady?: (model: FileTreeModel) => void;
+  /** The column header's own control, left of the search button — the
+   * `Files | Description` tab group. Hidden while search owns the row. */
+  headerAction: React.ReactNode;
+  /** The id the column's tab strip points `aria-controls` at — one region,
+   * whichever tab is showing in it. */
+  panelId: string;
+  /** Drawn over the rows, full height. An OVERLAY and not a swap: the tree
+   * keeps its model, its scroll position and its measured size underneath —
+   * and so does the overlay, which stays mounted behind `hidden` once opened.
+   * That is why COVERED is a stated flag and not `overlay != null`: a mounted
+   * but hidden panel is present and covers nothing. */
+  overlay: React.ReactNode;
+  /** True while the overlay covers the rows. It stands the search control
+   * down — there is nothing of the tree to search past it. */
+  overlayShown: boolean;
 };
 
 const GIT_STATUS: Record<FileChange["status"], GitStatusEntry["status"]> = {
@@ -70,6 +85,10 @@ export function FileTree({
   onSelect,
   agentPaths,
   onModelReady,
+  headerAction,
+  panelId,
+  overlay,
+  overlayShown,
 }: Props) {
   // The model is constructed ONCE (useFileTree); everything row decorations
   // need at render time is read through this ref so it never goes stale.
@@ -235,68 +254,76 @@ export function FileTree({
   }, [model, selectedPath]);
 
   const [count] = useState(() => files.length);
+  // The search box keeps its state while the column shows something else —
+  // it is just not the row's business to render it there.
+  const searching = searchOpen && !overlayShown;
 
   return (
     <div className="h-full min-h-0 flex flex-col" data-tandem-filetree>
-      <TreesFileTree
-        model={model}
-        className="flex-1 min-h-0"
-        style={treeStyles as React.CSSProperties}
-        header={
-          // h-9 matches the diff and agent pane headers — fixed, never grows.
-          <div className="flex items-center gap-2 px-3 h-9 border-b border-border bg-background sticky top-0">
-            {searchOpen ? (
-              // The search input takes over the header row while open.
-              <Input
-                autoFocus
-                size="xs"
-                ref={searchInputRef}
-                value={searchValue}
-                onChange={(e) => applySearch(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Escape") {
-                    e.stopPropagation();
-                    closeSearch();
-                  }
-                }}
-                placeholder={`Search ${count} files…`}
-                spellCheck={false}
-                className="h-6 text-xs font-mono flex-1 min-w-0"
-              />
-            ) : (
-              <>
-                <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-mono">
-                  files
-                </span>
-                <span className="text-[10px] text-muted-foreground font-mono">
-                  {count}
-                </span>
-                <span className="flex-1" />
-              </>
-            )}
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  size="2xs"
-                  icon
-                  variant="ghost"
-                  aria-label={searchOpen ? "Close file search" : "Search files"}
-                  onClick={() =>
-                    searchOpen ? closeSearch() : setSearchOpen(true)
-                  }
-                >
-                  {searchOpen ? <X /> : <Search />}
-                </Button>
-              </TooltipTrigger>
-              <TooltipPortal>
-                <TooltipContent>
-                  {searchOpen ? "Close search" : "Search files"}
-                </TooltipContent>
-              </TooltipPortal>
-            </Tooltip>
-          </div>
-        }
-      />
+      {/* The header is OURS and sits above the tree rather than in the
+          library's own `header` slot: it can then hold the column's tab group
+          and stay h-9 — the same height as the diff and agent pane headers,
+          which is what keeps the three column headers on one line across the
+          screen. */}
+      <div className="flex items-center gap-2 px-3 h-9 border-b border-border bg-background shrink-0 min-w-0">
+        {searching ? (
+          // The search input takes over the header row while open.
+          <Input
+            autoFocus
+            size="xs"
+            ref={searchInputRef}
+            value={searchValue}
+            onChange={(e) => applySearch(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") {
+                e.stopPropagation();
+                closeSearch();
+              }
+            }}
+            placeholder={`Search ${count} files…`}
+            spellCheck={false}
+            className="h-6 text-xs font-mono flex-1 min-w-0"
+          />
+        ) : (
+          <>
+            {headerAction}
+            <span className="flex-1" />
+          </>
+        )}
+        {overlayShown ? null : (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                size="2xs"
+                icon
+                variant="ghost"
+                className="shrink-0"
+                aria-label={searching ? "Close file search" : "Search files"}
+                onClick={() =>
+                  searching ? closeSearch() : setSearchOpen(true)
+                }
+              >
+                {searching ? <X /> : <Search />}
+              </Button>
+            </TooltipTrigger>
+            <TooltipPortal>
+              <TooltipContent>
+                {searching ? "Close search" : "Search files"}
+              </TooltipContent>
+            </TooltipPortal>
+          </Tooltip>
+        )}
+      </div>
+      {/* The overlay's positioning parent — and the tree's, so the tree keeps
+          its own height while something is drawn over it. */}
+      <div id={panelId} role="tabpanel" className="relative flex-1 min-h-0">
+        <TreesFileTree
+          model={model}
+          className="h-full"
+          style={treeStyles as React.CSSProperties}
+        />
+        {overlay}
+      </div>
     </div>
   );
 }

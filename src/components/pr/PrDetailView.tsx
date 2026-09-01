@@ -1,4 +1,11 @@
-import { useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
+import {
+  useEffect,
+  useEffectEvent,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   Button,
@@ -6,13 +13,11 @@ import {
   ResizablePanel,
   ResizablePanelGroup,
   Spinner,
-  Toggle,
-  ToggleGroup,
-  ToggleGroupItem,
   Tooltip,
   TooltipContent,
   TooltipPortal,
   TooltipTrigger,
+  toast,
 } from "@uipath/apollo-wind";
 import {
   PanelLeftClose,
@@ -59,6 +64,7 @@ import { useUiStore } from "../../state/uiStore";
 import { AgentPane } from "../agent/AgentPane";
 import { preflightOf, priorReviewFor } from "../agent/preflight";
 import { AppHeader } from "../layout/AppHeader";
+import { PaneTabs, type PaneTab } from "../common/paneTabs";
 import { keepLinesByPath, paneAnchorOf } from "./annotations";
 import { DiffPane, type DiffPaneHandle } from "./DiffPane";
 import { DiffSearchBar } from "./DiffSearchBar";
@@ -72,8 +78,14 @@ import {
 } from "./diffSearch";
 import { FileTree } from "./FileTree";
 import { PrBreadcrumb, PrHeader } from "./PrHeader";
-import { ReviewTray } from "./ReviewTray";
-import { Shortcut } from "../common/Kbd";
+import { usePrDescription } from "./PrDescription";
+import { ReviewSubmit } from "./ReviewSubmit";
+
+/** Two presentations of one diff — the toolbar's strip. */
+const DIFF_STYLE_TABS: ReadonlyArray<PaneTab<"unified" | "split">> = [
+  { value: "unified", label: "Unified" },
+  { value: "split", label: "Split" },
+];
 
 const NO_FILES: string[] = [];
 // Same job as NO_FILES: a stable identity while the detail query and the draft
@@ -181,10 +193,18 @@ export function PrDetailView({ prId }: { prId: PrId }) {
     updateComment,
     removeComment,
     setVerdict,
-    setSummary,
   } = usePendingReview(prId, headSha);
   const runs = useAgentRuns();
   const run = runFor(runs.data, prId, headSha);
+  // The description is the files column's OTHER TAB: a tab group in that
+  // column's header, a full-height overlay in its body. Both nodes come from
+  // here so the selected tab sits between them rather than above both.
+  // The one region the diff's `unified | split` tabs name.
+  const diffPanelId = useId();
+  const description = usePrDescription(
+    detail.data?.pr.bodyMarkdown ?? "",
+    filesQuery.data?.length ?? 0,
+  );
   const progress = useRunStream(run);
   const settings = useSettings();
   // Opening the PR clears its "unseen changes" marker in the queue.
@@ -631,10 +651,20 @@ export function PrDetailView({ prId }: { prId: PrId }) {
         e.preventDefault();
         setVerdict("APPROVE" as ReviewVerdict);
         return;
-      case "w":
+      case "w": {
         e.preventDefault();
-        useUiStore.getState().setHideWhitespace((hide) => !hide);
+        // The toolbar chip that used to show this state is gone, and a PR with
+        // no whitespace-only changes renders identically either way — so the
+        // key has to say what it did or it reads as a dead key.
+        const hidden = !useUiStore.getState().hideWhitespace;
+        useUiStore.getState().setHideWhitespace(hidden);
+        toast.info(
+          hidden
+            ? "Hiding whitespace-only changes"
+            : "Showing whitespace changes",
+        );
         return;
+      }
       case "v": {
         // `[`/`]` already read "nothing selected yet" as "the first file"; `v`
         // used to give up instead, so on a freshly-opened PR it did nothing
@@ -675,7 +705,6 @@ export function PrDetailView({ prId }: { prId: PrId }) {
 
   const diffStyle = useUiStore((s) => s.diffStyle);
   const setDiffStyle = useUiStore((s) => s.setDiffStyle);
-  const setHideWhitespace = useUiStore((s) => s.setHideWhitespace);
   // Pane widths outlive this screen: it remounts per PR (keyed on prId), so the
   // layout is read from / written back to the persisted store, not local state.
   const paneLayout = useUiStore((s) => s.prPaneLayout);
@@ -771,7 +800,20 @@ export function PrDetailView({ prId }: { prId: PrId }) {
 
   return (
     <Shell pr={pr}>
-      <PrHeader pr={pr} />
+      <PrHeader
+        pr={pr}
+        submit={
+          // Primitives only. Handing it `review` put the draft in `PrHeader`'s
+          // props, so the whole header subtree re-rendered on every file marked
+          // viewed — the core loop of a long review. It subscribes to the draft
+          // itself, on the same query key.
+          <ReviewSubmit
+            prId={prId}
+            headSha={pr.headSha}
+            hasBlocker={hasOpenBlocker(run)}
+          />
+        }
+      />
       <div className="flex-1 min-h-0 flex">
         {filesQuery.isPending ? (
           <div className="flex-1 flex items-center justify-center">
@@ -814,6 +856,10 @@ export function PrDetailView({ prId }: { prId: PrId }) {
                     selectedPath={selectedPath}
                     onSelect={selectFile}
                     agentPaths={agentPaths}
+                    headerAction={description.tabs}
+                    panelId={description.panelId}
+                    overlay={description.panel}
+                    overlayShown={description.showing}
                   />
                 </ResizablePanel>
                 <ResizableHandle />
@@ -821,7 +867,11 @@ export function PrDetailView({ prId }: { prId: PrId }) {
             ) : null}
             <ResizablePanel id="diff" defaultSize="62" minSize="30">
               <div className="h-full min-w-0 flex flex-col relative">
-                <div className="flex items-center gap-2 px-3 h-9 border-b border-border shrink-0">
+                {/* Same no-wrap rule as the PR meta row: fixed height, so
+                    anything that grew would clip rather than reflow. The churn
+                    stats are the ONLY shrinkable child — on a narrow pane they
+                    ellipsis away before a control loses a pixel. */}
+                <div className="flex items-center gap-2 px-3 h-9 border-b border-border shrink-0 min-w-0">
                   <PaneToggle
                     side="left"
                     open={filesOpen}
@@ -830,64 +880,39 @@ export function PrDetailView({ prId }: { prId: PrId }) {
                   />
                   {/* No path here: every file header carries its own, and this
                       one only ever echoed the selection. */}
-                  <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-mono flex-1">
+                  <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-mono shrink-0">
                     diff
                   </span>
+                  {/* What the diff IS — file count and churn — sits with the
+                      diff, not up in the PR meta row where it read as one more
+                      statistic about the pull request. `pr.changedFiles`, not
+                      `files.length`: the files endpoint windows its list, so on
+                      a large PR the two disagree and only one of them is the
+                      honest answer. */}
+                  <span className="font-mono text-[11px] min-w-0 truncate">
+                    <span className="text-muted-foreground">
+                      {pr.changedFiles} files
+                    </span>{" "}
+                    <span className="text-emerald-400">+{pr.additions}</span>{" "}
+                    <span className="text-red-400">−{pr.deletions}</span>
+                  </span>
+                  <span className="flex-1" />
                   <ViewedMeter
                     viewed={viewedFiles.length}
                     total={files.length}
                   />
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      {/* A Toggle, not a Button: pressing changes the fill
-                          only, so the control keeps its width. */}
-                      <Toggle
-                        size="xs"
-                        variant="outline"
-                        pressed={hideWhitespace}
-                        onPressedChange={setHideWhitespace}
-                        aria-label="Hide whitespace-only changes"
-                        // Styled off aria-pressed, NOT data-state: the
-                        // tooltip trigger owns data-state on its child, so
-                        // the toggle's own on/off never reaches the DOM.
-                        className="h-6 px-1.5 min-w-0 font-mono text-[11px] aria-pressed:bg-foreground/10 aria-pressed:border-foreground/40 aria-pressed:text-foreground future:aria-pressed:text-foreground"
-                      >
-                        ws
-                      </Toggle>
-                    </TooltipTrigger>
-                    <TooltipPortal>
-                      <TooltipContent>
-                        {hideWhitespace
-                          ? "Show whitespace changes"
-                          : "Hide whitespace changes"}
-                        <Shortcut keys="w" className="ml-1.5" />
-                      </TooltipContent>
-                    </TooltipPortal>
-                  </Tooltip>
-                  <ToggleGroup
-                    type="single"
-                    size="xs"
-                    variant="outline"
+                  {/* The shared pane-header strip, like the files column's and
+                      the agent pane's. Both tabs name the SAME region: unified
+                      and split are two presentations of one diff, not two
+                      panels. */}
+                  <PaneTabs
+                    label="Diff layout"
+                    panelId={diffPanelId}
                     value={diffStyle}
-                    onValueChange={(style) => {
-                      if (style === "unified" || style === "split")
-                        setDiffStyle(style);
-                    }}
-                    aria-label="Diff layout"
-                  >
-                    <ToggleGroupItem
-                      value="unified"
-                      className="font-mono text-[11px]"
-                    >
-                      unified
-                    </ToggleGroupItem>
-                    <ToggleGroupItem
-                      value="split"
-                      className="font-mono text-[11px]"
-                    >
-                      split
-                    </ToggleGroupItem>
-                  </ToggleGroup>
+                    onValueChange={setDiffStyle}
+                    tabs={DIFF_STYLE_TABS}
+                    className="shrink-0"
+                  />
                   <PaneToggle
                     side="right"
                     open={agentOpen}
@@ -919,26 +944,36 @@ export function PrDetailView({ prId }: { prId: PrId }) {
                     />
                   </div>
                 ) : null}
-                <DiffPane
-                  prId={prId}
-                  headSha={pr.headSha}
-                  files={files}
-                  threads={threads}
-                  pendingComments={review?.comments ?? []}
-                  findings={triageFindings}
-                  viewedFiles={viewedFiles}
-                  onToggleViewed={toggleViewedAndFold}
-                  collapsedPaths={collapsedPaths}
-                  onToggleCollapsed={toggleCollapsed}
-                  // Path click in a file header reveals it in the tree; the
-                  // diff is already at that file, so it must not re-scroll.
-                  onSelectPath={setSelectedPath}
-                  onAddComment={addComment}
-                  onUpdateComment={updateComment}
-                  onRemoveComment={removeCommentAndUnstage}
-                  anchor={chatAnchor}
-                  codeViewRef={codeViewRef}
-                />
+                {/* The region both diff tabs name. A wrapper rather than the
+                    pane's own root: CodeView must stay the overflow parent
+                    (it scrolls its own container), so it keeps `flex-1
+                    min-h-0 overflow-y-auto` and this only bounds it. */}
+                <div
+                  id={diffPanelId}
+                  role="tabpanel"
+                  className="flex-1 min-h-0 flex flex-col"
+                >
+                  <DiffPane
+                    prId={prId}
+                    headSha={pr.headSha}
+                    files={files}
+                    threads={threads}
+                    pendingComments={review?.comments ?? []}
+                    findings={triageFindings}
+                    viewedFiles={viewedFiles}
+                    onToggleViewed={toggleViewedAndFold}
+                    collapsedPaths={collapsedPaths}
+                    onToggleCollapsed={toggleCollapsed}
+                    // Path click in a file header reveals it in the tree; the
+                    // diff is already at that file, so it must not re-scroll.
+                    onSelectPath={setSelectedPath}
+                    onAddComment={addComment}
+                    onUpdateComment={updateComment}
+                    onRemoveComment={removeCommentAndUnstage}
+                    anchor={chatAnchor}
+                    codeViewRef={codeViewRef}
+                  />
+                </div>
               </div>
             </ResizablePanel>
             {agentOpen ? (
@@ -971,17 +1006,6 @@ export function PrDetailView({ prId }: { prId: PrId }) {
           </ResizablePanelGroup>
         )}
       </div>
-      <ReviewTray
-        prId={prId}
-        review={review}
-        onVerdict={setVerdict}
-        onSummary={setSummary}
-        submitDisabledReason={
-          review?.verdict === "APPROVE" && hasOpenBlocker(run)
-            ? "The agent found a blocker — dismiss it or pick another verdict to approve"
-            : undefined
-        }
-      />
     </Shell>
   );
 }

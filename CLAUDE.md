@@ -349,17 +349,41 @@ talking, older threads are not what the pane is for.
   browser and native app agree; optimistic updates via `usePendingReview`.
 - **Provenance is `isAgentAuthored`, not `findingId`** (`shared/review-types.ts`, TESTED). A
   comment the agent drafted in CHAT has no finding behind it, so reading `findingId` alone made the
-  tray count it as the reviewer's and the inline card label it "your comment · staged" in the
+  submit popover count it as the reviewer's and the inline card label it "your comment · staged" in the
   human colour — violet means machine-authored (§3), and that was the claim being made wrong.
   `stage-comment` sets `agentDrafted`; both surfaces read the one predicate.
 - Line click → composer annotation → staged `PendingComment` (optionally with an exact-replacement
   `suggestion`). Accepting a finding stages `**title**\n\nbody` + suggestion with `findingId` set —
-  that drives the tray's human/agent breakdown and finding-state transitions. Removing an
+  that drives the submit popover's human/agent breakdown and finding-state transitions. Removing an
   agent-staged comment returns the finding to `proposed`.
 - **A comment can span LINES, and the anchor is always the LAST one** — `line` with an optional
   `startLine`, exactly GitHub's `line`/`start_line`, so the card hangs under the end of the range.
   Everything below the UI already spoke this (threads, findings and `restCommentOf` all carry
   it); the pane is what learned to produce it. See the diff-pane note on selection.
+- **The PR meta row is ONE line and NOTHING in it wraps** — the same rule the queue header holds
+  to, and now load-bearing for the same reason: the row carries the submit CTA, so a long branch
+  name or a `Changes requested` badge used to drop the button onto a second line and shove the
+  diff down the screen. The prose (`@author wants to merge N commits into … from …`) is the only
+  flexible child and it TRUNCATES; every control is `shrink-0`. The diff pane's own header follows
+  the rule one level down: fixed `h-9`, controls `shrink-0`, and the churn stats the single
+  shrinkable child so they ellipsis away before a control loses a pixel.
+- **Submitting is ONE button in the PR header, and a popover** (`components/pr/ReviewSubmit.tsx`,
+  2026-08-31). It was a full-width bottom tray: a permanent row of the screen, on the axis the
+  diff is shortest in, spent on three controls you touch once at the very end. The trigger carries
+  the staged count — with the tray gone that badge is the only thing that says a draft exists at
+  all, and a review you forgot you were half-way through is the failure mode. The popover holds
+  the tally, the verdict group and the summary prose, and it IS the confirmation: it names what
+  will be posted and the click inside it is the deliberate act, so there is no second dialog
+  behind it. Invariant §1 is untouched — still the human pressing the one button that writes.
+  **It takes PRIMITIVES and subscribes to the draft itself** (`prId`, `headSha`, `hasBlocker`):
+  handing it `review` put the draft in `PrHeader`'s props, and the header's element is then guarded
+  on a value that gets a fresh identity on every optimistic write — so the state pill, the branch
+  copy, `ChecksSummary` and `ReviewCell` all re-rendered on every file marked viewed, the core loop
+  of a long review. `usePendingReview` on the same query key is a second SUBSCRIPTION, not a second
+  fetch. One derivation of "why is this blocked" (`reason`) drives the disabled button and the
+  sentence beside it, so a disabled submit is never unexplained.
+  It sits beside `ReviewCell` on purpose: "where does this review stand" and "move it" are one
+  question asked twice, and they were diagonally opposite each other.
 - **Submit posts the server-side draft**, not a client payload: `POST …/submit {verdict, summary}`
   → suggestion fences composed, `commit_id` = draft sha, per-comment 422s surfaced, drafts with
   `anchorMoved` comments refused (409). Success clears the draft.
@@ -499,7 +523,11 @@ One controlled `CodeView` hosts every file (`components/pr/DiffPane.tsx`):
   wears a small meter beside the count (`ViewedMeter`) — `--tandem-bar`, NOT violet (that is
   machine-authored, and this is the reviewer's own progress) and NOT a status token going green
   at 100% (those belong to checks/review/pulse; a full bar already says done). Fixed width, so
-  the toolbar holds still as the count climbs.
+  the toolbar holds still as the count climbs. **The file count and churn sit beside the `diff`
+  label** (2026-08-31): they describe the DIFF, and up in the PR meta row they read as one more
+  statistic about the pull request. `pr.changedFiles`, never `files.length` — the files endpoint
+  windows its list (`FILES_API_WINDOW`), so on a large PR the two disagree and only one is honest;
+  the `viewed n/m` tally beside it counts what is actually loaded, which is a different question.
   It is drawn as a TITLE BAR (`bg-muted`, `border-y`), not a bare row, because the library's
   in-diff "N unmodified lines" expander wears the same chevron at the same left edge — on a flat
   background the two sat at one visual depth and nothing said which owned the file and which
@@ -520,7 +548,10 @@ One controlled `CodeView` hosts every file (`components/pr/DiffPane.tsx`):
   Selecting a file in the tree or focusing a finding force-expands — a `scrollTo` into a folded
   file lands on its header.
 - **Hide whitespace is OURS, not the library's** (`hideWhitespaceChanges` in `shared/gh/patch.ts`,
-  toggled from the diff toolbar / `w`, persisted in `uiStore.hideWhitespace`): @pierre/diffs has no
+  `w` only — no toolbar chip (2026-08-31): it is a reading preference set once, and a permanent
+  control cost width beside the two people reach for. The key toasts what it did, because a PR
+  with no whitespace-only changes renders identically either way. Persisted in
+  `uiStore.hideWhitespace`): @pierre/diffs has no
   such option, so we rewrite the patch — a deletion and an addition that differ only in whitespace
   collapse into ONE context line, and a hunk left with no real change is dropped (the file then
   renders as an empty diff under a "whitespace only" header tag). **Line numbering is preserved
@@ -637,11 +668,76 @@ One controlled `CodeView` hosts every file (`components/pr/DiffPane.tsx`):
     composer and a clicked citation), and jumping clears every other claim — two borders would be
     two claims about one selection.
 
+**The PR DESCRIPTION is the files column's second TAB** (`components/pr/PrDescription.tsx`,
+2026-08-31). It has been three things: a full-width band under the PR header, which pushed the
+diff down the screen to read prose; a section stacked above the tree, which split one narrow
+column into two cramped ones; and now a `files | description` toggle in that column's header where
+whichever tab is selected owns the WHOLE height. A description is a document — it wants the
+tallest space the layout has, not the widest, and the diff never gives up a pixel for it.
+
+- **The tree stays MOUNTED underneath**: the panel is an OVERLAY (`absolute inset-0`), never a
+  swap, and deliberately NOT `TabsContent` — Radix unmounts an inactive panel, and even
+  `forceMount` hides it with the `hidden` attribute. `useFileTree` builds its model once and
+  @pierre/trees keys scroll position, expansion and selection to it, so either would reset the
+  reviewer's place in a 300-file PR every time they glanced at the description, and `display:none`
+  would drop the measured size the virtualizer needs on the way back. The two tabs therefore
+  address ONE panel region (`panelId`, on the column's body), which is what both triggers point
+  `aria-controls` at.
+- The strip is apollo's own `Tabs`/`TabsList`/`TabsTrigger`. No `font-mono`: the column label it
+  replaced was data, and this is a control.
+
+**THREE pane headers wear the same tab strip, and it is ONE COMPONENT**
+(`PaneTabs`, `components/common/paneTabs.tsx`): the files column (`Files n | Description`), the
+diff toolbar (`Unified | Split`) and the agent pane (`List | Split | Chat`). Apollo's default
+`TabsList` is `h-10` with `text-sm` triggers and all three headers are `h-9`, so each needs the
+same handful of overrides — sizing only, no color or font family (those come from apollo, which
+is the point of using its `Tabs` rather than dressing up a `ToggleGroup`). Three copies of a size
+are three chances for one header's control to sit a pixel taller than its neighbours', and these
+run side by side across the top of the screen where that shows.
+
+**The size was never the only thing the three had to agree on**, which is why exporting two class
+strings was not enough. Each strip also owes one `aria-label`, `aria-controls` on EVERY trigger
+naming the region, and a coercion back from Radix's `string` to its own union — and that contract
+had already drifted before it shipped: one strip carried no `aria-label`, and the three coercions
+were a cast, a validation and a ternary. Seven triggers is seven chances to omit an
+`aria-controls` that nothing would ever show you. `PaneTabs` takes `{value, onValueChange, label,
+panelId, tabs}` and fires `onValueChange` only for a tab it declares, which is what narrows the
+string back to `T` at every call site. Its `tabs` tables are module constants
+(`DIFF_STYLE_TABS`, `AGENT_MODE_TABS`). It spreads the rest of its props onto `Tabs` so a
+`TooltipTrigger asChild` can still clone it with a ref — the agent pane's strip is wrapped in one.
+
+In the diff and agent strips the tabs name ONE region each, like the files column's: unified and
+split are two presentations of one diff, and the agent pane's `split` shows two children at once,
+so no single child IS the panel. Both bodies are wrapped in a `role="tabpanel"` div carrying that
+id — in the diff's case a wrapper, never `CodeView` itself, which must stay the overflow parent.
+- Files is the tab on every PR (the column is navigation first) and an empty body is a DISABLED
+  tab rather than an empty panel. Under `Tabs` there is no empty-value case to defend against —
+  Radix never emits `""` for a re-clicked tab the way `ToggleGroup` did.
+- **The description pays the tree's courtesy back**: once opened it stays MOUNTED behind
+  `hidden` rather than being torn down on the way out. react-markdown memoizes nothing, so a
+  re-mount re-runs the whole remark/rehype parse of the PR body and drops the panel's scroll
+  position — the exact cost the tree is kept mounted to avoid. The objection that rules `hidden`
+  out for the TREE (a virtualizer needs its measured size) does not apply to a plain scroll box.
+  It is still not mounted before first use, so a reviewer who never opens the tab never pays.
+- It is a HOOK returning nodes (`usePrDescription`), because its one piece of state sits in two
+  places — the column header and the column body — and lifting it to `PrDetailView` would put it
+  three components from both; that file's only export is the hook, so the JSX is INLINE (a
+  component declared beside it is what react-refresh refuses, and a suppression there would cost
+  the React Compiler the file). The consequence to know: hiding the files pane hides the
+  description with it.
+
 The FILE TREE is `@pierre/trees` (`components/pr/FileTree.tsx`): `useFileTree` constructs the
 model ONCE — later state reaches rows through model methods, so `renderRowDecoration` reads a
 ref (`stateRef`) and a `setGitStatus(freshArray)` call after viewed/agent changes re-renders the
 visible rows. Git-status badges come from the PR's change types; decorations carry `+a −d`,
-viewed ✓, and the violet agent dot. External selection follows the `selectedPath` prop
+viewed ✓, and the violet agent dot. **Its header is OURS and sits above the tree**, not in the
+library's own `header` slot: it can then carry the column's `headerAction` (the tab group) while
+staying `h-9` — the same height as the diff and agent pane headers, which is what keeps the three
+column headers on one line. An `overlay` covers the rows full-height and `overlayShown` says when
+it actually does — a STATED flag, not `overlay != null`, because the description panel stays
+mounted behind `hidden` once opened, so a present overlay may be covering nothing. Coverage stands
+the search control down, since there is nothing of the tree to search past it (the box keeps its state,
+it is just not the row's business to render it there). External selection follows the `selectedPath` prop
 (select + scrollToPath) — and selection is SINGLE: `item.select()` is additive, so both the
 external-selection effect and `onSelectionChange` deselect everything else. One file is open in
 the diff, so more than one highlighted row is a lie. The tree owns only the keys it
@@ -726,12 +822,15 @@ src/
                      (buckets, top-N folding, parse/format/match facet; `pulse` is the one
                      facet dim needing context, hence the optional PulseOptions arg)
   components/        common/codeRefs.ts (TESTED: file:line in prose) + mdCodeRefs.ts (the
-                     rehype walk that makes them controls)
+                     rehype walk that makes them controls) + markdownText.ts (TESTED:
+                     stripHtmlComments — a PR template IS html comments, and both
+                     `Markdown` and the description tab's empty check need them gone)
+                     common/paneTabs.tsx (PaneTabs: the ONE pane-header tab strip)
                      agent/chatOpeners.ts + chatCommands.ts (both TESTED, both PURE — the
                      conversation's free half: what to ask, and / and @)
                      layout/AppHeader (the ONE header: chrome + brand + agent strip + settings
                      + theme; screens fill `children`/`actions`) queue/ pr/ agent/
-                     review(tray in pr/)/ teams/ (TeamsPanel, framed by the settings
+                     teams/ (TeamsPanel, framed by the settings
                      section AND the view editor's dialog)/ settings/ (SettingsView
                      shell + fields.tsx + one file per sections/) setup/
                      common/ (Markdown, ErrorBoundary, ShortcutsHelp) — every component
@@ -766,9 +865,11 @@ Two dispatchers, one guard module (`keyboard/keyOwnership.ts`), one display regi
   preventDefaults — the browser's find is exactly what does not work in a virtualized diff — same snapshot pattern via a ref updated in an effect. **`esc` closes the composer and
   nothing more** (user decision 2026-08-27): it used to fall through to leaving the PR, which read
   as losing your place. Esc dismisses what is in front of you; leaving is "← Queue" or browser
-  back. Composer/tray own ⌘↵ (stage vs submit) — the
-  tray's is a WINDOW listener that bails on `isTypingTarget`, which is why a text box can claim
-  ⌘↵ for itself. The chat composer is the one box that sends on plain ↵ (⇧↵ = newline, ⌘↵ still
+  back. Composer and `ReviewSubmit` own ⌘↵ (stage vs submit) — the latter is a WINDOW listener
+  that bails on `isTypingTarget`, which is why a text box can claim ⌘↵ for itself; it OPENS the
+  submit popover, then submits from inside it, so the key means one thing at both steps. It bails
+  on `hasOpenDialog` only while its OWN popover is shut — a `PopoverContent` is a `role=dialog`,
+  so the guard would otherwise disarm the second press. The chat composer is the one box that sends on plain ↵ (⇧↵ = newline, ⌘↵ still
   works): it is a chat box, and overloading ⌘↵ a third time reads as ambiguous.
 
 **A key is ALWAYS a `<kbd>`, and there is one of them** (`components/common/Kbd.tsx`). Every
@@ -987,7 +1088,7 @@ exceeds the loaded rows, says so above the charts. Never drop that caveat.
 - **One header component** (`layout/AppHeader`) owns the chrome for every screen — a screen
   passes slots, never its own `<header>`.
 - **The agent pane has THREE modes, not a chat toggle** (`uiStore.prAgentMode`: `findings` /
-  `split` / `chat`, persisted; the ToggleGroup in the pane header, or `⇧C`): the conversation
+  `split` / `chat`, persisted; the tab strip in the pane header, or `⇧C`): the conversation
   outgrew a drawer capped at half the pane. In `chat` the findings fold to a one-row tally that is
   also the way back — nothing is hidden, and an in-flight run still says so there, because that row
   is the only one left. `c` stays "chat about the focused finding" and only ever GROWS the

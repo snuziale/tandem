@@ -7,6 +7,7 @@ import { cn } from "@uipath/apollo-wind";
 import { openPrExternal } from "../../actions/queue";
 import { findCodeRefs, type CodeRef } from "./codeRefs";
 import { rehypeGithubAlerts } from "./mdAlerts";
+import { stripHtmlComments } from "./markdownText";
 import { CODE_REF_CLASS, rehypeCodeRefs } from "./mdCodeRefs";
 
 // The one markdown renderer: PR descriptions, thread comments, finding bodies,
@@ -117,12 +118,8 @@ export function Markdown({
    * exactly what it always was. */
   onRefClick?: (ref: CodeRef) => void;
 }) {
-  // PR templates ship as HTML comments; rehype-raw would otherwise keep them
-  // as comment nodes and the "empty description" check would miss them.
-  const cleaned = useMemo(
-    () => children.replace(/<!--[\s\S]*?-->/g, ""),
-    [children],
-  );
+  // rehype-raw would otherwise keep a PR template's comments as comment nodes.
+  const cleaned = useMemo(() => stripHtmlComments(children), [children]);
   // One `a` override serves both jobs: a real link opens externally, and a
   // reference the linkifier added moves the diff. Told apart by the attribute
   // the plugin wrote, never by the href.

@@ -1,7 +1,6 @@
 import { useState } from "react";
 import {
   Button,
-  Toggle,
   Tooltip,
   TooltipContent,
   TooltipPortal,
@@ -17,13 +16,11 @@ import {
   GitPullRequest,
   GitPullRequestClosed,
   GitPullRequestDraft,
-  Text,
 } from "lucide-react";
 import { openPrExternal } from "../../actions/queue";
 import { navigateToQueue } from "../../routes";
 import type { PrState, PullRequest } from "../../shared/review-types";
 import { HeaderDivider } from "../layout/AppHeader";
-import { Markdown } from "../common/Markdown";
 import { Shortcut } from "../common/Kbd";
 import { ReviewCell } from "../queue/cells";
 import { useConfigStatus } from "../../hooks/useConfigStatus";
@@ -177,7 +174,7 @@ function CopyRef({ branch }: { branch: string }) {
           size="2xs"
           icon
           variant="ghost"
-          className="cursor-pointer"
+          className="cursor-pointer shrink-0"
           aria-label="Copy branch name"
           onClick={() => {
             void navigator.clipboard.writeText(branch).then(() => {
@@ -198,84 +195,40 @@ function CopyRef({ branch }: { branch: string }) {
   );
 }
 
-/** PR templates ship as HTML comments — a body that is only comments is empty. */
-function descriptionOf(body: string) {
-  const text = body.replace(/<!--[\s\S]*?-->/g, "").trim();
-  if (!text) return null;
-  return { text, paragraphs: text.split(/\n{2,}/).length };
-}
-
 /**
- * The description toggle. It leads the meta row rather than joining the stats
- * on the right: it is a control, not a fact about the PR, and the row's left
- * edge is the one position that doesn't move as the stats change width. Kept
- * mounted (disabled) when there is no description so the row never reflows
- * between PRs.
+ * The PR's meta row. Its right end is where the review LIVES now: GitHub's
+ * current verdict and the button that changes it, adjacent — the submit CTA
+ * came up out of a bottom tray (see `ReviewSubmit`) and the badge came across
+ * the row to meet it, because "where does this review stand" and "move it" are
+ * one question asked twice.
  */
-function DescriptionToggle({
-  paragraphs,
-  open,
-  onToggle,
+export function PrHeader({
+  pr,
+  submit,
 }: {
-  paragraphs: number | null;
-  open: boolean;
-  onToggle: (open: boolean) => void;
+  pr: PullRequest;
+  submit?: React.ReactNode;
 }) {
-  const label =
-    paragraphs === null
-      ? "No description"
-      : `${open ? "Hide" : "Show"} description · ${paragraphs} paragraph${
-          paragraphs === 1 ? "" : "s"
-        }`;
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        {/* A Toggle, not a Button: latched is the state worth seeing, and the
-            fill is what changes — the control keeps its width. Styled off
-            aria-pressed, NOT data-state: the tooltip trigger owns data-state
-            on its child, so the toggle's own on/off never reaches the DOM
-            (same reason as the `ws` toggle in the diff toolbar). */}
-        <Toggle
-          size="xs"
-          variant="outline"
-          pressed={open}
-          disabled={paragraphs === null}
-          onPressedChange={onToggle}
-          aria-label={label}
-          className="h-6 px-1.5 gap-1 min-w-0 shrink-0 font-mono text-[11px] cursor-pointer disabled:cursor-default aria-pressed:bg-foreground/10 aria-pressed:border-foreground/40 aria-pressed:text-foreground future:aria-pressed:text-foreground"
-        >
-          <Text className="w-3 h-3" />
-          {paragraphs ?? 0}
-        </Toggle>
-      </TooltipTrigger>
-      <TooltipPortal>
-        <TooltipContent>{label}</TooltipContent>
-      </TooltipPortal>
-    </Tooltip>
-  );
-}
-
-export function PrHeader({ pr }: { pr: PullRequest }) {
   const commits = pr.commitCount ?? 1;
   // The review badge names a person for REVIEW_REQUIRED, so it needs to know
   // who you are. One header, one subscription — the queue passes its already
   // resolved login down a row instead.
   const viewerLogin = useConfigStatus().data?.login ?? null;
-  // Local, and closed on every PR: the description is something you consult
-  // once, not a pane preference.
-  const [descOpen, setDescOpen] = useState(false);
-  const description = descriptionOf(pr.bodyMarkdown);
-
   return (
     <div className="border-b border-border shrink-0">
-      <div className="flex items-center gap-2 px-4 py-2.5 text-xs flex-wrap">
-        <DescriptionToggle
-          paragraphs={description?.paragraphs ?? null}
-          open={descOpen}
-          onToggle={setDescOpen}
-        />
+      {/* ONE line, and nothing in it wraps — the same rule the queue header
+          holds to. The row is the review's control strip now, so a long branch
+          name or a "Changes requested" badge must not drop the submit button
+          onto a second line and shove the diff down the screen. The prose is
+          the only flexible child and it TRUNCATES; every control is shrink-0,
+          so each one keeps its position whatever the PR is called. */}
+      <div className="flex items-center gap-2 px-4 py-1 text-xs min-w-0">
         <StatePill pr={pr} />
-        <span className="text-muted-foreground">
+        {/* `min-w-0 truncate`, but NOT `flex-1`: with flex-1 the span ate all
+            the slack and the copy button rode its far edge, an inch from the
+            branch name it copies. Shrink-to-content keeps them adjacent, and
+            the spacer AFTER the button takes the slack instead. */}
+        <span className="text-muted-foreground truncate min-w-0">
           <span className="font-medium text-foreground">@{pr.author}</span>{" "}
           wants to merge{" "}
           <span className="font-medium text-foreground">
@@ -285,27 +238,23 @@ export function PrHeader({ pr }: { pr: PullRequest }) {
         </span>
         <CopyRef branch={pr.headRef} />
         <span className="flex-1" />
-        <div className="flex items-center gap-3 font-mono">
-          <ReviewCell pr={pr} showDraft={false} viewerLogin={viewerLogin} />
-          <span className="text-muted-foreground">{pr.changedFiles} files</span>
-          <span>
-            <span className="text-emerald-400">+{pr.additions}</span>{" "}
-            <span className="text-red-400">−{pr.deletions}</span>
-          </span>
+        {/* No file count or churn here — that describes the DIFF and lives in
+            the diff pane's own header. What is left is the PR's standing:
+            checks, then a divider, then the review. */}
+        {/* No `font-mono` on either group. It used to blanket this whole
+            right-hand side, which was harmless while everything in it was a
+            number — but the review badge renders sans in the queue, and the
+            submit CTA is a button, not data. `ChecksSummary` sets its own
+            mono, so nothing lost it. */}
+        <div className="flex items-center gap-3 shrink-0">
           <ChecksSummary pr={pr} />
         </div>
-      </div>
-      {descOpen && description ? (
-        // Fills the pane, starting at the same gutter as the meta row — PR
-        // descriptions carry tables, code fences and checklists, and a narrow
-        // centred column wraps all three badly. Capped only so an ultrawide
-        // window doesn't produce 300-character prose lines.
-        <div className="border-t border-border px-4 py-3 max-h-[45dvh] overflow-y-auto">
-          <Markdown className="min-w-0 max-w-[1400px]">
-            {description.text}
-          </Markdown>
+        <HeaderDivider />
+        <div className="flex items-center gap-2 shrink-0">
+          <ReviewCell pr={pr} showDraft={false} viewerLogin={viewerLogin} />
+          {submit}
         </div>
-      ) : null}
+      </div>
     </div>
   );
 }

@@ -1,12 +1,10 @@
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Button,
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  ToggleGroup,
-  ToggleGroupItem,
   Tooltip,
   TooltipContent,
   TooltipPortal,
@@ -40,6 +38,7 @@ import { useUiStore, type AgentPaneMode } from "../../state/uiStore";
 import { formatDuration, formatSpend } from "../../utils/agentFormat";
 import { Markdown } from "../common/Markdown";
 import { Shortcut } from "../common/Kbd";
+import { PaneTabs, type PaneTab } from "../common/paneTabs";
 import { ChatPanel } from "./ChatPanel";
 import { SeverityBadge } from "./SeverityBadge";
 import { SeverityTally } from "./SeverityTally";
@@ -72,6 +71,13 @@ type Props = {
   onSelectFinding: (finding: Finding) => void;
 };
 
+/** Three modes, one region: `split` renders both children at once. */
+const AGENT_MODE_TABS: ReadonlyArray<PaneTab<AgentPaneMode>> = [
+  { value: "findings", label: "List" },
+  { value: "split", label: "Split" },
+  { value: "chat", label: "Chat" },
+];
+
 // The right-hand agent pane (spec §3.2): run status, prose summary, severity
 // tally, findings grouped Must resolve / Worth raising / Nits.
 export function AgentPane({
@@ -92,6 +98,8 @@ export function AgentPane({
   const queryClient = useQueryClient();
   const focusedFindingId = useUiStore((s) => s.focusedFindingId);
   const mode = useUiStore((s) => s.prAgentMode);
+  // The one region all three mode tabs name.
+  const panelId = useId();
   const setMode = useUiStore((s) => s.setPrAgentMode);
   const [showNits, setShowNits] = useState(false);
 
@@ -130,29 +138,17 @@ export function AgentPane({
             their tally, `findings` is the old chat-closed state. */}
         <Tooltip>
           <TooltipTrigger asChild>
-            <ToggleGroup
-              type="single"
-              size="xs"
-              variant="outline"
+            {/* The shared pane-header strip — the same control the files
+                column and the diff toolbar wear. All three tabs name the SAME
+                region: `split` shows both at once, so this is which VIEW of
+                the pane you get, not which panel exists. */}
+            <PaneTabs
+              label="Agent pane layout"
+              panelId={panelId}
               value={mode}
-              onValueChange={(next) => {
-                if (next) setMode(next as AgentPaneMode);
-              }}
-              aria-label="Agent pane layout"
-            >
-              <ToggleGroupItem
-                value="findings"
-                className="font-mono text-[10px]"
-              >
-                list
-              </ToggleGroupItem>
-              <ToggleGroupItem value="split" className="font-mono text-[10px]">
-                split
-              </ToggleGroupItem>
-              <ToggleGroupItem value="chat" className="font-mono text-[10px]">
-                chat
-              </ToggleGroupItem>
-            </ToggleGroup>
+              onValueChange={setMode}
+              tabs={AGENT_MODE_TABS}
+            />
           </TooltipTrigger>
           <TooltipPortal>
             <TooltipContent>
@@ -199,137 +195,145 @@ export function AgentPane({
         ) : null}
       </div>
 
-      {mode === "chat" ? (
-        // The findings are still one click away — as a tally, which is what
-        // the list is FOR at a glance. Nothing is hidden, only folded.
-        <FindingTally
-          findings={triage}
-          score={run?.score}
-          active={isActive(run)}
-          reviewed={run?.status === "ready"}
-          onExpand={() => setMode("split")}
-        />
-      ) : null}
-
-      {mode === "chat" ? null : (
-        <div className="flex-1 min-h-0 overflow-y-auto">
-          <StatusCard
-            run={run}
-            progress={progress}
-            preflight={preflight}
-            priorReview={priorReview}
-            onStart={() => rerun.mutate(undefined)}
-            onRevealPath={onRevealPath}
-            starting={rerun.isPending}
+      {/* The region all three tabs name. Wrapping the body rather than
+          tagging one of its branches: `split` renders two of them at once, so
+          no single child IS the panel. */}
+      <div
+        id={panelId}
+        role="tabpanel"
+        className="flex-1 min-h-0 flex flex-col"
+      >
+        {/* One mutually exclusive choice, written once: in `chat` the findings
+            fold to a tally that is also the way back — nothing is hidden, only
+            folded — and everywhere else they are the scrolling list. */}
+        {mode === "chat" ? (
+          <FindingTally
+            findings={triage}
+            score={run?.score}
+            active={isActive(run)}
+            reviewed={run?.status === "ready"}
+            onExpand={() => setMode("split")}
           />
+        ) : (
+          <div className="flex-1 min-h-0 overflow-y-auto">
+            <StatusCard
+              run={run}
+              progress={progress}
+              preflight={preflight}
+              priorReview={priorReview}
+              onStart={() => rerun.mutate(undefined)}
+              onRevealPath={onRevealPath}
+              starting={rerun.isPending}
+            />
 
-          {run?.status === "ready" ? (
-            <>
-              {/* Only in `findings` mode. Everywhere else the conversation
+            {run?.status === "ready" ? (
+              <>
+                {/* Only in `findings` mode. Everywhere else the conversation
                 opens with this same prose as turn zero, and rendering it in
                 both places put the same paragraph on screen twice — and built
                 the markdown tree twice, since react-markdown memoizes
                 nothing. */}
-              {run.summary && mode === "findings" ? (
-                <Markdown className="px-3 pt-1 pb-2 text-muted-foreground leading-relaxed">
-                  {run.summary}
-                </Markdown>
-              ) : null}
+                {run.summary && mode === "findings" ? (
+                  <Markdown className="px-3 pt-1 pb-2 text-muted-foreground leading-relaxed">
+                    {run.summary}
+                  </Markdown>
+                ) : null}
 
-              {triage.length > 0 ? (
-                <div className="px-3 pb-2 flex flex-wrap gap-1">
-                  <SeverityTally findings={triage} />
-                </div>
-              ) : (
-                <div className="px-3 pb-3 text-sm">
-                  <div className="font-medium">Nothing to flag</div>
-                  <div className="text-muted-foreground text-xs mt-0.5">
-                    The agent read the diff and has nothing worth your time.
+                {triage.length > 0 ? (
+                  <div className="px-3 pb-2 flex flex-wrap gap-1">
+                    <SeverityTally findings={triage} />
                   </div>
-                </div>
-              )}
-
-              <FindingGroup
-                label="must resolve"
-                findings={mustResolve}
-                focusedFindingId={focusedFindingId}
-                onSelect={onSelectFinding}
-              />
-              <FindingGroup
-                label="worth raising"
-                findings={worthRaising}
-                focusedFindingId={focusedFindingId}
-                onSelect={onSelectFinding}
-              />
-
-              {collapsed.length > 0 ? (
-                <div className="px-3 py-2 border-t border-border/60">
-                  <button
-                    type="button"
-                    className="text-[10px] uppercase tracking-wider font-mono text-muted-foreground hover:text-foreground"
-                    onClick={() => setShowNits((v) => !v)}
-                  >
-                    nits · {collapsed.length} hidden ·{" "}
-                    {showNits ? "hide" : "show"}
-                  </button>
-                  {showNits ? (
-                    <div className="mt-1">
-                      {collapsed.map((f) => (
-                        <FindingRow
-                          key={f.id}
-                          finding={f}
-                          focused={f.id === focusedFindingId}
-                          onSelect={onSelectFinding}
-                        />
-                      ))}
+                ) : (
+                  <div className="px-3 pb-3 text-sm">
+                    <div className="font-medium">Nothing to flag</div>
+                    <div className="text-muted-foreground text-xs mt-0.5">
+                      The agent read the diff and has nothing worth your time.
                     </div>
-                  ) : (
-                    <div className="text-[11px] text-muted-foreground mt-1">
-                      Nits stay collapsed below your{" "}
-                      <span className="font-mono">{threshold}</span> threshold.
-                      Change it in settings.
-                    </div>
-                  )}
-                </div>
-              ) : null}
-            </>
-          ) : null}
-        </div>
-      )}
+                  </div>
+                )}
 
-      {mode === "findings" ? (
-        <button
-          type="button"
-          className="border-t border-border px-3 py-1.5 text-left text-[10px] uppercase tracking-wider font-mono text-muted-foreground hover:text-foreground shrink-0"
-          onClick={() => setMode("split")}
-        >
-          ● chat{chatFinding ? " about this finding" : ""}{" "}
-          <span className="opacity-60">c</span>
-        </button>
-      ) : (
-        // In `split` the conversation is capped at half the pane so an empty
-        // one cannot steal height from the findings it is about; in `chat` it
-        // takes everything that is left, which is the whole point of the mode.
-        <div
-          className={cn(
-            "flex flex-col min-h-0 border-t border-border",
-            mode === "chat" ? "flex-1" : "max-h-[50%] shrink-0",
-          )}
-        >
-          <ChatPanel
-            key={chatFinding?.id ?? "pr"}
-            prId={prId}
-            headSha={headSha}
-            finding={chatFinding}
-            run={run}
-            review={review}
-            files={files}
-            anchor={anchor}
-            onNavigate={onNavigate}
-            onClearScope={() => useUiStore.getState().setFocusedFinding(null)}
-          />
-        </div>
-      )}
+                <FindingGroup
+                  label="must resolve"
+                  findings={mustResolve}
+                  focusedFindingId={focusedFindingId}
+                  onSelect={onSelectFinding}
+                />
+                <FindingGroup
+                  label="worth raising"
+                  findings={worthRaising}
+                  focusedFindingId={focusedFindingId}
+                  onSelect={onSelectFinding}
+                />
+
+                {collapsed.length > 0 ? (
+                  <div className="px-3 py-2 border-t border-border/60">
+                    <button
+                      type="button"
+                      className="text-[10px] uppercase tracking-wider font-mono text-muted-foreground hover:text-foreground"
+                      onClick={() => setShowNits((v) => !v)}
+                    >
+                      nits · {collapsed.length} hidden ·{" "}
+                      {showNits ? "hide" : "show"}
+                    </button>
+                    {showNits ? (
+                      <div className="mt-1">
+                        {collapsed.map((f) => (
+                          <FindingRow
+                            key={f.id}
+                            finding={f}
+                            focused={f.id === focusedFindingId}
+                            onSelect={onSelectFinding}
+                          />
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="text-[11px] text-muted-foreground mt-1">
+                        Nits stay collapsed below your{" "}
+                        <span className="font-mono">{threshold}</span>{" "}
+                        threshold. Change it in settings.
+                      </div>
+                    )}
+                  </div>
+                ) : null}
+              </>
+            ) : null}
+          </div>
+        )}
+
+        {mode === "findings" ? (
+          <button
+            type="button"
+            className="border-t border-border px-3 py-1.5 text-left text-[10px] uppercase tracking-wider font-mono text-muted-foreground hover:text-foreground shrink-0"
+            onClick={() => setMode("split")}
+          >
+            ● chat{chatFinding ? " about this finding" : ""}{" "}
+            <span className="opacity-60">c</span>
+          </button>
+        ) : (
+          // In `split` the conversation is capped at half the pane so an empty
+          // one cannot steal height from the findings it is about; in `chat` it
+          // takes everything that is left, which is the whole point of the mode.
+          <div
+            className={cn(
+              "flex flex-col min-h-0 border-t border-border",
+              mode === "chat" ? "flex-1" : "max-h-[50%] shrink-0",
+            )}
+          >
+            <ChatPanel
+              key={chatFinding?.id ?? "pr"}
+              prId={prId}
+              headSha={headSha}
+              finding={chatFinding}
+              run={run}
+              review={review}
+              files={files}
+              anchor={anchor}
+              onNavigate={onNavigate}
+              onClearScope={() => useUiStore.getState().setFocusedFinding(null)}
+            />
+          </div>
+        )}
+      </div>
     </div>
   );
 }

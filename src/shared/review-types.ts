@@ -224,7 +224,8 @@ export type PrDetail = {
 export type PendingComment = {
   localId: string;
   /** Set when this comment was accepted from an agent finding — drives the
-   * human/agent breakdown in the tray and finding-state transitions. */
+   * human/agent breakdown in the submit popover and finding-state
+   * transitions. */
   findingId?: string;
   path: string;
   line: number;
