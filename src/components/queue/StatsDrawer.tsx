@@ -8,7 +8,7 @@
 //    selection couldn't be used to choose the next slice.
 //  - Selection reads as EMPHASIS (picked mark keeps its color, the rest recede)
 //    rather than recolor, so a hue never means "currently selected".
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { Button, cn } from "@uipath/apollo-wind";
 import { Info, X } from "lucide-react";
 import { usePulseHistory } from "../../hooks/usePulse";
@@ -22,6 +22,8 @@ import type { PullRequest } from "../../shared/review-types";
 import {
   computeQueueStats,
   NOMINAL_LIMIT,
+  pageContaining,
+  pageOf,
   facetLabel,
   sameFacet,
   type Facet,
@@ -31,6 +33,7 @@ import {
 import {
   BarList,
   ChartCard,
+  Pager,
   Sparklines,
   StatTile,
   StatusStrip,
@@ -328,48 +331,31 @@ export function StatsDrawer({
             view would render a single full-width bar reading "100%", which
             says nothing and offers a filter that selects everything. Ordinal
             cards below always render: an empty bucket is information. */}
+        {/* Keyed by view: switching views starts each list on page one. */}
         {stats.authors.distinct > 1 ? (
-          <ChartCard
+          <NominalCard
+            key={`author:${viewId}`}
             title="by author"
-            hint={countHint(stats.authors.distinct, "author")}
-          >
-            <BarList
-              slices={stats.authors.slices}
-              total={stats.total}
-              scale={maxOf(stats.authors.slices)}
-              colorAt={() => NOMINAL}
-              activeKey={keyFor("author")}
-              dimmed={dimmed}
-              onSelect={pick("author")}
-              footnote={
-                stats.authors.hidden
-                  ? `+${stats.authors.hidden} more author${stats.authors.hidden === 1 ? "" : "s"}`
-                  : undefined
-              }
-            />
-          </ChartCard>
+            noun="author"
+            slices={stats.authors.slices}
+            total={stats.total}
+            activeKey={keyFor("author")}
+            dimmed={dimmed}
+            onSelect={pick("author")}
+          />
         ) : null}
 
         {stats.repos.distinct > 1 ? (
-          <ChartCard
+          <NominalCard
+            key={`repo:${viewId}`}
             title="by repo"
-            hint={countHint(stats.repos.distinct, "repo")}
-          >
-            <BarList
-              slices={stats.repos.slices}
-              total={stats.total}
-              scale={maxOf(stats.repos.slices)}
-              colorAt={() => NOMINAL}
-              activeKey={keyFor("repo")}
-              dimmed={dimmed}
-              onSelect={pick("repo")}
-              footnote={
-                stats.repos.hidden
-                  ? `+${stats.repos.hidden} more repo${stats.repos.hidden === 1 ? "" : "s"}`
-                  : undefined
-              }
-            />
-          </ChartCard>
+            noun="repo"
+            slices={stats.repos.slices}
+            total={stats.total}
+            activeKey={keyFor("repo")}
+            dimmed={dimmed}
+            onSelect={pick("repo")}
+          />
         ) : null}
 
         <ChartCard title="idle for" hint="since last activity">
@@ -400,11 +386,74 @@ export function StatsDrawer({
   );
 }
 
+/**
+ * A nominal breakdown that PAGES rather than folding its tail into "+N more":
+ * every author is reachable, NOMINAL_LIMIT at a time. Bars scale to the
+ * largest slice of the WHOLE list, not the page, so a bar on page three is
+ * comparable to one on page one. It opens on the page holding the selected
+ * slice, so a facet restored from the URL is visible without hunting.
+ */
+function NominalCard({
+  title,
+  noun,
+  slices,
+  total,
+  activeKey,
+  dimmed,
+  onSelect,
+}: {
+  title: string;
+  noun: string;
+  slices: Slice[];
+  total: number;
+  activeKey: string | null;
+  dimmed: boolean;
+  onSelect: (slice: Slice) => void;
+}) {
+  const [page, setPage] = useState(() =>
+    pageContaining(slices, activeKey, NOMINAL_LIMIT),
+  );
+  const view = pageOf(slices, page, NOMINAL_LIMIT);
+  const first = view.page * NOMINAL_LIMIT + 1;
+  const range =
+    view.pages > 1
+      ? `${first}–${first + view.items.length - 1} of ${slices.length} ${noun}s`
+      : `${slices.length} ${noun}s`;
+  return (
+    <ChartCard
+      title={title}
+      hint={range}
+      aside={
+        <Pager
+          page={view.page}
+          pages={view.pages}
+          label={`${noun}s`}
+          onPage={setPage}
+        />
+      }
+    >
+      <BarList
+        slices={view.items}
+        total={total}
+        scale={maxOf(slices)}
+        colorAt={() => NOMINAL}
+        activeKey={activeKey}
+        dimmed={dimmed}
+        onSelect={onSelect}
+        rows={view.pages > 1 ? NOMINAL_LIMIT : undefined}
+      />
+    </ChartCard>
+  );
+}
+
 function Shell({ children }: { children: React.ReactNode }) {
   return (
     <div
       className={cn(
-        "shrink-0 border-b border-border bg-background",
+        // The SECONDARY surface: the drawer is a tray of cards between the
+        // header and the table, and on the page background it read as part
+        // of the table rather than as its own panel.
+        "shrink-0 border-b border-border bg-secondary",
         // 60vh, not 45: the drawer's normal content (tiles plus the two
         // bands) is ~400px, and at 45vh it clipped the bar lists mid-row so a
         // top-6 read as a top-2. The scroll stays as the safety valve for a
@@ -419,12 +468,6 @@ function Shell({ children }: { children: React.ReactNode }) {
 
 function maxOf(slices: Slice[]): number {
   return slices.reduce((max, s) => Math.max(max, s.value), 0);
-}
-
-function countHint(distinct: number, noun: string): string | undefined {
-  if (distinct <= 1) return undefined;
-  const all = `${distinct} ${noun}s`;
-  return distinct > NOMINAL_LIMIT ? `${all} · top ${NOMINAL_LIMIT}` : all;
 }
 
 function compact(n: number): string {

@@ -6,6 +6,8 @@ import {
   formatFacet,
   idleBucket,
   matchesFacet,
+  pageContaining,
+  pageOf,
   parseFacet,
   reviewBucket,
   sizeBucket,
@@ -209,17 +211,15 @@ describe("computeQueueStats", () => {
       ["bob", 1],
       ["cara", 1],
     ]);
-    expect(stats.authors.hidden).toBe(0);
     expect(stats.repos.slices.map((s) => s.key)).toEqual(["o/r", "o/web"]);
   });
 
-  it("folds the nominal tail past the bar limit", () => {
+  it("keeps the whole nominal tail for the card to page through", () => {
     const many = Array.from({ length: 10 }, (_, i) =>
       pr({ author: `u${i}`, prId: `o/r#${i}` }),
     );
     const s = computeQueueStats(many, NOW, OPTS);
-    expect(s.authors.slices).toHaveLength(6);
-    expect(s.authors.hidden).toBe(4);
+    expect(s.authors.slices).toHaveLength(10);
     expect(s.authors.distinct).toBe(10);
   });
 
@@ -249,5 +249,45 @@ describe("computeQueueStats", () => {
     expect(empty.total).toBe(0);
     expect(empty.checks).toEqual([]);
     expect(empty.idle.every((s) => s.value === 0)).toBe(true);
+  });
+});
+
+describe("pageOf", () => {
+  const items = [1, 2, 3, 4, 5, 6, 7];
+
+  it("slices a page and counts the pages", () => {
+    expect(pageOf(items, 1, 3)).toEqual({
+      items: [4, 5, 6],
+      page: 1,
+      pages: 3,
+    });
+    expect(pageOf(items, 2, 3)).toEqual({ items: [7], page: 2, pages: 3 });
+  });
+
+  it("clamps a page that no longer exists", () => {
+    expect(pageOf(items, 9, 3).page).toBe(2);
+    expect(pageOf(items, -1, 3).page).toBe(0);
+  });
+
+  it("is one empty page for nothing", () => {
+    expect(pageOf([], 0, 6)).toEqual({ items: [], page: 0, pages: 1 });
+  });
+});
+
+describe("pageContaining", () => {
+  const slices = ["a", "b", "c", "d", "e"].map((key) => ({
+    key,
+    label: key,
+    value: 1,
+  }));
+
+  it("finds the page a selected slice is on", () => {
+    expect(pageContaining(slices, "d", 2)).toBe(1);
+    expect(pageContaining(slices, "e", 2)).toBe(2);
+  });
+
+  it("falls back to the first page", () => {
+    expect(pageContaining(slices, "zz", 2)).toBe(0);
+    expect(pageContaining(slices, null, 2)).toBe(0);
   });
 });

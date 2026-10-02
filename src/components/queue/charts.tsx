@@ -11,7 +11,8 @@
 //  - Selection emphasises: the picked mark keeps full color, the rest recede.
 //    Color never encodes rank, so filtering can't repaint anything.
 //  - Text wears text tokens; the colored mark beside it carries identity.
-import { cn } from "@uipath/apollo-wind";
+import { Button, cn } from "@uipath/apollo-wind";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import type { Slice } from "../../utils/queueStats";
 
 /**
@@ -27,26 +28,80 @@ import type { Slice } from "../../utils/queueStats";
 export function ChartCard({
   title,
   hint,
+  aside,
   children,
 }: {
   title: string;
   hint?: string;
+  /** A control in the header's right corner (a pager), after the hint. */
+  aside?: React.ReactNode;
   children: React.ReactNode;
 }) {
   return (
-    <section className="min-w-0 flex flex-col gap-2 rounded-md border border-border/60 px-3 py-2.5">
-      <header className="flex items-baseline justify-between gap-2">
-        <h3 className="text-[10px] uppercase tracking-wider text-muted-foreground font-mono">
+    // The card is the PAGE surface, sitting on the drawer's secondary one —
+    // so it reads as an object on a tray, not as an outline drawn on it.
+    <section className="min-w-0 flex flex-col gap-2 rounded-md border border-border/60 bg-background px-3 py-2.5">
+      <header className="flex items-center justify-between gap-2 min-h-5">
+        <h3 className="text-[10px] uppercase tracking-wider text-muted-foreground font-mono shrink-0">
           {title}
         </h3>
-        {hint ? (
-          <span className="text-[10px] text-muted-foreground/70 truncate">
-            {hint}
-          </span>
-        ) : null}
+        <div className="flex items-center gap-1.5 min-w-0">
+          {hint ? (
+            <span className="text-[10px] text-muted-foreground/70 truncate">
+              {hint}
+            </span>
+          ) : null}
+          {aside}
+        </div>
       </header>
       {children}
     </section>
+  );
+}
+
+/**
+ * `‹ 2/4 ›` for a card whose list is longer than one page. Renders nothing
+ * for a single page, so a short list carries no dead control.
+ */
+export function Pager({
+  page,
+  pages,
+  label,
+  onPage,
+}: {
+  page: number;
+  pages: number;
+  /** What is being paged, for the buttons' accessible names ("authors"). */
+  label: string;
+  onPage: (page: number) => void;
+}) {
+  if (pages <= 1) return null;
+  return (
+    <div className="flex items-center shrink-0">
+      <Button
+        size="2xs"
+        variant="ghost"
+        className="size-5 p-0"
+        aria-label={`Previous ${label}`}
+        disabled={page === 0}
+        onClick={() => onPage(page - 1)}
+      >
+        <ChevronLeft />
+      </Button>
+      <span className="text-[10px] tabular-nums text-muted-foreground px-0.5">
+        {page + 1}/{pages}
+      </span>
+      <Button
+        size="2xs"
+        variant="ghost"
+        className="size-5 p-0"
+        aria-label={`Next ${label}`}
+        disabled={page === pages - 1}
+        onClick={() => onPage(page + 1)}
+      >
+        <ChevronRight />
+      </Button>
+    </div>
   );
 }
 
@@ -68,8 +123,9 @@ type BarListProps = {
   /** Something is selected somewhere — unselected marks recede. */
   dimmed?: boolean;
   onSelect: (slice: Slice) => void;
-  /** "+4 more authors" under the last bar. */
-  footnote?: string;
+  /** Rows to reserve: a paged list's short last page keeps the full page's
+   * height, so the card — and the pager in its header — never jumps. */
+  rows?: number;
 };
 
 export function BarList({
@@ -80,7 +136,7 @@ export function BarList({
   activeKey,
   dimmed,
   onSelect,
-  footnote,
+  rows,
 }: BarListProps) {
   if (slices.length === 0)
     return <p className="text-xs text-muted-foreground/70">—</p>;
@@ -136,11 +192,19 @@ export function BarList({
           </button>
         );
       })}
-      {footnote ? (
-        <p className="text-[10px] text-muted-foreground/70 pl-1 pt-0.5">
-          {footnote}
-        </p>
-      ) : null}
+      {Array.from(
+        { length: Math.max(0, (rows ?? 0) - slices.length) },
+        (_, i) => (
+          // Same box as a row, holding nothing — the text sets the height.
+          <span
+            key={`pad-${i}`}
+            aria-hidden
+            className="py-0.5 text-xs invisible"
+          >
+            ·
+          </span>
+        ),
+      )}
     </div>
   );
 }
@@ -268,7 +332,7 @@ export function StatTile({
       onClick={onClick}
       aria-pressed={onClick ? active : undefined}
       className={cn(
-        "flex flex-col items-start gap-0.5 rounded-md border border-border/60 px-3 py-2 text-left min-w-0",
+        "flex flex-col items-start gap-0.5 rounded-md border border-border/60 bg-background px-3 py-2 text-left min-w-0",
         onClick &&
           "cursor-pointer hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
         active && "bg-accent border-border",

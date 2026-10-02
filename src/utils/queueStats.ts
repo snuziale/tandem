@@ -225,9 +225,10 @@ export type Slice = { key: string; label: string; value: number };
 
 export type QueueStats = {
   total: number;
-  /** Top-N authors by PR count, plus how many authors the tail hides. */
-  authors: { slices: Slice[]; hidden: number; distinct: number };
-  repos: { slices: Slice[]; hidden: number; distinct: number };
+  /** EVERY author by PR count, desc — the card pages through them
+   * (NOMINAL_LIMIT a page) rather than folding a tail away. */
+  authors: { slices: Slice[]; distinct: number };
+  repos: { slices: Slice[]; distinct: number };
   /** Fixed-order ordinal buckets — empty ones are kept so the ramp reads. */
   idle: Slice[];
   size: Slice[];
@@ -260,16 +261,37 @@ function tally<T extends string>(
 }
 
 /** Nominal dimension → bars sorted by count desc, ties broken by key so the
- * order never shuffles between polls. */
-function topSlices(counts: Map<string, number>, limit: number) {
+ * order never shuffles between polls (or between pages). */
+function nominalSlices(counts: Map<string, number>) {
   const all = [...counts.entries()]
     .map(([key, value]) => ({ key, label: key, value }))
     .sort((a, b) => b.value - a.value || a.key.localeCompare(b.key));
-  return {
-    slices: all.slice(0, limit),
-    hidden: Math.max(0, all.length - limit),
-    distinct: all.length,
-  };
+  return { slices: all, distinct: all.length };
+}
+
+export type Page<T> = { items: T[]; page: number; pages: number };
+
+/** One page of `items`, with `page` CLAMPED into range — a view that shrank
+ * under a poll lands on its last page rather than on an empty one. */
+export function pageOf<T>(
+  items: readonly T[],
+  page: number,
+  size: number,
+): Page<T> {
+  const pages = Math.max(1, Math.ceil(items.length / size));
+  const at = Math.min(Math.max(0, page), pages - 1);
+  return { items: items.slice(at * size, at * size + size), page: at, pages };
+}
+
+/** The page a slice sits on, so a card opened with that slice already
+ * selected shows it instead of page one. 0 when absent. */
+export function pageContaining(
+  slices: readonly Slice[],
+  key: string | null | undefined,
+  size: number,
+): number {
+  const i = key == null ? -1 : slices.findIndex((s) => s.key === key);
+  return i === -1 ? 0 : Math.floor(i / size);
 }
 
 function orderedSlices<T extends string>(
@@ -293,14 +315,8 @@ export function computeQueueStats(
   const pulse = tally<PulseState>(rows, (pr) => pulseStateOf(pr, opts));
   return {
     total: rows.length,
-    authors: topSlices(
-      tally(rows, (pr) => pr.author),
-      NOMINAL_LIMIT,
-    ),
-    repos: topSlices(
-      tally(rows, (pr) => `${pr.owner}/${pr.repo}`),
-      NOMINAL_LIMIT,
-    ),
+    authors: nominalSlices(tally(rows, (pr) => pr.author)),
+    repos: nominalSlices(tally(rows, (pr) => `${pr.owner}/${pr.repo}`)),
     idle: orderedSlices(idle, IDLE_BUCKETS),
     size: orderedSlices(tally(rows, sizeBucket), SIZE_BUCKETS),
     checks: orderedSlices(checks, CHECK_BUCKETS, { dropEmpty: true }),
