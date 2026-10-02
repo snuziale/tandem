@@ -19,6 +19,8 @@ export const API_PATHS = {
   AGENT: "/api/agent",
   AGENT_HEALTH: "/api/agent/health",
   SETTINGS: "/api/settings",
+  /** Is this path a clone of this repo? Read-only; Settings › Local checkouts. */
+  SETTINGS_CHECK_CLONE: "/api/settings/check-clone",
   VIEWS: "/api/views",
   TEAMS: "/api/teams",
   // `/api/pulse.xbar` and `/api/pulse/history` both live under this prefix.

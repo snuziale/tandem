@@ -6,7 +6,7 @@
 // ORDER IS THE CACHE, and it is the whole reason this file reads the way it
 // does. A conversation re-sends its context every turn, so the prefix has to
 // be byte-identical across turns or prompt caching pays for nothing. That
-// means STATIC FIRST — mission, contract, PR header, conventions, and the
+// means STATIC FIRST — mission, contract, PR header, guidance, and the
 // DIFF, which is by far the largest block — then a hard line, then everything
 // that moves: the files a hop fetched, the findings (whose states change on
 // every apply), the human threads, the draft, the reviewer's progress, the
@@ -27,8 +27,8 @@ import type {
   ReviewThread,
 } from "../../../shared/review-types";
 import {
-  conventionsBlock,
   fileDiffBlock,
+  guidanceBlock,
   prHeaderBlock,
 } from "../pipeline/prompts";
 
@@ -265,11 +265,21 @@ function transcriptBlock(messages: ChatMessage[]): string {
   return rendered.join("\n\n") || "(this is the first turn)";
 }
 
+/** Stable per conversation (repo + sha ARE the conversation's key), so it
+ * belongs in the cached prefix. */
+function checkoutNote(c: { repo: string; sha: string }): string {
+  return `
+You are running inside a read-only checkout of ${c.repo} at this PR's head (${c.sha.slice(0, 7)}), with Read, Grep and Glob. When the answer depends on code outside the diff, go and read it rather than guessing or asking with needContext — then cite what you read as path:line. Keep it proportionate: a question about wording needs no tool calls at all. Your final message is the answer the reviewer sees.
+`;
+}
+
 export function buildChatPrompt(input: {
   prompts: PromptTexts;
   pr: PullRequest;
   files: FileChange[];
-  conventions: string | null;
+  guidance: string | null;
+  /** Set when the turn runs inside a read-only checkout (a `repo` profile). */
+  checkout?: { repo: string; sha: string };
   run: AgentRun | null;
   focused: Finding | null;
   anchor: ChatAnchor | null;
@@ -294,7 +304,7 @@ ${scopeLine}
 ${ACTION_CONTRACT}
 
 ${prHeaderBlock(input.pr)}
-${conventionsBlock(input.conventions)}
+${guidanceBlock(input.guidance)}${input.checkout ? checkoutNote(input.checkout) : ""}
 
 Diff:
 

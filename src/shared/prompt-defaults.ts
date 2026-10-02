@@ -22,7 +22,10 @@ const PREAMBLE =
 
 export const DEFAULT_PROMPTS: PromptTexts = {
   rules: `Rules — follow every one:
-- Every finding must cite evidence: a file and line range you actually read in the diff below.
+- Every finding must cite evidence: a file and line range you actually read — in the diff, or in the whole files, related files or repository you were given.
+- Hunt for what the change BREAKS, not what it says: callers of a changed signature, null/empty/error paths, a removed guard or changed default, ordering and concurrency, a test that should have moved with the code.
+- Name the concrete input or sequence that triggers each problem. If you cannot name one, it is a "question", not a "risk".
+- Code outside the diff is evidence, never an anchor: every finding still lands on a line IN the diff.
 - No findings about formatting, import order, naming style, or anything a linter/formatter owns.
 - Never restate what the diff does. If the comment would be obvious to the author, drop it.
 - "blocker" means the code is wrong or unsafe — NOT that you would have written it differently.

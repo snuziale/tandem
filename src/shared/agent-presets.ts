@@ -166,6 +166,7 @@ export function profileFromPreset(
     presetId: preset.id,
     models,
     prompts: promptsFromPreset(preset),
+    context: "files",
   };
 }
 

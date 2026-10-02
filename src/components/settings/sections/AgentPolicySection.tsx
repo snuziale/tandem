@@ -12,10 +12,15 @@ import {
   ToggleGroupItem,
 } from "@uipath/apollo-wind";
 import { CircleAlert, CircleCheck, Trash2 } from "lucide-react";
+import { checkClone } from "../../../api/settings";
+import { parseRepoKey } from "../../../shared/gh/prKey";
 import { useAgentHealth } from "../../../hooks/useAgentHealth";
 import { Shortcut } from "../../common/Kbd";
 import { useAgentRuns } from "../../../hooks/useAgentRuns";
-import type { TandemSettings } from "../../../shared/settings-types";
+import type {
+  CloneCheck,
+  TandemSettings,
+} from "../../../shared/settings-types";
 import {
   EmptyState,
   FieldGrid,
@@ -52,8 +57,10 @@ export function AgentPolicySection({
             Every pass — orient, analyze, reconcile, chat — is a headless{" "}
             <code className="font-mono text-[11px]">claude -p</code> one-shot
             run with <code className="font-mono text-[11px]">--safe-mode</code>{" "}
-            and no tools. There is no write tool for the agent to reach for, at
-            any point.
+            and no tools. The one exception is a profile set to{" "}
+            <em>local checkout</em>: its analyze and chat passes get Read, Grep
+            and Glob, confined to a throwaway worktree. There is no write tool
+            for the agent to reach for, at any point.
           </>
         }
       >
@@ -117,9 +124,33 @@ export function AgentPolicySection({
       >
         <RepoOverrides settings={settings} onPatch={onPatch} />
         <Note>
-          A <code className="font-mono">.tandem/conventions.md</code> in a repo
-          is read into every run — house rules, known deprecations, links to
-          postmortems. It's the main quality lever per repo.
+          A repo&apos;s own agent instructions are read into every pass:{" "}
+          <code className="font-mono">.tandem/conventions.md</code>, then{" "}
+          <code className="font-mono">CLAUDE.md</code>,{" "}
+          <code className="font-mono">AGENTS.md</code> and{" "}
+          <code className="font-mono">.github/copilot-instructions.md</code> —
+          house rules, known deprecations, links to postmortems. It&apos;s the
+          main quality lever per repo.
+        </Note>
+      </Panel>
+
+      <Panel
+        title="Local checkouts"
+        hint="A clone on this machine, per repo, for profiles whose context is
+        set to local checkout (Agent profiles › Context). The agent then
+        explores the codebase itself — callers, types, tests — instead of
+        seeing only what the diff shows."
+      >
+        <LocalCheckouts settings={settings} onPatch={onPatch} />
+        <Note>
+          Each run checks the PR&apos;s head out into its own detached worktree
+          under Tandem&apos;s home, fetching{" "}
+          <code className="font-mono">pull/N/head</code> into the clone first if
+          it is missing. Your working tree and branches are never touched, the
+          worktree holds tracked files only (no untracked{" "}
+          <code className="font-mono">.env</code>), and it is removed 15 minutes
+          after its last use. Expect several times the tokens of a whole-files
+          run.
         </Note>
       </Panel>
 
@@ -219,7 +250,7 @@ function RepoOverrides({
 
   const add = () => {
     const key = newRepo.trim();
-    if (!/^[^/\s]+\/[^/\s]+$/.test(key)) return;
+    if (!parseRepoKey(key)) return;
     onPatch({
       repos: {
         ...settings.repos,
@@ -273,6 +304,129 @@ function RepoOverrides({
             an outline here read as secondary next to identical rows above. */}
         <Button size="xs" onClick={add}>
           Add override
+        </Button>
+      </FormActions>
+    </div>
+  );
+}
+
+function LocalCheckouts({
+  settings,
+  onPatch,
+}: {
+  settings: TandemSettings;
+  onPatch: (p: Partial<TandemSettings>) => void;
+}) {
+  const [newRepo, setNewRepo] = useState("");
+  const [newPath, setNewPath] = useState("");
+  const [checks, setChecks] = useState<Record<string, CloneCheck | "checking">>(
+    {},
+  );
+  const entries = Object.entries(settings.repoPaths);
+
+  const check = async (repo: string, path: string) => {
+    setChecks((prev) => ({ ...prev, [repo]: "checking" }));
+    let result: CloneCheck;
+    try {
+      result = await checkClone(repo, path);
+    } catch (e) {
+      result = { ok: false, error: e instanceof Error ? e.message : String(e) };
+    }
+    setChecks((prev) => ({ ...prev, [repo]: result }));
+  };
+
+  const add = () => {
+    const repo = newRepo.trim();
+    const path = newPath.trim();
+    if (!parseRepoKey(repo) || !path) return;
+    onPatch({ repoPaths: { ...settings.repoPaths, [repo]: path } });
+    setNewRepo("");
+    setNewPath("");
+    void check(repo, path);
+  };
+
+  return (
+    <div className="space-y-1.5 max-w-3xl">
+      {entries.length === 0 ? (
+        <EmptyState>
+          None — a local-checkout profile reads whole files through GitHub
+          instead.
+        </EmptyState>
+      ) : null}
+      {entries.map(([repo, path]) => {
+        const status = checks[repo];
+        return (
+          <div key={repo} className="space-y-0.5">
+            <div className="flex items-center gap-2 text-sm">
+              <span className="font-mono text-xs w-56 truncate" title={repo}>
+                {repo}
+              </span>
+              <span
+                className="font-mono text-xs flex-1 truncate text-muted-foreground"
+                title={path}
+              >
+                {path}
+              </span>
+              <Button
+                size="2xs"
+                variant="ghost"
+                disabled={status === "checking"}
+                onClick={() => void check(repo, path)}
+              >
+                Check
+              </Button>
+              <Button
+                size="2xs"
+                variant="ghost"
+                className="text-destructive"
+                onClick={() => {
+                  const next = { ...settings.repoPaths };
+                  delete next[repo];
+                  onPatch({ repoPaths: next });
+                }}
+              >
+                <Trash2 /> Remove
+              </Button>
+            </div>
+            {status && status !== "checking" ? (
+              <p className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                {status.ok ? (
+                  <>
+                    <CircleCheck
+                      className="size-3.5"
+                      style={{ color: "var(--success)" }}
+                    />
+                    git clone · remote{" "}
+                    <code className="font-mono">{status.remote}</code>
+                  </>
+                ) : (
+                  <>
+                    <CircleAlert className="size-3.5 text-destructive" />
+                    {status.error}
+                  </>
+                )}
+              </p>
+            ) : null}
+          </div>
+        );
+      })}
+      <FormActions>
+        <Input
+          value={newRepo}
+          onChange={(e) => setNewRepo(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && add()}
+          placeholder="owner/repo"
+          className="h-7 text-xs font-mono w-56"
+        />
+        <Input
+          value={newPath}
+          onChange={(e) => setNewPath(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && add()}
+          placeholder="~/code/repo"
+          className="h-7 text-xs font-mono flex-1"
+        />
+        <Button size="xs" onClick={add}>
+          Add checkout
         </Button>
       </FormActions>
     </div>

@@ -14,6 +14,10 @@ SPA, Apollo Wind, TanStack Query, Zustand.
 1. **The agent never writes to GitHub.** `server/github/submit.ts` is the ONLY module that mutates
    GitHub, and it exposes exactly two operations: submit-review and quick-approve, both
    human-triggered. The claude CLI runs with `--safe-mode --tools ''` — no write tools exist.
+   A `repo`-context profile's analyze and chat passes are the one variation: `--tools
+   Read,Grep,Glob --restricted --strict-mcp-config` inside a throwaway worktree (see "Context
+   depth"). Still no writer, no shell, no network; `READ_ONLY_TOOLS` is a code constant, never a
+   setting.
    **One sanctioned exception, explicitly opt-in**: `settings.autoApprove` (default OFF) lets
    `maybeAutoApprove` in `pipeline/run.ts` post an empty APPROVE when EVERY gate holds — the run
    came from the DEFAULT agent profile, pass-3 score ≥ threshold, zero undismissed blocker/risk
@@ -92,7 +96,7 @@ a global `MAX_SEARCHES_PER_POLL` so a few team views can't turn one poll into fo
 `pipeline/run.ts` orchestrates three passes per `(prId, headSha)`, each a read-only headless
 `claude -p` one-shot (`claude.ts`; prompt over stdin, result frame parsed for text + usage):
 
-1. **Orient** (haiku): PR meta + file list + `.tandem/conventions.md` + recent commits → a 3–6 item
+1. **Orient** (haiku): PR meta + file list + repo guidance + recent commits → a 3–6 item
    review plan. A failed orient degrades to a generic plan, never fails the run.
 2. **Analyze** (sonnet): per file cluster (`cluster.ts`: top-dir grouping, ≤8 files/≤800 lines) →
    candidate findings as strict JSON.
@@ -150,6 +154,42 @@ duplicates drop, severity×confidence ranking under the caps (default 8 findings
   `runsIndex.ts` — illegal transitions throw.
 - Spend: per-run cost lands in `runs.json` `spendByDay`; `decide.ts` stops runs at the daily
   ceiling. Subscription-billed CLI reports $0 — UI falls back to token counts.
+
+## Context depth — how much of the codebase a pass sees
+
+Hunks alone were the reason the default agent's comments were generic: the comment worth leaving
+usually depends on code the hunk does not show (a caller, a type, a test). `AgentProfile.context`
+(`shared/settings-types.ts`, Settings › Agent profiles › Context) picks one of three depths, and
+`effectiveContext` (TESTED) is the ONE answer to "what will this run actually get":
+
+- **`diff`** — hunks only; the original behaviour.
+- **`files`** (the default) — every changed file IN FULL at the head sha, plus up to 8 related files
+  pass 1 picks from a menu of paths near the change (`neighbourhoodPaths` over one recursive
+  `git/trees` call; `pickContextPaths` drops anything not in the tree). All GitHub reads, no tools,
+  budgeted in characters (`budgetFiles`, `shared/agent-context.ts`, TESTED) — what did not fit is
+  NAMED in the prompt, so "not shown" never reads as "does not exist". A run step `context`
+  records what was read.
+- **`repo`** — analyze and chat run INSIDE a detached git worktree of a local clone at the head sha
+  (`server/agent/worktree.ts`), with the confined read-only tools. Needs `settings.repoPaths`
+  (Settings › Review policy › Local checkouts, with a `check-clone` probe that verifies the remote
+  really is owner/repo). No path, or a checkout that fails → degrades to `files` and the run log
+  says why. Orient and reconcile stay tool-less — neither reads code.
+  - The clone is touched in exactly two ways: a FETCH of `pull/N/head` when the sha is missing, and
+    a registered worktree under `$TANDEM_HOME/worktrees/`. Never its working tree or a branch. A
+    worktree holds tracked files only, so an untracked `.env` is not there for the model to read.
+  - Refcounted per (repo, sha), kept warm 15 min after the last release so a chat turn reuses the
+    run's checkout; removal is decided by the dir's MTIME (touched on acquire/release) because two
+    servers can share `$TANDEM_HOME`. Orphans older than 2h are swept on the next acquire.
+  - A checkout pass that fails (usually `error_max_turns` at 30) is re-asked from the diff rather
+    than losing the cluster; a failed pass's cost is still tracked. Each Read lands on the step's
+    `paths` live, so the status strip shows what it has open.
+  - In chat, a Read after prose has streamed is a HOP: it goes out as a `context` frame, so the pane
+    files that prose under "asked for X" exactly as a needContext hop does.
+
+**Repo guidance** (`fetchRepoGuidance`) replaced the `.tandem/conventions.md`-only read: that file,
+then `CLAUDE.md`, `AGENTS.md`, `.github/copilot-instructions.md`, each under its own heading, 12k
+chars total, in every pass. `--safe-mode` stops the CLI loading a repo's CLAUDE.md itself, so this
+is the only way it gets in — also in `repo` mode.
 
 ## Chat — the fourth pass (server/agent/chat/)
 
@@ -848,6 +888,7 @@ runs.json      AgentRun by prId@headSha + spendByDay     claude.log  harness std
 chats.json     ChatSession by prId@headSha[#findingId], LRU-capped at 100
 seen.json      per prId at last open: head sha, comment + thread counts, updatedAt
 sandbox/       cwd for the read-only claude passes
+worktrees/     detached checkouts for `repo`-context passes, owner__repo__sha12, removed when idle
 localStorage   tandem:theme:v1 · tandem:ui:v1 (diffStyle, hideWhitespace, lastViewId,
                panes + stats toggles) — display prefs ONLY
 ```
@@ -1356,9 +1397,14 @@ picks by `process.platform` at init-script build time.
   `typescript: ^7` breaks lint. `tsc6` is on PATH if you need the old compiler.
 - **Zustand multi-key selectors need `useShallow`** (React 19 getSnapshot loop) — single-key
   selectors used everywhere so far.
+- **The default review RULES changed (2026-09-23) and a saved profile does not pick that up** —
+  `settings.json` stores every prompt block in full, so an existing profile keeps its old text until
+  its "Review rules" field is reset to default.
 - **`claude` CLI flags** (`--safe-mode --tools '' --permission-mode dontAsk`, plus
-  `--include-partial-messages` for chat) verified against 2.1.239; `checkClaudeAvailable` only
-  probes existence — re-verify flags on CLI major bumps.
+  `--include-partial-messages` for chat) verified against 2.1.239; the checkout set
+  (`--tools Read,Grep,Glob --restricted --strict-mcp-config --max-turns`) against 2.1.281, including
+  that `--restricted` refuses a Read outside the cwd. `checkClaudeAvailable` only probes existence —
+  re-verify flags on CLI major bumps.
 - **A Radix `Select` refuses an empty item value.** `""` is how Radix spells "nothing is
   selected", so a real option meaning "no filter" (Pulse's "All views, merged", the view editor's
   "None") throws if handed `value=""`. Both call sites swap in a sentinel at the boundary and map

@@ -1,10 +1,10 @@
 // One chat turn: read-only context in, prose + proposed actions out.
 //
 // The fourth pass of the agent, and the only interactive one. Everything the
-// pipeline guarantees still holds — `--safe-mode --tools ''`, no write tools
-// exist, GitHub is only ever read — and the one new capability (the agent can
-// ask for a file it cannot see) is a SERVER-side hop through the read-only
-// GitHub client, not a tool in the model's hands.
+// pipeline guarantees still holds — no write tools exist, GitHub is only ever
+// read. A file it cannot see is a SERVER-side hop through the read-only
+// GitHub client (needContext) — or, for a `repo`-context profile, a Read/Grep
+// inside the same confined read-only checkout the pipeline uses.
 //
 // Turns are server-owned: closing the pane detaches, the transcript lands in
 // chats.json either way, and cancel is the only kill switch.
@@ -23,14 +23,20 @@ import {
   type ChatSession,
 } from "../../../shared/chat-types";
 import { diffLineIndex, type DiffLineIndex } from "../../../shared/gh/patch";
-import { parsePrId } from "../../../shared/gh/prKey";
-import { agentById } from "../../../shared/settings-types";
+import { parsePrId, repoKeyOfRef } from "../../../shared/gh/prKey";
+import { toolTargetOf } from "../../../shared/agent-context";
+import {
+  agentById,
+  effectiveContext,
+  type EffectiveContext,
+} from "../../../shared/settings-types";
 import type { Config } from "../../config/store";
 import { loadReview } from "../../reviews/store";
 import { loadSettings } from "../../settings/store";
-import { runClaudePass } from "../claude";
+import { runClaudePass, type ToolTurn } from "../claude";
+import { acquireWorktree, readCheckoutFile, type Worktree } from "../worktree";
 import { createLive, finishLive, isLive, publish } from "../live";
-import { fetchConventions } from "../pipeline/context";
+import { fetchRepoGuidance } from "../pipeline/context";
 import { addSpend, getRun, spendToday } from "../runsIndex";
 import { sanitizeChatActions } from "./actions";
 import { fetchFileAtSha, loadChatSource } from "./context";
@@ -45,6 +51,9 @@ const MAX_QUESTION_CHARS = 4000;
  * point: naming the file up front skips the needContext round trip entirely,
  * and that hop is a whole model call. */
 const MAX_MENTIONED_PATHS = 3;
+/** Turn cap inside a checkout. Lower than a pipeline pass's: the reviewer is
+ * watching this one. */
+const CHAT_MAX_TURNS = 16;
 
 export type ChatTurnOptions = {
   message: string;
@@ -105,7 +114,8 @@ export async function startChatTurn(
     headSha: scope.headSha,
     agentName: agent.name,
   });
-  void drive(cfg, scope, sessionId, agent, question, opts, signal).catch(
+  const ctx = effectiveContext(settings, agent, repoKeyOfRef(ref));
+  void drive(cfg, scope, sessionId, agent, ctx, question, opts, signal).catch(
     (e) => {
       console.error(`[chat] turn ${sessionId} crashed:`, e);
     },
@@ -119,6 +129,7 @@ async function drive(
   scope: ChatScope,
   sessionId: string,
   agent: ReturnType<typeof agentById>,
+  ctx: EffectiveContext,
   question: string,
   opts: ChatTurnOptions,
   signal: AbortSignal,
@@ -127,24 +138,45 @@ async function drive(
   let tokens = 0;
   let cost = 0;
   const contextRead: string[] = [];
+  let worktree: Worktree | null = null;
 
   try {
     emit({ type: "status", label: "reading the pull request" });
     const ref = parsePrId(scope.prId)!;
-    const { detail, files } = await loadChatSource(
-      cfg,
-      ref,
-      scope.prId,
-      scope.headSha,
-      signal,
-    );
-    const run = await getRun(scope.prId, scope.headSha);
-    const review = await loadReview(scope.prId);
-    const conventions = await fetchConventions(cfg, ref, scope.headSha);
+    // Independent reads, together — the reviewer watches a spinner for all
+    // of them, and a cold checkout (possibly a fetch) is the slow one.
+    const [{ detail, files }, run, review, guidance, checkout, stored] =
+      await Promise.all([
+        loadChatSource(cfg, ref, scope.prId, scope.headSha, signal),
+        getRun(scope.prId, scope.headSha),
+        loadReview(scope.prId),
+        fetchRepoGuidance(cfg, ref, scope.headSha),
+        ctx.depth === "repo"
+          ? acquireWorktree(ctx.localPath, ref, scope.headSha).then(
+              (w) => ({ worktree: w }),
+              (e: unknown) => ({
+                error: e instanceof Error ? e.message : String(e),
+              }),
+            )
+          : null,
+        getSession(sessionId),
+      ]);
+    if (checkout && "worktree" in checkout) worktree = checkout.worktree;
+    else if (checkout) {
+      // A turn without the checkout still answers — from the diff and
+      // needContext hops, exactly like a `files` profile — and says why.
+      console.error(
+        `[chat] ${sessionId}: checkout unavailable: ${checkout.error}`,
+      );
+      emit({
+        type: "status",
+        label: "no checkout — answering from the diff",
+      });
+    }
     const focused = scope.findingId
       ? (run?.findings.find((f) => f.id === scope.findingId) ?? null)
       : null;
-    const history = (await getSession(sessionId))?.messages ?? [];
+    const history = stored?.messages ?? [];
     // The question we just persisted is passed separately, not twice.
     const priorHistory = history.slice(0, -1);
 
@@ -171,13 +203,15 @@ async function drive(
     // the reviewer is watching a spinner for all of them.
     if (mentioned.length) {
       emit({ type: "status", label: `reading ${mentioned.join(", ")}` });
+      // Off the checkout's disk when there is one — it is the same commit.
+      const root = worktree?.path;
       const fetched = await Promise.all(
-        mentioned.map((path) =>
-          fetchFileAtSha(cfg, ref, path, scope.headSha).then((text) => ({
-            path,
-            text,
-          })),
-        ),
+        mentioned.map(async (path) => ({
+          path,
+          text: root
+            ? await readCheckoutFile(root, path)
+            : await fetchFileAtSha(cfg, ref, path, scope.headSha),
+        })),
       );
       if (signal.aborted) throw new Error("cancelled");
       for (const { path, text } of fetched) {
@@ -195,12 +229,15 @@ async function drive(
     for (let hop = 0; ; hop++) {
       if (signal.aborted) throw new Error("cancelled");
       emit({ type: "status", label: hop === 0 ? "thinking" : "re-reading" });
-      const gate = createFenceGate();
+      let gate = createFenceGate();
       const prompt = buildChatPrompt({
         prompts: agent.prompts,
         pr: detail.pr,
         files,
-        conventions,
+        guidance,
+        checkout: worktree
+          ? { repo: repoKeyOfRef(ref), sha: scope.headSha }
+          : undefined,
         run,
         focused,
         anchor: opts.anchor ?? null,
@@ -210,20 +247,50 @@ async function drive(
         question,
         extraContext,
       });
+      // Inside a checkout the model reads mid-answer, and the CLI's result is
+      // the FINAL message only — so the boundary that matters is a message
+      // that ended in tool calls, whatever the tools were. Prose streamed
+      // before it is not the answer: it goes out as ONE `context` frame and
+      // the pane files it under "asked for X" rather than deleting it. A tool
+      // turn with no prose before it is just a status line.
+      let wroteSinceTurn = false;
+      const onToolTurn = ({ uses }: ToolTurn) => {
+        const targets = uses.map((use) => {
+          const path = worktree ? toolTargetOf(use.input, worktree.path) : null;
+          if (use.name === "Read" && path) {
+            if (!contextRead.includes(path)) contextRead.push(path);
+            return path;
+          }
+          const pattern =
+            typeof use.input.pattern === "string" ? use.input.pattern : "";
+          return pattern ? `search: ${pattern}` : "the repo";
+        });
+        if (wroteSinceTurn) emit({ type: "context", paths: targets });
+        else emit({ type: "status", label: `reading ${targets.join(", ")}` });
+        wroteSinceTurn = false;
+        gate = createFenceGate();
+      };
       const result = await runClaudePass({
         prompt,
         model: agent.models.chat,
         signal,
         onDelta: (text) => {
           const visible = gate.push(text);
-          if (visible) emit({ type: "delta", text: visible });
+          if (visible) {
+            wroteSinceTurn = true;
+            emit({ type: "delta", text: visible });
+          }
         },
+        checkout: worktree
+          ? { cwd: worktree.path, maxTurns: CHAT_MAX_TURNS }
+          : undefined,
+        onToolTurn,
       });
+      tokens += result.tokens;
+      cost += result.costUsd;
       if (!result.ok) throw new Error(result.error);
       const trailing = gate.flush();
       if (trailing) emit({ type: "delta", text: trailing });
-      tokens += result.tokens;
-      cost += result.costUsd;
 
       const split = splitTrailingJson(result.text);
       prose = split.prose;
@@ -312,6 +379,7 @@ async function drive(
     emit({ type: "error", message });
     emit({ type: "turn-end", session });
   } finally {
+    worktree?.release();
     finishLive(sessionId);
   }
 }

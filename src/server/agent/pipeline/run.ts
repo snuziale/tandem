@@ -22,13 +22,21 @@ import {
   diffLineIndex,
   type DiffLineIndex,
 } from "../../../shared/gh/patch";
-import { parsePrId, type PrRef } from "../../../shared/gh/prKey";
+import { parsePrId, repoKeyOfRef, type PrRef } from "../../../shared/gh/prKey";
 import type { FileChange, PrDetail, PrId } from "../../../shared/review-types";
 import {
   agentById,
+  effectiveContext,
   type AgentProfile,
   type TandemSettings,
 } from "../../../shared/settings-types";
+import {
+  budgetFiles,
+  neighbourhoodPaths,
+  pickContextPaths,
+  toolTargetOf,
+  type ContextFile,
+} from "../../../shared/agent-context";
 import type { Config } from "../../config/store";
 import { fetchPrFiles } from "../../github/files";
 import { fetchPrDetail } from "../../github/pr";
@@ -36,7 +44,8 @@ import { quickApprove } from "../../github/submit";
 import { loadReview } from "../../reviews/store";
 import { loadSettings } from "../../settings/store";
 import { agentEnabledFor } from "../../../shared/settings-types";
-import { runClaudePass, type ClaudePassResult } from "../claude";
+import { runClaudePass, type CheckoutAccess, type ToolTurn } from "../claude";
+import { acquireWorktree, readCheckoutFile } from "../worktree";
 import { createLive, finishLive, publish } from "../live";
 import {
   addSpend,
@@ -46,7 +55,12 @@ import {
   upsertRun,
 } from "../runsIndex";
 import { analyzableFiles, clusterFiles } from "../../../shared/agent-cluster";
-import { fetchConventions, fetchRecentCommitSubjects } from "./context";
+import {
+  fetchFilesAt,
+  fetchRecentCommitSubjects,
+  fetchRepoGuidance,
+  fetchTreePaths,
+} from "./context";
 import { skipDecision } from "../../../shared/agent-decide";
 import {
   parseWithSchema,
@@ -61,6 +75,19 @@ import {
   buildRepairPrompt,
 } from "./prompts";
 import type { ZodType } from "zod";
+
+// Context budgets for a `files`-depth run, in characters (~4 per token). A
+// cluster is ≤800 diff lines, so its own files in full dominate; related files
+// are the SAME for every cluster, so they are capped tighter.
+const CLUSTER_FILES_BUDGET = { perFile: 40_000, total: 120_000 };
+const RELATED_FILES_BUDGET = { perFile: 20_000, total: 60_000 };
+/** How many files outside the diff pass 1 may ask for, and how big a menu
+ * it picks them from. */
+const MAX_RELATED_FILES = 8;
+const NEARBY_MENU = 150;
+/** Turn cap for a pass exploring a checkout. Each tool call is a turn; the
+ * final answer is one more. */
+const CHECKOUT_MAX_TURNS = 30;
 
 export type StartResult = { run: AgentRun; started: boolean };
 
@@ -224,7 +251,7 @@ async function executePipeline(
       changedFiles: pr.changedFiles,
       diffLines,
       allGenerated: analyzable.length === 0,
-      agentEnabled: agentEnabledFor(settings, `${ref.owner}/${ref.repo}`),
+      agentEnabled: agentEnabledFor(settings, repoKeyOfRef(ref)),
       spentTodayUsd: await spendToday(),
     },
     settings,
@@ -238,167 +265,325 @@ async function executePipeline(
   run.status = "analyzing";
   await upsertRun(run);
 
-  const conventions = await fetchConventions(cfg, ref, pr.headSha);
-  const commitSubjects = await fetchRecentCommitSubjects(cfg, ref, pr.baseRef);
+  // How much of the codebase this run gets to see. A checkout that cannot be
+  // made degrades to whole files through GitHub rather than failing the run.
+  let ctx = effectiveContext(settings, agent, repoKeyOfRef(ref));
+  const checkoutStep =
+    ctx.depth === "repo"
+      ? await begin({
+          id: "checkout",
+          label: `checking out ${pr.headSha.slice(0, 7)}`,
+        })
+      : null;
+  // Independent reads, together: the checkout (possibly a fetch) is the slow
+  // one, and nothing else waits on it.
+  const [guidance, commitSubjects, checkout, firstTree] = await Promise.all([
+    fetchRepoGuidance(cfg, ref, pr.headSha),
+    fetchRecentCommitSubjects(cfg, ref, pr.baseRef),
+    ctx.depth === "repo"
+      ? acquireWorktree(ctx.localPath, ref, pr.headSha).then(
+          (worktree) => ({ worktree }),
+          (e: unknown) => ({
+            error: e instanceof Error ? e.message : String(e),
+          }),
+        )
+      : null,
+    ctx.depth === "files" ? fetchTreePaths(cfg, ref, pr.headSha) : null,
+  ]);
+  let tree = firstTree;
+  const worktree =
+    checkout && "worktree" in checkout ? checkout.worktree : null;
+  if (checkoutStep && checkout && "error" in checkout) {
+    await checkoutStep.failed(
+      `${checkout.error} — reading whole files through GitHub instead`,
+    );
+    ctx = { depth: "files" };
+    tree = await fetchTreePaths(cfg, ref, pr.headSha);
+  } else if (checkoutStep && ctx.depth === "repo") {
+    await checkoutStep.done(`read-only worktree of ${ctx.localPath}`);
+  }
 
-  let tokens = 0;
-  let cost = 0;
-  const track = (r: Extract<ClaudePassResult, { ok: true }>) => {
-    tokens += r.tokens;
-    cost += r.costUsd;
-    // Onto the run too — the next step's write persists it, so a reload
-    // mid-run (and a failed run) reports what was actually spent.
-    run.tokensUsed = tokens;
-    run.costUsd = cost;
-    emit({ type: "usage", tokens, costUsd: cost });
-  };
+  try {
+    let tokens = 0;
+    let cost = 0;
+    const track = (r: { tokens: number; costUsd: number }) => {
+      tokens += r.tokens;
+      cost += r.costUsd;
+      // Onto the run too — the next step's write persists it, so a reload
+      // mid-run (and a failed run) reports what was actually spent.
+      run.tokensUsed = tokens;
+      run.costUsd = cost;
+      emit({ type: "usage", tokens, costUsd: cost });
+    };
 
-  // --- Pass 1: orient (cheap model) ---
-  const orientStep = await begin({ id: "orient", pass: 1, label: "orienting" });
-  const planResult = await validatedPass(
-    buildOrientPrompt({
-      prompts: agent.prompts,
-      pr,
-      files,
-      conventions,
-      commitSubjects,
-    }),
-    agent.models.orient,
-    Pass1PlanSchema,
-    signal,
-    track,
-  );
-  // A failed orient degrades to a generic plan rather than failing the run —
-  // pass 2 carries the real weight.
-  const plan: Pass1Plan = planResult.ok
-    ? planResult.value
-    : {
-        checks: [
-          "correctness of the changed logic",
-          "error handling and edge cases",
-          "API/contract changes",
-          "test coverage of new behavior",
-        ],
-      };
-  // The plan is the most legible thing the run produces — what it set out to
-  // look for. Persist it and say so, degraded or not.
-  run.plan = plan.checks;
-  emit({ type: "plan", checks: plan.checks, degraded: !planResult.ok });
-  if (planResult.ok) await orientStep.done(`${plan.checks.length} checks`);
-  else await orientStep.failed("model output unusable — generic plan");
+    // Only a `files` run offers pass 1 a menu (tree is null otherwise): a
+    // `diff` run reads nothing extra, and a `repo` run's analyze pass opens
+    // what it needs for itself.
+    const nearby = tree
+      ? neighbourhoodPaths(
+          tree,
+          analyzable.map((f) => f.path),
+          NEARBY_MENU,
+        )
+      : [];
+    // The changed files do not depend on the plan, so their fetch runs WHILE
+    // pass 1 thinks. An added file's patch already IS the whole file.
+    const headPaths =
+      ctx.depth === "files"
+        ? analyzable
+            .filter((f) => f.status !== "removed" && f.status !== "added")
+            .map((f) => f.path)
+        : [];
+    const headFetch = fetchFilesAt(cfg, ref, pr.headSha, headPaths, signal);
+    headFetch.catch(() => {}); // awaited below; an abort must not go unhandled
 
-  // --- Pass 2: analyze, per cluster (respects model-authored clusters when sane) ---
-  const clusters =
-    clustersFromPlan(plan, analyzable) ?? clusterFiles(analyzable);
-  const candidates: FindingJson[] = [];
-  for (let i = 0; i < clusters.length; i++) {
-    if (signal.aborted) throw new Error("cancelled");
-    const clusterStep = await begin({
-      id: `analyze:${i}`,
-      pass: 2,
-      label: `analyzing ${i + 1}/${clusters.length}`,
-      paths: clusters[i].map((f) => f.path),
+    // --- Pass 1: orient (cheap model) ---
+    const orientStep = await begin({
+      id: "orient",
+      pass: 1,
+      label: "orienting",
     });
-    const passResult = await validatedPass(
-      buildAnalyzePrompt({
+    const planResult = await validatedPass(
+      buildOrientPrompt({
         prompts: agent.prompts,
         pr,
-        plan,
-        files: clusters[i],
-        conventions,
+        files,
+        guidance,
+        commitSubjects,
+        nearby,
+        maxContext: MAX_RELATED_FILES,
       }),
-      agent.models.analyze,
-      Pass2OutputSchema,
+      agent.models.orient,
+      Pass1PlanSchema,
       signal,
       track,
     );
-    if (passResult.ok) {
-      candidates.push(...passResult.value.findings);
-      await clusterStep.done(`${passResult.value.findings.length} candidates`);
-    } else {
-      console.error(
-        `[pipeline] pass 2 cluster ${i} unusable after repair: ${passResult.errors}`,
+    // A failed orient degrades to a generic plan rather than failing the run —
+    // pass 2 carries the real weight.
+    const plan: Pass1Plan = planResult.ok
+      ? planResult.value
+      : {
+          checks: [
+            "correctness of the changed logic",
+            "error handling and edge cases",
+            "API/contract changes",
+            "test coverage of new behavior",
+          ],
+        };
+    // The plan is the most legible thing the run produces — what it set out to
+    // look for. Persist it and say so, degraded or not.
+    run.plan = plan.checks;
+    emit({ type: "plan", checks: plan.checks, degraded: !planResult.ok });
+    if (planResult.ok) await orientStep.done(`${plan.checks.length} checks`);
+    else await orientStep.failed("model output unusable — generic plan");
+
+    // --- Context: whole files through GitHub (`files` depth only) ---
+    // Picks are checked against the menu pass 1 was SHOWN, not the whole tree.
+    const relatedPaths = pickContextPaths(
+      plan.context,
+      new Set(nearby),
+      new Set(files.map((f) => f.path)),
+      MAX_RELATED_FILES,
+    );
+    let wholeByPath = new Map<string, ContextFile>();
+    let related: ContextFile[] = [];
+    if (ctx.depth === "files") {
+      const contextStep = await begin({
+        id: "context",
+        label: "reading whole files",
+        paths: [...headPaths, ...relatedPaths],
+      });
+      const [head, rel] = await Promise.all([
+        headFetch,
+        fetchFilesAt(cfg, ref, pr.headSha, relatedPaths, signal),
+      ]);
+      wholeByPath = new Map(head.map((f) => [f.path, f]));
+      related = rel;
+      const note =
+        ctx.degraded === "no-local-path"
+          ? " · no local clone configured, so no checkout"
+          : "";
+      await contextStep.done(
+        `${head.length} changed + ${rel.length} related files${note}`,
       );
-      await clusterStep.failed("output unusable after repair");
     }
-  }
+    // Empty for any depth but `files`, which renders as no block at all.
+    const relatedBudgeted = budgetFiles(related, RELATED_FILES_BUDGET);
 
-  const lineIndex = new Map<string, DiffLineIndex>(
-    analyzable.map((f) => [f.path, diffLineIndex(f.patch!)]),
-  );
-  const sanitized = sanitizeFindings(candidates, lineIndex, threads);
+    // Built once per run: what the analyze prompt says about the checkout,
+    // and what the harness is given to run in it.
+    const checkoutNote = worktree
+      ? {
+          repo: repoKeyOfRef(ref),
+          sha: pr.headSha,
+          maxTurns: CHECKOUT_MAX_TURNS,
+        }
+      : undefined;
+    const checkoutAccess = worktree
+      ? { cwd: worktree.path, maxTurns: CHECKOUT_MAX_TURNS }
+      : undefined;
+    const analyze = (
+      prompt: Parameters<typeof buildAnalyzePrompt>[0],
+      access?: PassAccess,
+    ) =>
+      validatedPass(
+        buildAnalyzePrompt(prompt),
+        agent.models.analyze,
+        Pass2OutputSchema,
+        signal,
+        track,
+        access,
+      );
 
-  // --- Pass 3: reconcile — the pass that keeps output signal-dense. Do not skip. ---
-  const reconcileStep = await begin({
-    id: "reconcile",
-    pass: 3,
-    label: "reconciling",
-  });
-  const reconcileResult = await validatedPass(
-    buildReconcilePrompt({
-      prompts: agent.prompts,
-      pr,
-      candidates: sanitized.kept,
+    // --- Pass 2: analyze, per cluster (respects model-authored clusters when sane) ---
+    const clusters =
+      clustersFromPlan(plan, analyzable) ?? clusterFiles(analyzable);
+    const candidates: FindingJson[] = [];
+    for (let i = 0; i < clusters.length; i++) {
+      if (signal.aborted) throw new Error("cancelled");
+      const cluster = clusters[i];
+      const clusterStep = await begin({
+        id: `analyze:${i}`,
+        pass: 2,
+        label: `analyzing ${i + 1}/${clusters.length}`,
+        paths: cluster.map((f) => f.path),
+      });
+      const basePrompt = {
+        prompts: agent.prompts,
+        pr,
+        plan,
+        files: cluster,
+        guidance,
+        fullFiles: budgetFiles(
+          cluster.flatMap((f) => wholeByPath.get(f.path) ?? []),
+          CLUSTER_FILES_BUDGET,
+        ),
+        related: relatedBudgeted,
+      };
+      let toolCalls = 0;
+      let passResult = await analyze(
+        { ...basePrompt, checkout: checkoutNote },
+        checkoutAccess && {
+          checkout: checkoutAccess,
+          onToolTurn: ({ uses }) => {
+            toolCalls += uses.length;
+            for (const use of uses) {
+              const path = toolTargetOf(use.input, checkoutAccess.cwd);
+              if (path) clusterStep.reading(path);
+            }
+          },
+        },
+      );
+      // An exploring pass that ran out of turns has nothing to show for them.
+      // Re-ask on the `files` rung — the cluster's files read straight off the
+      // checkout's disk — rather than losing the cluster or dropping to hunks.
+      let fallback = "";
+      if (checkoutAccess && !passResult.ok && !signal.aborted) {
+        fallback = ` · checkout pass failed (${passResult.errors}), answered from whole files`;
+        const local = await Promise.all(
+          cluster.map(async (f) => {
+            const text = await readCheckoutFile(checkoutAccess.cwd, f.path);
+            return text === null ? [] : [{ path: f.path, text }];
+          }),
+        );
+        passResult = await analyze({
+          ...basePrompt,
+          fullFiles: budgetFiles(local.flat(), CLUSTER_FILES_BUDGET),
+        });
+      }
+      if (passResult.ok) {
+        candidates.push(...passResult.value.findings);
+        const reads = toolCalls ? ` · ${toolCalls} tool calls` : "";
+        await clusterStep.done(
+          `${passResult.value.findings.length} candidates${reads}${fallback}`,
+        );
+      } else {
+        console.error(
+          `[pipeline] pass 2 cluster ${i} unusable after repair: ${passResult.errors}`,
+        );
+        await clusterStep.failed("output unusable after repair");
+      }
+    }
+
+    const lineIndex = new Map<string, DiffLineIndex>(
+      analyzable.map((f) => [f.path, diffLineIndex(f.patch!)]),
+    );
+    const sanitized = sanitizeFindings(candidates, lineIndex, threads);
+
+    // --- Pass 3: reconcile — the pass that keeps output signal-dense. Do not skip. ---
+    const reconcileStep = await begin({
+      id: "reconcile",
+      pass: 3,
+      label: "reconciling",
+    });
+    const reconcileResult = await validatedPass(
+      buildReconcilePrompt({
+        prompts: agent.prompts,
+        pr,
+        candidates: sanitized.kept,
+        threads,
+        findingCap: settings.findingCap,
+        nitCap: settings.nitCap,
+      }),
+      agent.models.reconcile,
+      Pass3OutputSchema,
+      signal,
+      track,
+    );
+    if (!reconcileResult.ok) {
+      // Fail visibly rather than showing degraded output (spec §4).
+      await reconcileStep.failed("output invalid after repair");
+      return {
+        status: "failed",
+        error: `reconcile output invalid: ${reconcileResult.errors}`,
+        tokensUsed: tokens,
+        costUsd: cost,
+        finishedAt: now(),
+      };
+    }
+
+    // The model was told the rules; the code enforces them anyway.
+    const finalSanitized = sanitizeFindings(
+      reconcileResult.value.findings,
+      lineIndex,
       threads,
-      findingCap: settings.findingCap,
-      nitCap: settings.nitCap,
-    }),
-    agent.models.reconcile,
-    Pass3OutputSchema,
-    signal,
-    track,
-  );
-  if (!reconcileResult.ok) {
-    // Fail visibly rather than showing degraded output (spec §4).
-    await reconcileStep.failed("output invalid after repair");
+    );
+    const capped = capFindings(
+      finalSanitized.kept,
+      settings.findingCap,
+      settings.nitCap,
+    );
+    const findings: Finding[] = capped.map((f) => ({
+      ...f,
+      id: randomUUID(),
+      runId: run.id,
+      prId: run.prId,
+      headSha: run.headSha,
+      state: "proposed",
+    }));
+
+    const discardedTotal = sanitized.discarded + finalSanitized.discarded;
+    if (discardedTotal > 0)
+      console.error(
+        `[pipeline] run ${run.id}: discarded ${discardedTotal} unanchored/duplicate findings`,
+      );
+
+    await reconcileStep.done(
+      `${findings.length} findings · score ${reconcileResult.value.score}`,
+    );
+
     return {
-      status: "failed",
-      error: `reconcile output invalid: ${reconcileResult.errors}`,
+      status: "ready",
+      summary: reconcileResult.value.summary,
+      score: reconcileResult.value.score,
+      findings,
       tokensUsed: tokens,
       costUsd: cost,
       finishedAt: now(),
     };
+  } finally {
+    worktree?.release();
   }
-
-  // The model was told the rules; the code enforces them anyway.
-  const finalSanitized = sanitizeFindings(
-    reconcileResult.value.findings,
-    lineIndex,
-    threads,
-  );
-  const capped = capFindings(
-    finalSanitized.kept,
-    settings.findingCap,
-    settings.nitCap,
-  );
-  const findings: Finding[] = capped.map((f) => ({
-    ...f,
-    id: randomUUID(),
-    runId: run.id,
-    prId: run.prId,
-    headSha: run.headSha,
-    state: "proposed",
-  }));
-
-  const discardedTotal = sanitized.discarded + finalSanitized.discarded;
-  if (discardedTotal > 0)
-    console.error(
-      `[pipeline] run ${run.id}: discarded ${discardedTotal} unanchored/duplicate findings`,
-    );
-
-  await reconcileStep.done(
-    `${findings.length} findings · score ${reconcileResult.value.score}`,
-  );
-
-  return {
-    status: "ready",
-    summary: reconcileResult.value.summary,
-    score: reconcileResult.value.score,
-    findings,
-    tokensUsed: tokens,
-    costUsd: cost,
-    finishedAt: now(),
-  };
 }
 
 /**
@@ -459,6 +644,9 @@ async function maybeAutoApprove(
 type StepHandle = {
   done: (detail?: string) => Promise<void>;
   failed: (detail: string) => Promise<void>;
+  /** A file the step just opened (a checkout pass's tool call). Emitted for
+   * the live readout, persisted with the step's next settle. */
+  reading: (path: string) => void;
 };
 
 /**
@@ -496,21 +684,42 @@ function stepRecorder(
     return {
       done: (detail?: string) => settle("done", detail),
       failed: (detail: string) => settle("failed", detail),
+      reading: (path: string) => {
+        const paths = (step.paths ??= []);
+        if (paths.includes(path)) return;
+        paths.push(path);
+        emit({ type: "step", step });
+      },
     };
   };
 }
 
-/** Run one pass; on schema failure, one repair attempt, then give up (spec §4). */
+type PassAccess = {
+  checkout: CheckoutAccess;
+  onToolTurn: (turn: ToolTurn) => void;
+};
+
+/** Run one pass; on schema failure, one repair attempt, then give up (spec §4).
+ * With `access`, the FIRST attempt runs inside the checkout; the repair only
+ * reshapes JSON it already wrote, so it never needs tools. */
 async function validatedPass<T>(
   prompt: string,
   model: string,
   schema: ZodType<T>,
   signal: AbortSignal,
-  track: (r: Extract<ClaudePassResult, { ok: true }>) => void,
+  track: (r: { tokens: number; costUsd: number }) => void,
+  access?: PassAccess,
 ): Promise<ParseResult<T>> {
-  const first = await runClaudePass({ prompt, model, signal });
-  if (!first.ok) return { ok: false, errors: first.error };
+  const first = await runClaudePass({
+    prompt,
+    model,
+    signal,
+    checkout: access?.checkout,
+    onToolTurn: access?.onToolTurn,
+  });
+  // A failed pass still spent — an exploring one, most of all.
   track(first);
+  if (!first.ok) return { ok: false, errors: first.error };
   const parsed = parseWithSchema(first.text, schema);
   if (parsed.ok) return parsed;
 
@@ -519,12 +728,12 @@ async function validatedPass<T>(
     model,
     signal,
   });
+  track(repair);
   if (!repair.ok)
     return {
       ok: false,
       errors: `${parsed.errors} (repair failed: ${repair.error})`,
     };
-  track(repair);
   return parseWithSchema(repair.text, schema);
 }
 

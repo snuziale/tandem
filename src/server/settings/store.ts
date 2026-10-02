@@ -1,12 +1,16 @@
 // Tandem settings, ~/.tandem/settings.json. Missing file = defaults; unknown
 // keys are dropped on save. Values merge over DEFAULT_SETTINGS so adding a
 // setting never requires a migration.
+import { isAbsolute } from "node:path";
 import { promptDefaultsFor } from "../../shared/agent-presets";
+import { parseRepoKey } from "../../shared/gh/prKey";
 import { isPlainObject } from "../../shared/is-plain-object";
 import { promptTextsOf } from "../../shared/prompt-defaults";
 import {
+  CONTEXT_DEPTHS,
   DEFAULT_AGENT,
   DEFAULT_SETTINGS,
+  type ContextDepth,
   type AgentProfile,
   type TandemSettings,
 } from "../../shared/settings-types";
@@ -73,6 +77,7 @@ export function sanitize(raw: unknown): TandemSettings {
       typeof raw.agentEnabledByDefault === "boolean"
         ? raw.agentEnabledByDefault
         : d.agentEnabledByDefault,
+    repoPaths: sanitizeRepoPaths(raw.repoPaths),
     ...sanitizeAgents(raw),
     autoApprove: sanitizeAutoApprove(raw.autoApprove),
     pulse: sanitizePulse(raw.pulse),
@@ -92,6 +97,29 @@ function sanitizeModels(raw: unknown): AgentProfile["models"] {
     reconcile: pick("reconcile"),
     chat: pick("chat"),
   };
+}
+
+function sanitizeContext(raw: unknown): ContextDepth {
+  return CONTEXT_DEPTHS.includes(raw as ContextDepth)
+    ? (raw as ContextDepth)
+    : DEFAULT_AGENT.context;
+}
+
+/** `owner/name` → a path that is absolute or `~`-rooted. Anything else is
+ * dropped: a relative path would resolve against whichever directory the
+ * server happened to start in. Existence is checked at run time (and by the
+ * settings page's "check" button), not here — a clone on an unmounted volume
+ * is still the reviewer's intent. */
+function sanitizeRepoPaths(raw: unknown): Record<string, string> {
+  const out: Record<string, string> = {};
+  if (!isPlainObject(raw)) return out;
+  for (const [key, value] of Object.entries(raw)) {
+    if (!parseRepoKey(key) || typeof value !== "string") continue;
+    const path = value.trim();
+    if (path === "~" || path.startsWith("~/") || isAbsolute(path))
+      out[key] = path;
+  }
+  return out;
 }
 
 function sanitizePulse(raw: unknown): TandemSettings["pulse"] {
@@ -144,6 +172,7 @@ function sanitizeAgents(
             : undefined,
         models: sanitizeModels(entry.models),
         prompts: promptTextsOf(entry.prompts, promptDefaultsFor(presetId)),
+        context: sanitizeContext(entry.context),
       });
     }
   }

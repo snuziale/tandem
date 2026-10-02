@@ -8,8 +8,9 @@
 import type { PrRef } from "../../../shared/gh/prKey";
 import type { FileChange, PrDetail } from "../../../shared/review-types";
 import type { Config } from "../../config/store";
-import { fetchFileAtRef, fetchPrFiles } from "../../github/files";
+import { fetchPrFiles } from "../../github/files";
 import { fetchPrDetail } from "../../github/pr";
+import { readFileOrNull } from "../pipeline/context";
 
 export type ChatContextSource = { detail: PrDetail; files: FileChange[] };
 
@@ -52,7 +53,7 @@ const MAX_FILE_CHARS = 40_000;
  * One whole file at the PR's head sha — the payload of a `needContext` hop.
  * Read-only, and the model never gets to name a repo: owner/repo come from the
  * session's own PR ref. Truncation is a PROMPT concern and lives here; the
- * fetch itself is the shared one.
+ * fetch and its degrade-to-null are the pipeline's.
  */
 export async function fetchFileAtSha(
   cfg: Config,
@@ -60,15 +61,7 @@ export async function fetchFileAtSha(
   path: string,
   sha: string,
 ): Promise<string | null> {
-  let text: string | null;
-  try {
-    text = await fetchFileAtRef(cfg, ref, path, sha);
-  } catch (e) {
-    console.error(
-      `[chat] context fetch failed for ${path}: ${e instanceof Error ? e.message : e}`,
-    );
-    return null;
-  }
+  const text = await readFileOrNull(cfg, ref, path, sha);
   if (text === null) return null;
   return text.length > MAX_FILE_CHARS
     ? `${text.slice(0, MAX_FILE_CHARS)}\n… (truncated)`

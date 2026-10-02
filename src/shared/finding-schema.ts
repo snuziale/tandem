@@ -39,6 +39,10 @@ export const Pass1PlanSchema = z.object({
   checks: z.array(z.string().min(1)).min(1).max(8),
   /** Optional file clusters for pass 2; unlisted files fall into a default cluster. */
   clusters: z.array(z.array(z.string().min(1)).min(1)).optional(),
+  /** Files OUTSIDE the diff to read in full for pass 2 (callers, types,
+   * tests), chosen from the menu the prompt offers. Unknown paths are dropped
+   * by pickContextPaths, so a made-up one costs nothing. */
+  context: z.array(z.string().min(1)).max(20).optional(),
 });
 export type Pass1Plan = z.infer<typeof Pass1PlanSchema>;
 

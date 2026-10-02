@@ -32,15 +32,31 @@ import {
   DEFAULT_AGENT,
   agentById,
   type AgentProfile,
+  type ContextDepth,
   type TandemSettings,
 } from "../../../shared/settings-types";
 import {
   FieldGrid,
+  Note,
   Panel,
   PromptField,
   SectionHeading,
+  SelectField,
   TextField,
 } from "../fields";
+
+const CONTEXT_OPTIONS: Array<{ value: ContextDepth; label: string }> = [
+  { value: "diff", label: "Diff only" },
+  { value: "files", label: "Whole files (through GitHub)" },
+  { value: "repo", label: "Local checkout (read-only tools)" },
+];
+
+const CONTEXT_HINTS: Record<ContextDepth, string> = {
+  diff: "The patch hunks and nothing else. Cheapest; blind to anything a hunk does not show.",
+  files:
+    "Every changed file in full, plus up to 8 related files pass 1 picks from the neighbourhood (callers, types, tests). No tools; a few dozen extra GitHub reads per run.",
+  repo: "Analyze and chat run inside a read-only worktree of your local clone at the PR head, with Read, Grep and Glob. The deepest reading, and several times the tokens. Needs a path under Review policy › Local checkouts; without one it falls back to whole files.",
+};
 
 const PROMPT_BLOCKS: Array<[keyof PromptTexts, string, string]> = [
   ["rules", "Review rules", "Injected into the analyze and reconcile passes."],
@@ -242,6 +258,28 @@ export function AgentProfilesSection({
             />
           ))}
         </FieldGrid>
+      </Panel>
+
+      <Panel
+        title="Context"
+        hint="How much of the codebase this profile reads."
+      >
+        <div className="max-w-sm">
+          <SelectField
+            label="Context"
+            value={agent.context}
+            options={CONTEXT_OPTIONS}
+            onChange={(context) => patchAgent({ context })}
+          />
+        </div>
+        <Note>{CONTEXT_HINTS[agent.context]}</Note>
+        {agent.context === "repo" &&
+        Object.keys(settings.repoPaths).length === 0 ? (
+          <Note>
+            No local checkouts are configured yet, so every run of this profile
+            will read whole files through GitHub.
+          </Note>
+        ) : null}
       </Panel>
 
       <Panel title="Prompts">
