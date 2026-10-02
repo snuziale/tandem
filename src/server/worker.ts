@@ -1,4 +1,7 @@
 import { handleAgent, handleRuns } from "./agent/routes";
+import { adoptLoginShellPath } from "./loginPath";
+import { IS_DARWIN } from "./platform";
+import { isCompiledBun } from "./runtime";
 import { reconcileInterruptedRuns } from "./agent/runsIndex";
 import { handleChats } from "./agent/chat/routes";
 import { handleConfig } from "./config/routes";
@@ -101,6 +104,12 @@ function tryListen(): ReturnType<typeof Bun.serve> {
     `could not bind any port in ${FIRST_PORT}..${FIRST_PORT + PORT_RANGE - 1}`,
   );
 }
+
+// A Finder/Dock launch of the macOS app inherits launchd's bare PATH, so the
+// claude CLI would be "not found" (loginPath.ts). Only the compiled app needs
+// it — a terminal launch already has the user's PATH — and it must land
+// before the first claude/git lookup, hence before the server answers.
+if (IS_DARWIN && isCompiledBun()) await adoptLoginShellPath();
 
 const server = tryListen();
 console.log(`tandem server → http://${HOST}:${server.port}`);

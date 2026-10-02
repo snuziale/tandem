@@ -19,6 +19,7 @@ import { homedir } from "node:os";
 import { isAbsolute, join, resolve } from "node:path";
 import type { PrRef, RepoRef } from "../../shared/gh/prKey";
 import type { CloneCheck } from "../../shared/settings-types";
+import { which } from "../loginPath";
 import { enqueueMutation, storagePath } from "../storage/jsonFile";
 
 const IDLE_MS = 15 * 60_000;
@@ -58,7 +59,7 @@ export function expandHome(path: string): string {
 let cachedGit: string | null = null;
 
 function gitBin(): string {
-  if (!cachedGit) cachedGit = Bun.which("git");
+  if (!cachedGit) cachedGit = which("git");
   return cachedGit ?? "git";
 }
 

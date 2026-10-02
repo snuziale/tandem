@@ -1216,6 +1216,13 @@ thing that was actually broken.
   routes a `.cmd` through cmd.exe with its own escaping — which is why we hand
   it a path and never build a `cmd /c` line ourselves. That would re-parse our
   arguments and undo the discrete-argv rule that keeps model names uninjectable.
+- **A Finder/Dock launch of the macOS app gets launchd's bare PATH**
+  (`/usr/bin:/bin:/usr/sbin:/sbin`), so a `claude` in `~/.local/bin` or Homebrew was "not
+  found" in the app only. `server/loginPath.ts` (TESTED) asks the login shell once
+  (`$SHELL -ilc`, 3s cap) and MERGES its PATH in — from `worker.ts`, compiled builds only,
+  because a Worker does not see env changes its parent makes. Two Bun facts to keep: that one,
+  and that `Bun.which` reads the PATH the process STARTED with, not `process.env` — every
+  lookup goes through `which()` in that file.
 - **`rename` over an open file is not atomic on Windows.** `jsonFile.ts` retries
   EPERM/EACCES/EBUSY ten times at 20ms, win32 only — two servers can share one
   `$TANDEM_HOME`, so a reader mid-read is a real collision, not a theoretical

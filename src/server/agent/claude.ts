@@ -13,6 +13,7 @@
 //   server. There is still no write tool, no shell and no network.
 import { mkdir } from "node:fs/promises";
 import { isPlainObject } from "../../shared/is-plain-object";
+import { which } from "../loginPath";
 import { storagePath } from "../storage/jsonFile";
 import { readLines } from "./procStream";
 
@@ -29,7 +30,7 @@ import { readLines } from "./procStream";
 let cachedBin: string | null = null;
 
 export function claudeBin(): string {
-  if (!cachedBin) cachedBin = Bun.which("claude");
+  if (!cachedBin) cachedBin = which("claude");
   return cachedBin ?? "claude";
 }
 
