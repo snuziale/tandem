@@ -50,7 +50,10 @@ import { ComposerCard } from "./ComposerCard";
 import { PendingCard } from "./PendingCard";
 import { ThreadCard } from "./ThreadCard";
 
-export type DiffPaneHandle = CodeViewHandle<TandemAnno>;
+// The second parameter is the library's inline-editor caret metadata
+// (@pierre/diffs 1.5). Tandem never opens its editor, so it is `undefined` —
+// the same default the CodeView component itself declares.
+export type DiffPaneHandle = CodeViewHandle<TandemAnno, undefined>;
 
 type Props = {
   prId: PrId;
@@ -400,7 +403,7 @@ export function DiffPane({
     [setComposerTarget],
   );
 
-  const options = useMemo<CodeViewReactOptions<TandemAnno>>(
+  const options = useMemo<CodeViewReactOptions<TandemAnno, undefined>>(
     () => ({
       diffStyle,
       theme: { dark: "github-dark", light: "github-light" },
