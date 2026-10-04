@@ -27,6 +27,9 @@ query TandemPrDetail($owner: String!, $name: String!, $number: Int!) {
       autoMergeRequest { enabledBy { login } }
       approvals: reviews(states: [APPROVED]) { totalCount }
       changesRequested: reviews(states: [CHANGES_REQUESTED]) { totalCount }
+      latestOpinionatedReviews(first: 30) {
+        nodes { state submittedAt author { login } }
+      }
       reviewRequests(first: 10) {
         totalCount
         nodes {

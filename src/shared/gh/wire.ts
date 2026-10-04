@@ -76,6 +76,16 @@ export type GqlPrNode = {
   comments?: { totalCount: number };
   autoMergeRequest?: { enabledBy?: { login: string } | null } | null;
   reviewRequests?: { totalCount: number; nodes?: GqlReviewRequest[] };
+  /** Each reviewer's LATEST verdict, one node per person. Detail query only —
+   * per-node fields inside a search are what push the queue toward GitHub's
+   * ~10s cliff, so the queue keeps the aliased totals above. */
+  latestOpinionatedReviews?: { nodes: Array<GqlOpinionatedReview | null> };
+};
+
+export type GqlOpinionatedReview = {
+  state: GqlReviewState;
+  submittedAt: string | null;
+  author: { login: string } | null;
 };
 
 export type GqlReviewRequest = {

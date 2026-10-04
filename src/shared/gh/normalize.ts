@@ -6,6 +6,7 @@ import type {
   FileChange,
   PullRequest,
   ReviewThread,
+  ReviewerVerdict,
 } from "../review-types";
 import {
   attachmentProxyBase,
@@ -16,6 +17,7 @@ import { isGeneratedPath } from "./generated";
 import { prIdOf, type PrRef } from "./prKey";
 import type {
   GqlCheckContext,
+  GqlOpinionatedReview,
   GqlPrNode,
   GqlReviewRequest,
   GqlReviewThread,
@@ -106,6 +108,27 @@ export function reviewRequestOf(request: GqlReviewRequest): string | null {
   return org ? `${org}/${reviewer.slug}` : reviewer.slug;
 }
 
+/** `latestOpinionatedReviews` → standing verdicts. The field already collapses
+ * to one review per person, so someone who approved and LATER requested changes
+ * appears once, as requesting changes — the case the aliased counts get wrong
+ * (their approval stays in `approvals`). A dismissed verdict is dropped: GitHub
+ * revoked it, so it is nobody's standing opinion. */
+export function reviewersOf(
+  nodes: Array<GqlOpinionatedReview | null>,
+): ReviewerVerdict[] {
+  const out: ReviewerVerdict[] = [];
+  for (const n of nodes) {
+    if (!n || (n.state !== "APPROVED" && n.state !== "CHANGES_REQUESTED"))
+      continue;
+    out.push({
+      login: n.author?.login ?? "ghost",
+      state: n.state,
+      submittedAt: n.submittedAt,
+    });
+  }
+  return out;
+}
+
 /** A queue-search or detail PR node → PullRequest. Null for non-PR search hits. */
 export function normalizePr(node: GqlPrNode | null): PullRequest | null {
   if (!node || (node.__typename && node.__typename !== "PullRequest"))
@@ -162,6 +185,9 @@ export function normalizePr(node: GqlPrNode | null): PullRequest | null {
     requestedReviewers: (node.reviewRequests?.nodes ?? [])
       .map(reviewRequestOf)
       .filter((r): r is string => r !== null),
+    reviewers: node.latestOpinionatedReviews
+      ? reviewersOf(node.latestOpinionatedReviews.nodes)
+      : undefined,
     // Accurate only when the caller fetched thread nodes (the detail query);
     // the queue search fetches totalCount alone and renders just that.
     unresolvedThreadCount: threads

@@ -60,6 +60,14 @@ export type ChecksResult = {
   checks: Record<PrId, ChecksSnapshot>;
 };
 
+/** One person's standing verdict on a PR. Only the two states that ARE a
+ * verdict: COMMENTED leaves none, DISMISSED was revoked, PENDING was never sent. */
+export type ReviewerVerdict = {
+  login: string;
+  state: "APPROVED" | "CHANGES_REQUESTED";
+  submittedAt: string | null;
+};
+
 export type PullRequest = {
   prId: PrId;
   owner: string;
@@ -104,6 +112,10 @@ export type PullRequest = {
    * Team membership is not resolvable here, so a team request never counts as
    * a request from YOU. */
   requestedReviewers: string[];
+  /** WHO reviewed: each person's latest approve / request-changes verdict.
+   * Absent means NOT FETCHED (the queue search asks for counts only), which
+   * is not the same claim as an empty list — "nobody has reviewed this". */
+  reviewers?: ReviewerVerdict[];
   createdAt: string;
   updatedAt: string;
   url: string;

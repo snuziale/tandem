@@ -237,9 +237,13 @@ export function ReviewCell({
   pr,
   showDraft,
   viewerLogin,
+  suffix,
 }: {
   pr: PullRequest;
   showDraft?: boolean;
+  /** Drawn INSIDE the badge after the label (the PR header's popover chevron),
+   * so a badge that opens something says so on itself. */
+  suffix?: React.ReactNode;
   /** Passed in, never read from a hook here: this renders once per queue row,
    * and one badge must not subscribe 50 components to a query. */
   viewerLogin?: string | null;
@@ -256,8 +260,12 @@ export function ReviewCell({
     viewerLogin,
   );
   return (
-    <Badge variant={variant} className={cn("max-w-full truncate", extra)}>
-      {label}
+    <Badge
+      variant={variant}
+      className={cn("max-w-full truncate", suffix && "gap-1", extra)}
+    >
+      {suffix ? <span className="truncate min-w-0">{label}</span> : label}
+      {suffix}
     </Badge>
   );
 }

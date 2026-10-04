@@ -22,9 +22,9 @@ import { navigateToQueue } from "../../routes";
 import type { PrState, PullRequest } from "../../shared/review-types";
 import { HeaderDivider } from "../layout/AppHeader";
 import { Shortcut } from "../common/Kbd";
-import { ReviewCell } from "../queue/cells";
 import { useConfigStatus } from "../../hooks/useConfigStatus";
 import { ChecksSummary } from "./ChecksSummary";
+import { ReviewersSummary } from "./ReviewersSummary";
 
 /**
  * The PR breadcrumb AND title, rendered into the app header's screen slot —
@@ -251,7 +251,7 @@ export function PrHeader({
         </div>
         <HeaderDivider />
         <div className="flex items-center gap-2 shrink-0">
-          <ReviewCell pr={pr} showDraft={false} viewerLogin={viewerLogin} />
+          <ReviewersSummary pr={pr} viewerLogin={viewerLogin} />
           {submit}
         </div>
       </div>

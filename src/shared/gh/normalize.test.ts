@@ -182,6 +182,40 @@ describe("normalizePr", () => {
     ).toBeNull();
   });
 
+  it("lists each reviewer's standing verdict, and only when it was fetched", () => {
+    // The queue search never asks — absent, not "nobody".
+    expect(normalizePr(prNode())!.reviewers).toBeUndefined();
+    const pr = normalizePr(
+      prNode({
+        latestOpinionatedReviews: {
+          nodes: [
+            {
+              state: "APPROVED",
+              submittedAt: "2026-08-20T09:00:00Z",
+              author: { login: "bob" },
+            },
+            { state: "CHANGES_REQUESTED", submittedAt: null, author: null },
+            // Revoked by GitHub: nobody's opinion any more.
+            {
+              state: "DISMISSED",
+              submittedAt: null,
+              author: { login: "carol" },
+            },
+            null,
+          ],
+        },
+      }),
+    )!;
+    expect(pr.reviewers).toEqual([
+      { login: "bob", state: "APPROVED", submittedAt: "2026-08-20T09:00:00Z" },
+      { login: "ghost", state: "CHANGES_REQUESTED", submittedAt: null },
+    ]);
+    expect(
+      normalizePr(prNode({ latestOpinionatedReviews: { nodes: [] } }))!
+        .reviewers,
+    ).toEqual([]);
+  });
+
   it("drops non-PR search hits and defaults a deleted author to ghost", () => {
     expect(normalizePr({ ...prNode(), __typename: "Issue" })).toBeNull();
     expect(normalizePr(null)).toBeNull();
