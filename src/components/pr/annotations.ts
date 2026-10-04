@@ -20,13 +20,16 @@ import type {
 import { useUiStore } from "../../state/uiStore";
 import type { RevealTarget } from "../../state/uiStore";
 import type { Finding } from "../../shared/agent-types";
+import type { HistoryMark } from "../../shared/gh/stack";
 import type { ComposerTarget } from "../../state/uiStore";
 
 export type TandemAnno =
   | { kind: "thread"; thread: ReviewThread }
   | { kind: "composer"; target: ComposerTarget }
   | { kind: "pending"; comment: PendingComment }
-  | { kind: "finding"; finding: Finding };
+  | { kind: "finding"; finding: Finding }
+  /** SPIKE (stack view): a block several PRs edited in turn. */
+  | { kind: "history"; mark: HistoryMark; labels: string[] };
 
 /** GitHub side → @pierre/diffs annotation side. */
 export function annotationSideOf(
@@ -91,7 +94,9 @@ export function annoSpan(anno: DiffLineAnnotation<TandemAnno>): {
         ? meta.comment.startLine
         : meta.kind === "finding"
           ? meta.finding.startLine
-          : meta.target.startLine;
+          : meta.kind === "history"
+            ? undefined
+            : meta.target.startLine;
   return spanOf(start, anno.lineNumber);
 }
 

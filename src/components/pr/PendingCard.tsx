@@ -11,11 +11,13 @@ type Props = {
   comment: PendingComment;
   onUpdate: (patch: Partial<PendingComment>) => void;
   onRemove: () => void;
+  /** SPIKE (stack view): the PR this comment will post on. */
+  owner?: string;
 };
 
 // A comment staged in the local pending review, rendered inline at its anchor.
 // Nothing on GitHub yet — the tray's Submit posts all of these as one review.
-export function PendingCard({ comment, onUpdate, onRemove }: Props) {
+export function PendingCard({ comment, onUpdate, onRemove, owner }: Props) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(comment.body);
   const agentAuthored = isAgentAuthored(comment);
@@ -44,6 +46,7 @@ export function PendingCard({ comment, onUpdate, onRemove }: Props) {
           >
             {agentAuthored ? "agent · staged" : "your comment · staged"}
           </span>
+          {owner ? <span className="text-foreground">→ {owner}</span> : null}
           {span.start !== span.end ? (
             <span>
               lines {span.start}–{span.end}

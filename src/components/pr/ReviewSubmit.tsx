@@ -22,6 +22,7 @@ import type { PrId, ReviewVerdict } from "../../shared/review-types";
 import { usePendingReview } from "../../hooks/usePendingReview";
 import { MOD } from "../../keyboard/platform";
 import { Shortcut } from "../common/Kbd";
+import { VERDICTS } from "./verdicts";
 
 type Props = {
   prId: PrId;
@@ -30,28 +31,6 @@ type Props = {
    * BARE fact: the verdict half of that rule is read off the draft here. */
   hasBlocker: boolean;
 };
-
-const VERDICTS: Array<{
-  value: ReviewVerdict;
-  label: string;
-  activeClass: string;
-}> = [
-  {
-    value: "APPROVE",
-    label: "Approve",
-    activeClass: "border-emerald-400/60 text-emerald-400",
-  },
-  {
-    value: "COMMENT",
-    label: "Comment",
-    activeClass: "border-border text-foreground",
-  },
-  {
-    value: "REQUEST_CHANGES",
-    label: "Request changes",
-    activeClass: "border-red-400/60 text-red-400",
-  },
-];
 
 /**
  * Submitting the review: ONE button in the PR header, and a popover holding

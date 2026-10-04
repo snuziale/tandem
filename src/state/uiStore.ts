@@ -137,6 +137,11 @@ type UiState = {
   /** findings → split → chat → findings. */
   cyclePrAgentMode: () => void;
 
+  /** SPIKE: whole-stack view. Session-only, so it survives moving up and
+   * down the stack (each PR remounts the screen). */
+  prStackMode: boolean;
+  setPrStackMode: (on: boolean | ((current: boolean) => boolean)) => void;
+
   shortcutsOpen: boolean;
   setShortcutsOpen: (open: boolean) => void;
 
@@ -237,6 +242,11 @@ export const useUiStore = create<UiState>()(
           prAgentOpen: typeof open === "function" ? open(s.prAgentOpen) : open,
         })),
 
+      prStackMode: false,
+      setPrStackMode: (on) =>
+        set((s) => ({
+          prStackMode: typeof on === "function" ? on(s.prStackMode) : on,
+        })),
       prAgentMode: "split",
       setPrAgentMode: (mode) => set({ prAgentMode: mode }),
       cyclePrAgentMode: () =>

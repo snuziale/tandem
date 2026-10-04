@@ -40,6 +40,7 @@ import { Markdown } from "../common/Markdown";
 import { Shortcut } from "../common/Kbd";
 import { PaneTabs, type PaneTab } from "../common/paneTabs";
 import { ChatPanel } from "./ChatPanel";
+import type { StackReview } from "../../hooks/useStackReview";
 import { SeverityBadge } from "./SeverityBadge";
 import { SeverityTally } from "./SeverityTally";
 
@@ -69,6 +70,8 @@ type Props = {
   ) => void;
   onRevealPath: (path: string, side: DiffSide) => void;
   onSelectFinding: (finding: Finding) => void;
+  /** SPIKE: in stack mode, every PR's run and findings, on the combined diff. */
+  stack?: StackReview | null;
 };
 
 /** Three modes, one region: `split` renders both children at once. */
@@ -94,6 +97,7 @@ export function AgentPane({
   onNavigate,
   onRevealPath,
   onSelectFinding,
+  stack,
 }: Props) {
   const queryClient = useQueryClient();
   const focusedFindingId = useUiStore((s) => s.focusedFindingId);
@@ -113,7 +117,13 @@ export function AgentPane({
   });
   const agents = settings?.agents ?? [];
 
-  const triage = openFindings(run);
+  const triage = stack ? stack.findings : openFindings(run);
+  const ownerOf = stack
+    ? (id: string) => {
+        const owner = stack.findingOwnerOf(id);
+        return owner ? `#${owner.number}` : undefined;
+      }
+    : undefined;
   const threshold = settings?.severityThreshold ?? "risk";
   const collapsed = triage.filter((f) => belowThreshold(f.severity, threshold));
   const visible = triage.filter((f) => !belowThreshold(f.severity, threshold));
@@ -216,26 +226,30 @@ export function AgentPane({
           />
         ) : (
           <div className="flex-1 min-h-0 overflow-y-auto">
-            <StatusCard
-              run={run}
-              progress={progress}
-              preflight={preflight}
-              priorReview={priorReview}
-              onStart={() => rerun.mutate(undefined)}
-              onRevealPath={onRevealPath}
-              starting={rerun.isPending}
-            />
+            {stack ? (
+              <StackRuns stack={stack} />
+            ) : (
+              <StatusCard
+                run={run}
+                progress={progress}
+                preflight={preflight}
+                priorReview={priorReview}
+                onStart={() => rerun.mutate(undefined)}
+                onRevealPath={onRevealPath}
+                starting={rerun.isPending}
+              />
+            )}
 
-            {run?.status === "ready" ? (
+            {stack || run?.status === "ready" ? (
               <>
                 {/* Only in `findings` mode. Everywhere else the conversation
                 opens with this same prose as turn zero, and rendering it in
                 both places put the same paragraph on screen twice — and built
                 the markdown tree twice, since react-markdown memoizes
                 nothing. */}
-                {run.summary && mode === "findings" ? (
+                {!stack && run?.summary && mode === "findings" ? (
                   <Markdown className="px-3 pt-1 pb-2 text-muted-foreground leading-relaxed">
-                    {run.summary}
+                    {run?.summary}
                   </Markdown>
                 ) : null}
 
@@ -257,12 +271,14 @@ export function AgentPane({
                   findings={mustResolve}
                   focusedFindingId={focusedFindingId}
                   onSelect={onSelectFinding}
+                  ownerOf={ownerOf}
                 />
                 <FindingGroup
                   label="worth raising"
                   findings={worthRaising}
                   focusedFindingId={focusedFindingId}
                   onSelect={onSelectFinding}
+                  ownerOf={ownerOf}
                 />
 
                 {collapsed.length > 0 ? (
@@ -283,6 +299,7 @@ export function AgentPane({
                             finding={f}
                             focused={f.id === focusedFindingId}
                             onSelect={onSelectFinding}
+                            owner={ownerOf?.(f.id)}
                           />
                         ))}
                       </div>
@@ -306,7 +323,8 @@ export function AgentPane({
             className="border-t border-border px-3 py-1.5 text-left text-[10px] uppercase tracking-wider font-mono text-muted-foreground hover:text-foreground shrink-0"
             onClick={() => setMode("split")}
           >
-            ● chat{chatFinding ? " about this finding" : ""}{" "}
+            ● chat{chatFinding ? " about this finding" : ""}
+            {stack ? " · this PR only" : ""}{" "}
             <span className="opacity-60">c</span>
           </button>
         ) : (
@@ -319,6 +337,12 @@ export function AgentPane({
               mode === "chat" ? "flex-1" : "max-h-[50%] shrink-0",
             )}
           >
+            {stack ? (
+              <div className="px-3 py-1 text-[10px] font-mono text-muted-foreground border-b border-border/60">
+                chat sees #{stack.prs.find((p) => p.prId === prId)?.number}
+                {"'"}s diff only, not the whole stack
+              </div>
+            ) : null}
             <ChatPanel
               key={chatFinding?.id ?? "pr"}
               prId={prId}
@@ -709,11 +733,13 @@ function FindingGroup({
   findings,
   focusedFindingId,
   onSelect,
+  ownerOf,
 }: {
   label: string;
   findings: Finding[];
   focusedFindingId: string | null;
   onSelect: (finding: Finding) => void;
+  ownerOf?: (findingId: string) => string | undefined;
 }) {
   if (findings.length === 0) return null;
   return (
@@ -727,6 +753,7 @@ function FindingGroup({
           finding={f}
           focused={f.id === focusedFindingId}
           onSelect={onSelect}
+          owner={ownerOf?.(f.id)}
         />
       ))}
     </div>
@@ -737,10 +764,13 @@ function FindingRow({
   finding,
   focused,
   onSelect,
+  owner,
 }: {
   finding: Finding;
   focused: boolean;
   onSelect: (finding: Finding) => void;
+  /** SPIKE (stack view): the PR whose run found it. */
+  owner?: string;
 }) {
   return (
     <button
@@ -755,11 +785,78 @@ function FindingRow({
       <div className="flex items-center gap-1.5">
         <SeverityBadge severity={finding.severity} />
         <span className="text-xs truncate flex-1">{finding.title}</span>
+        {owner ? (
+          <span className="text-[10px] font-mono text-muted-foreground shrink-0">
+            {owner}
+          </span>
+        ) : null}
       </div>
       <div className="text-[10px] text-muted-foreground font-mono mt-0.5 truncate">
         {finding.path.split("/").pop()}:{finding.endLine} · {finding.category}
         {finding.suggestion !== undefined ? " · has suggestion" : ""}
       </div>
     </button>
+  );
+}
+
+/**
+ * SPIKE: the stack's runs, one row per PR — each PR is still reviewed by its
+ * own run at its own head. "Run missing" starts a normal run for every PR
+ * without one; the server's skip rules still apply to each.
+ */
+function StackRuns({ stack }: { stack: StackReview }) {
+  const queryClient = useQueryClient();
+  const missing = stack.runs.filter((r) => !r.run);
+  const runMissing = useMutation({
+    mutationFn: async () => {
+      for (const { pr } of missing) await startRun(pr.prId, true);
+    },
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ["runs"] }),
+    onError: (e) =>
+      toast.error("Could not start runs", {
+        description: e instanceof Error ? e.message : undefined,
+      }),
+  });
+  return (
+    <div className="px-3 py-2 flex flex-col gap-1">
+      {stack.runs.map(({ pr, run }) => (
+        <div
+          key={pr.prId}
+          className="flex items-center gap-2 text-[11px] font-mono min-w-0"
+        >
+          <span className="shrink-0">#{pr.number}</span>
+          <span className="truncate text-muted-foreground flex-1 min-w-0">
+            {pr.title}
+          </span>
+          <span className="shrink-0 text-muted-foreground">
+            {!run
+              ? "no run"
+              : isActive(run)
+                ? "analyzing"
+                : run.status === "ready"
+                  ? `${openFindings(run).length} open${run.score !== undefined ? ` · ${run.score}` : ""}`
+                  : run.status}
+          </span>
+        </div>
+      ))}
+      <div className="flex items-center gap-2 pt-1">
+        {missing.length > 0 ? (
+          <Button
+            size="2xs"
+            variant="outline"
+            disabled={runMissing.isPending}
+            onClick={() => runMissing.mutate()}
+          >
+            Run agent on {missing.length} PR{missing.length === 1 ? "" : "s"}
+          </Button>
+        ) : null}
+        {stack.hiddenFindings > 0 ? (
+          <span className="text-[10px] text-muted-foreground">
+            {stack.hiddenFindings} finding
+            {stack.hiddenFindings === 1 ? "" : "s"} on lines a later PR rewrote
+          </span>
+        ) : null}
+      </div>
+    </div>
   );
 }

@@ -47,6 +47,8 @@ import {
 import { DiffFileHeader } from "./DiffFileHeader";
 import { loadDiffFileSides } from "./expandContext";
 import { ComposerCard } from "./ComposerCard";
+import type { HistoryMark } from "../../shared/gh/stack";
+import { HistoryCard } from "./HistoryCard";
 import { PendingCard } from "./PendingCard";
 import { ThreadCard } from "./ThreadCard";
 
@@ -83,9 +85,24 @@ type Props = {
   /** React writes this; the pane reads it too — it owns the diff's line
    * selection while PrDetailView owns scrollTo. One ref, two readers. */
   codeViewRef: React.RefObject<DiffPaneHandle | null>;
+  /** SPIKE (stack view): which PR a staged comment belongs to, e.g. "#102". */
+  ownerLabelOf?: (localId: string) => string | undefined;
+  /** SPIKE (stack view): blocks several PRs edited in turn, and a PR label
+   * per stack layer. */
+  history?: {
+    byPath: Map<string, HistoryMark[]>;
+    labelOf: (layer: number) => string;
+  };
 };
 
 const EMPTY_ANNOS: DiffLineAnnotation<TandemAnno>[] = [];
+const KIND_CODE: Record<TandemAnno["kind"], number> = {
+  thread: 1,
+  composer: 2,
+  pending: 3,
+  finding: 4,
+  history: 5,
+};
 /** Module constant so the keep map keeps ONE identity while hide-whitespace is
  * off — that is what holds the parsed diffs (and the reader's expansions)
  * still across annotation changes. See the keepByPath memo. */
@@ -112,6 +129,9 @@ function versionOf(
     h = (h * 31 + headSha.charCodeAt(i)) | 0;
   for (const a of annotations) {
     h = (h * 31 + a.lineNumber * 2 + (a.side === "additions" ? 1 : 0)) | 0;
+    // KIND too: a composer swapped for a staged comment on the same line in
+    // one render is otherwise the same hash, and the file never re-renders.
+    h = (h * 31 + KIND_CODE[a.metadata.kind]) | 0;
     // The SPAN is part of the position: extending a range moves nothing the
     // library laid out, but the card has to re-render with the new metadata,
     // and the library only hands the render prop the annotation it is holding.
@@ -137,6 +157,8 @@ export function DiffPane({
   onRemoveComment,
   anchor,
   codeViewRef,
+  ownerLabelOf,
+  history,
 }: Props) {
   const diffStyle = useUiStore((s) => s.diffStyle);
   const hideWhitespace = useUiStore((s) => s.hideWhitespace);
@@ -185,6 +207,18 @@ export function DiffPane({
         metadata: { kind: "finding", finding },
       });
     }
+    for (const [path, marks] of history?.byPath ?? []) {
+      for (const mark of marks)
+        push(path, {
+          side: "additions",
+          lineNumber: mark.line,
+          metadata: {
+            kind: "history",
+            mark,
+            labels: mark.touches.map((t) => history?.labelOf(t.layer) ?? ""),
+          },
+        });
+    }
     if (composerTarget) {
       push(composerTarget.path, {
         side: annotationSideOf(composerTarget.side),
@@ -193,7 +227,7 @@ export function DiffPane({
       });
     }
     return map;
-  }, [threads, pendingComments, findings, composerTarget]);
+  }, [threads, pendingComments, findings, composerTarget, history]);
 
   // Whatever is annotated stays unfolded, or its card goes with the line — so
   // the hide-whitespace rewrite depends on the annotations, and only then.
@@ -526,8 +560,11 @@ export function DiffPane({
                   onUpdateComment(meta.comment.localId, patch)
                 }
                 onRemove={() => onRemoveComment(meta.comment.localId)}
+                owner={ownerLabelOf?.(meta.comment.localId)}
               />
             );
+          case "history":
+            return <HistoryCard mark={meta.mark} labels={meta.labels} />;
           case "finding":
             return (
               <FindingCard finding={meta.finding} addComment={onAddComment} />

@@ -36,11 +36,13 @@ import { openPrExternal } from "../../actions/queue";
 import { hasOpenBlocker, runFor, useAgentRuns } from "../../hooks/useAgentRuns";
 import { usePendingReview } from "../../hooks/usePendingReview";
 import { usePrDetail, usePrFiles } from "../../hooks/usePrDetail";
+import { useStackReview } from "../../hooks/useStackReview";
 import { useRunStream } from "../../hooks/useRunStream";
 import { useMarkSeen } from "../../hooks/useSeen";
 import { useSettings } from "../../hooks/useSettings";
 import { hasOpenDialog, isTypingTarget } from "../../keyboard/keyOwnership";
 import { navigateToQueue } from "../../routes";
+import { openPrDetail } from "../../hooks/useKeyboardNav";
 import {
   openFindings,
   type AgentRun,
@@ -80,6 +82,7 @@ import { FileTree } from "./FileTree";
 import { PrBreadcrumb, PrHeader } from "./PrHeader";
 import { usePrDescription } from "./PrDescription";
 import { ReviewSubmit } from "./ReviewSubmit";
+import { StackSubmit } from "./StackSubmit";
 
 /** Two presentations of one diff — the toolbar's strip. */
 const DIFF_STYLE_TABS: ReadonlyArray<PaneTab<"unified" | "split">> = [
@@ -201,10 +204,6 @@ export function PrDetailView({ prId }: { prId: PrId }) {
   // here so the selected tab sits between them rather than above both.
   // The one region the diff's `unified | split` tabs name.
   const diffPanelId = useId();
-  const description = usePrDescription(
-    detail.data?.pr.bodyMarkdown ?? "",
-    filesQuery.data?.length ?? 0,
-  );
   const progress = useRunStream(run);
   const settings = useSettings();
   // Opening the PR clears its "unseen changes" marker in the queue.
@@ -213,7 +212,39 @@ export function PrDetailView({ prId }: { prId: PrId }) {
   // Shared with the pane, which reads it for the diff's line selection.
   const codeViewRef = useRef<DiffPaneHandle | null>(null);
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
-  const files = filesQuery.data;
+  // SPIKE: the whole stack as one combined diff. Comments route to the owning
+  // PR's draft; threads and findings are off in this mode.
+  const stackMode = useUiStore((s) => s.prStackMode);
+  const setStackMode = useUiStore((s) => s.setPrStackMode);
+  const stack = useStackReview(prId, headSha, runs.data, stackMode);
+  // An unrebased stack has no line ownership to compute, so no combined view.
+  const stackBlocked = stack.unrebased.length > 0;
+  const stackOn = stackMode && !stackBlocked && stack.combined !== null;
+  const toggleStack = () => {
+    // The composer's line is in the coordinates of the view it was opened in.
+    useUiStore.getState().setComposerTarget(null);
+    setStackMode((on) => !on);
+  };
+  const addStackComment = (comment: Omit<PendingComment, "localId">) => {
+    const result = stack.addComment(comment);
+    if ("error" in result) toast.error(result.error);
+    else toast.success(`Staged on #${result.pr.number}`);
+  };
+  const stepStack = (delta: 1 | -1) => {
+    if (stack.isPending) {
+      toast.info("Stack still loading");
+      return;
+    }
+    const idx = stack.prs.findIndex((p) => p.prId === prId);
+    const target = idx === -1 ? undefined : stack.prs[idx + delta];
+    // A new PR remounts this screen; stack mode is store state, so it stays.
+    if (target) openPrDetail(target.prId);
+  };
+  const files = stackOn ? (stack.combined ?? undefined) : filesQuery.data;
+  const description = usePrDescription(
+    detail.data?.pr.bodyMarkdown ?? "",
+    files?.length ?? 0,
+  );
 
   // Holding ] steps files faster than the follow-up scroll lands, and each
   // stale timer yanks the pane to a file the reader has already left — that's
@@ -273,7 +304,9 @@ export function PrDetailView({ prId }: { prId: PrId }) {
     {},
   );
   // Stable identity when there's no draft yet — it feeds a memo dep list.
-  const viewedFiles = review?.viewedFiles ?? NO_FILES;
+  const viewedFiles = stackOn
+    ? stack.viewed
+    : (review?.viewedFiles ?? NO_FILES);
   const collapsedPaths = useMemo(() => {
     const viewed = new Set(viewedFiles);
     const out = new Set<string>();
@@ -301,7 +334,8 @@ export function PrDetailView({ prId }: { prId: PrId }) {
       delete next[path];
       return next;
     });
-    toggleViewed(path);
+    if (stackOn) stack.toggleViewed(path);
+    else toggleViewed(path);
     if (collapsing) revealCollapsed(path);
   };
   const expandPath = (path: string) => {
@@ -310,7 +344,7 @@ export function PrDetailView({ prId }: { prId: PrId }) {
     );
   };
 
-  const triageFindings = openFindings(run);
+  const triageFindings = stackOn ? stack.findings : openFindings(run);
   const agentPaths = new Set(triageFindings.map((f) => f.path));
 
   // A composer or finding focus left over from another PR must not follow us.
@@ -586,6 +620,14 @@ export function PrDetailView({ prId }: { prId: PrId }) {
         }
         return;
       }
+      case "{":
+        e.preventDefault();
+        stepStack(-1);
+        return;
+      case "}":
+        e.preventDefault();
+        stepStack(1);
+        return;
       case "[":
         e.preventDefault();
         stepFile(-1);
@@ -608,7 +650,11 @@ export function PrDetailView({ prId }: { prId: PrId }) {
         const finding = focused();
         if (finding) {
           e.preventDefault();
-          void acceptFinding(queryClient, finding, addComment);
+          void acceptFinding(
+            queryClient,
+            finding,
+            stackOn ? addStackComment : addComment,
+          );
         }
         return;
       }
@@ -750,7 +796,9 @@ export function PrDetailView({ prId }: { prId: PrId }) {
     );
   }
 
-  const { pr, threads } = detail.data;
+  const { pr } = detail.data;
+  const threads = stackOn ? NO_THREADS : detail.data.threads;
+  const prFiles = filesQuery.data;
 
   /**
    * What a review of THIS commit would do, and what the agent already found on
@@ -762,21 +810,21 @@ export function PrDetailView({ prId }: { prId: PrId }) {
   // dead work — and `priorReviewFor` scans every run across every PR, on an
   // array whose identity changes with each 30s poll.
   const preflight =
-    !run && files && settings.data
+    !run && prFiles && settings.data
       ? preflightOf({
           pr,
-          files,
+          files: prFiles,
           settings: settings.data,
           spentTodayUsd: runs.data?.spendTodayUsd ?? 0,
         })
       : null;
   const priorReview =
-    !run && files
+    !run && prFiles
       ? priorReviewFor({
           runs: runs.data?.all ?? NO_RUNS,
           prId,
           headSha: pr.headSha,
-          files,
+          files: prFiles,
         })
       : null;
 
@@ -807,11 +855,15 @@ export function PrDetailView({ prId }: { prId: PrId }) {
           // props, so the whole header subtree re-rendered on every file marked
           // viewed — the core loop of a long review. It subscribes to the draft
           // itself, on the same query key.
-          <ReviewSubmit
-            prId={prId}
-            headSha={pr.headSha}
-            hasBlocker={hasOpenBlocker(run)}
-          />
+          stackOn ? (
+            <StackSubmit stack={stack} />
+          ) : (
+            <ReviewSubmit
+              prId={prId}
+              headSha={pr.headSha}
+              hasBlocker={hasOpenBlocker(run)}
+            />
+          )
         }
       />
       <div className="flex-1 min-h-0 flex">
@@ -851,6 +903,9 @@ export function PrDetailView({ prId }: { prId: PrId }) {
                   maxSize="35"
                 >
                   <FileTree
+                    // SPIKE: the tree builds its model once; a remount swaps
+                    // the PR's files for the stack's.
+                    key={stackOn ? "stack" : "pr"}
                     files={files}
                     viewedFiles={viewedFiles}
                     selectedPath={selectedPath}
@@ -883,19 +938,67 @@ export function PrDetailView({ prId }: { prId: PrId }) {
                   <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-mono shrink-0">
                     diff
                   </span>
-                  {/* What the diff IS — file count and churn — sits with the
-                      diff, not up in the PR meta row where it read as one more
-                      statistic about the pull request. `pr.changedFiles`, not
-                      `files.length`: the files endpoint windows its list, so on
-                      a large PR the two disagree and only one of them is the
-                      honest answer. */}
-                  <span className="font-mono text-[11px] min-w-0 truncate">
-                    <span className="text-muted-foreground">
-                      {pr.changedFiles} files
-                    </span>{" "}
-                    <span className="text-emerald-400">+{pr.additions}</span>{" "}
-                    <span className="text-red-400">−{pr.deletions}</span>
-                  </span>
+                  {stack.prs.length > 1 ? (
+                    <Button
+                      size="3xs"
+                      variant={stackOn ? "default" : "outline"}
+                      className="shrink-0"
+                      aria-pressed={stackOn}
+                      disabled={stackBlocked}
+                      title={
+                        stackBlocked
+                          ? `${stack.unrebased.map((n) => `#${n}`).join(", ")} is not rebased on the PR below`
+                          : undefined
+                      }
+                      onClick={toggleStack}
+                    >
+                      {stackOn
+                        ? "Whole stack"
+                        : stackMode && !stackBlocked
+                          ? "Stack · loading"
+                          : `Stack · ${stack.prs.length}`}
+                    </Button>
+                  ) : null}
+                  {/* The chain truncates rather than pushing the controls to
+                      its right out of a row that never wraps. */}
+                  {stack.prs.length > 1 ? (
+                    <span className="font-mono text-[11px] min-w-0 truncate text-muted-foreground">
+                      {stack.prs.map((p, i) => (
+                        <span key={p.prId}>
+                          {i > 0 ? " → " : ""}
+                          {p.prId === prId ? (
+                            <span className="text-foreground">#{p.number}</span>
+                          ) : (
+                            <button
+                              type="button"
+                              className="hover:text-foreground hover:underline"
+                              title={`${p.title} ({ / })`}
+                              onClick={() => openPrDetail(p.prId)}
+                            >
+                              #{p.number}
+                            </button>
+                          )}
+                        </span>
+                      ))}
+                    </span>
+                  ) : null}
+                  {stackOn ? (
+                    <span className="font-mono text-[11px] min-w-0 truncate text-muted-foreground">
+                      {files.length} files
+                    </span>
+                  ) : (
+                    // What the diff IS — file count and churn — sits with the
+                    // diff, not up in the PR meta row. `pr.changedFiles`, not
+                    // `files.length`: the files endpoint windows its list, so
+                    // on a large PR only the former is honest.
+                    <span className="font-mono text-[11px] min-w-0 truncate">
+                      <span className="text-muted-foreground">
+                        {pr.changedFiles} files
+                      </span>{" "}
+                      <span className="text-emerald-400">+{pr.additions}</span>{" "}
+                      <span className="text-red-400">−{pr.deletions}</span>
+                    </span>
+                  )}
                   <span className="flex-1" />
                   <ViewedMeter
                     viewed={viewedFiles.length}
@@ -954,11 +1057,18 @@ export function PrDetailView({ prId }: { prId: PrId }) {
                   className="flex-1 min-h-0 flex flex-col"
                 >
                   <DiffPane
+                    // The two views can share a head sha and item versions, so
+                    // CodeView would keep the other view's patch: remount.
+                    key={stackOn ? "stack" : "pr"}
                     prId={prId}
-                    headSha={pr.headSha}
+                    headSha={
+                      stackOn && stack.top ? stack.top.headSha : pr.headSha
+                    }
                     files={files}
                     threads={threads}
-                    pendingComments={review?.comments ?? []}
+                    pendingComments={
+                      stackOn ? stack.comments : (review?.comments ?? [])
+                    }
                     findings={triageFindings}
                     viewedFiles={viewedFiles}
                     onToggleViewed={toggleViewedAndFold}
@@ -967,11 +1077,32 @@ export function PrDetailView({ prId }: { prId: PrId }) {
                     // Path click in a file header reveals it in the tree; the
                     // diff is already at that file, so it must not re-scroll.
                     onSelectPath={setSelectedPath}
-                    onAddComment={addComment}
-                    onUpdateComment={updateComment}
-                    onRemoveComment={removeCommentAndUnstage}
+                    onAddComment={stackOn ? addStackComment : addComment}
+                    onUpdateComment={
+                      stackOn ? stack.updateComment : updateComment
+                    }
+                    onRemoveComment={
+                      stackOn ? stack.removeComment : removeCommentAndUnstage
+                    }
                     anchor={chatAnchor}
                     codeViewRef={codeViewRef}
+                    history={
+                      stackOn
+                        ? {
+                            byPath: stack.history,
+                            labelOf: (layer) =>
+                              `#${stack.prs[layer]?.number ?? "?"}`,
+                          }
+                        : undefined
+                    }
+                    ownerLabelOf={
+                      stackOn
+                        ? (id) => {
+                            const owner = stack.ownerOf(id);
+                            return owner ? `#${owner.number}` : undefined;
+                          }
+                        : undefined
+                    }
                   />
                 </div>
               </div>
@@ -992,13 +1123,14 @@ export function PrDetailView({ prId }: { prId: PrId }) {
                     progress={progress}
                     settings={settings.data}
                     review={review ?? null}
-                    files={files}
+                    files={prFiles ?? []}
                     anchor={chatAnchor}
                     preflight={preflight}
                     priorReview={priorReview}
                     onNavigate={revealAnchor}
                     onRevealPath={selectFile}
                     onSelectFinding={focusFinding}
+                    stack={stackOn ? stack : null}
                   />
                 </ResizablePanel>
               </>

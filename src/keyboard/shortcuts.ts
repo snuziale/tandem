@@ -45,6 +45,7 @@ export const SHORTCUT_GROUPS: ShortcutGroup[] = [
     items: [
       { keys: ["esc"], action: "close the composer, then the find bar" },
       { keys: ["[", "]"], action: "previous / next file" },
+      { keys: ["{", "}"], action: "down / up the PR stack" },
       { keys: ["j", "k"], action: "next / previous agent finding" },
       { keys: ["y"], action: "add focused finding to review" },
       { keys: ["e"], action: "edit focused finding" },

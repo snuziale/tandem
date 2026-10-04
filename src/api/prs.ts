@@ -1,5 +1,6 @@
 import { API_PATHS } from "../shared/api-paths";
 import { parsePrId } from "../shared/gh/prKey";
+import type { PrStack } from "../shared/gh/stack";
 import type { FileChange, PrDetail, PrId } from "../shared/review-types";
 import { apiRequest, apiRequestText } from "./http";
 
@@ -60,4 +61,12 @@ export function fetchPrFileAtRef(
     `${prApiBase(prId)}/blob?path=${encodeURIComponent(path)}&sha=${encodeURIComponent(sha)}`,
     { signal },
   );
+}
+
+/** SPIKE: the PR's stack (bottom → top) and the whole stack's combined diff. */
+export function fetchPrStack(
+  prId: PrId,
+  signal?: AbortSignal,
+): Promise<PrStack> {
+  return apiRequest<PrStack>(`${prApiBase(prId)}/stack`, { signal });
 }

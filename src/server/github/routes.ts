@@ -12,6 +12,7 @@ import { handlePrAsset } from "./assets";
 import { GitHubError } from "./client";
 import { fetchFileAtRef, fetchPrFiles } from "./files";
 import { fetchPrDetail } from "./pr";
+import { fetchPrStack } from "./stack";
 import { quickApprove, submitReview } from "./submit";
 
 export async function handlePrs(req: Request): Promise<Response> {
@@ -35,6 +36,9 @@ export async function handlePrs(req: Request): Promise<Response> {
     }
     if (action === "/files" && req.method === "GET") {
       return Response.json({ files: await fetchPrFiles(cfg, ref, req.signal) });
+    }
+    if (action === "/stack" && req.method === "GET") {
+      return Response.json(await fetchPrStack(cfg, ref, req.signal));
     }
     if (action === "/blob" && req.method === "GET") {
       // One file's text at a commit — what the diff pane hydrates a partial
