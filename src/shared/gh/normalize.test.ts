@@ -275,6 +275,16 @@ describe("normalizeThread", () => {
     expect(t.startLine).toBeUndefined();
   });
 
+  // The replies endpoint is REST and addresses a comment by its numeric id.
+  // Only the FIRST comment's id: GitHub refuses a reply to a reply.
+  it("takes the reply target from the first comment, only when sent", () => {
+    expect(normalizeThread(thread(), REF)).not.toHaveProperty("replyToId");
+    const base = thread();
+    base.comments.nodes[0].databaseId = 991;
+    base.comments.nodes.push({ ...base.comments.nodes[0], databaseId: 992 });
+    expect(normalizeThread(base, REF).replyToId).toBe(991);
+  });
+
   // A comment's screenshot has to reach the proxy for the same reason the
   // description's does — attachments.ts covers the rewrite itself.
   it("points a comment attachment at the proxy", () => {

@@ -1,5 +1,10 @@
 import { API_PATHS } from "../shared/api-paths";
 import { parsePrId } from "../shared/gh/prKey";
+import type {
+  DirectPostResult,
+  LineCommentRequest,
+  ReplyRequest,
+} from "../shared/gh/reviewComment";
 import type { FileChange, PrDetail, PrId } from "../shared/review-types";
 import { apiRequest, apiRequestText } from "./http";
 
@@ -60,4 +65,26 @@ export function fetchPrFileAtRef(
     `${prApiBase(prId)}/blob?path=${encodeURIComponent(path)}&sha=${encodeURIComponent(sha)}`,
     { signal },
   );
+}
+
+/** One line comment, posted to GitHub now — outside the pending review. */
+export function postPrComment(
+  prId: PrId,
+  input: LineCommentRequest,
+): Promise<DirectPostResult> {
+  return apiRequest<DirectPostResult>(`${prApiBase(prId)}/comment`, {
+    method: "POST",
+    body: input,
+  });
+}
+
+/** A reply on an existing thread, posted to GitHub now. */
+export function replyToPrThread(
+  prId: PrId,
+  input: ReplyRequest,
+): Promise<DirectPostResult> {
+  return apiRequest<DirectPostResult>(`${prApiBase(prId)}/reply`, {
+    method: "POST",
+    body: input,
+  });
 }

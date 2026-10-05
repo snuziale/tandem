@@ -33,6 +33,7 @@ import { resolveTheme, useThemeStore } from "../../state/themeStore";
 import { useUiStore, type ComposerTarget } from "../../state/uiStore";
 import { FindingCard } from "../agent/FindingCard";
 import {
+  annoIdentity,
   annoSpan,
   annotationSideOf,
   commentAnchorOf,
@@ -49,6 +50,7 @@ import { loadDiffFileSides } from "./expandContext";
 import { ComposerCard } from "./ComposerCard";
 import { PendingCard } from "./PendingCard";
 import { ThreadCard } from "./ThreadCard";
+import { useDirectComments } from "../../hooks/useDirectComments";
 
 // The second parameter is the library's inline-editor caret metadata
 // (@pierre/diffs 1.5). Tandem never opens its editor, so it is `undefined` —
@@ -97,8 +99,9 @@ const EXPANSION_LINE_COUNT = 20;
 
 // Controlled CodeView items re-render only on version changes. Annotation
 // CONTENT is a React render prop and updates through React regardless — the
-// version only has to change when the diff (headSha) or annotation POSITIONS
-// or COUNT change, so a pure hash of exactly those inputs is enough.
+// version only has to change when the diff (headSha) or annotation POSITIONS,
+// COUNT or IDENTITY change (`annoIdentity`: one card replacing another on the
+// same line), so a pure hash of exactly those inputs is enough.
 // `collapsed` and `hideWhitespace` are in the hash for the same reason: the
 // library only reads them off a re-rendered item.
 function versionOf(
@@ -116,6 +119,8 @@ function versionOf(
     // library laid out, but the card has to re-render with the new metadata,
     // and the library only hands the render prop the annotation it is holding.
     h = (h * 31 + annoSpan(a).start) | 0;
+    const id = annoIdentity(a);
+    for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) | 0;
   }
   return ((h | 0) >>> 0) + annotations.length;
 }
@@ -138,6 +143,10 @@ export function DiffPane({
   anchor,
   codeViewRef,
 }: Props) {
+  // The two writes that skip the review. Each card keeps its own text and
+  // error until the post has really landed.
+  const direct = useDirectComments(prId);
+
   const diffStyle = useUiStore((s) => s.diffStyle);
   const hideWhitespace = useUiStore((s) => s.hideWhitespace);
   const themePreference = useThemeStore((s) => s.preference);
@@ -497,7 +506,7 @@ export function DiffPane({
         const meta = annotation.metadata;
         switch (meta.kind) {
           case "thread":
-            return <ThreadCard thread={meta.thread} />;
+            return <ThreadCard thread={meta.thread} onReply={direct.reply} />;
           case "composer":
             return (
               <ComposerCard
@@ -506,16 +515,14 @@ export function DiffPane({
                 onExtendRange={extendComposerRange}
                 onCancel={() => setComposerTarget(null)}
                 onSubmit={(body, suggestion) => {
-                  onAddComment({
-                    path: meta.target.path,
-                    line: meta.target.line,
-                    startLine: meta.target.startLine,
-                    side: meta.target.side,
-                    body,
-                    suggestion,
-                  });
+                  onAddComment({ ...meta.target, body, suggestion });
                   setComposerTarget(null);
                 }}
+                onPostNow={(body, suggestion) =>
+                  direct
+                    .comment({ ...meta.target, headSha, body, suggestion })
+                    .then(() => setComposerTarget(null))
+                }
               />
             );
           case "pending":

@@ -96,6 +96,29 @@ export function annoSpan(anno: DiffLineAnnotation<TandemAnno>): {
 }
 
 /**
+ * WHAT an annotation is, as opposed to where (`annoSpan`). The item version
+ * hash reads both, because the library hands the render prop only the
+ * annotation it is already HOLDING: when one card turns into another on the
+ * same line — the composer becoming the thread it just posted — positions
+ * alone hash the same, and the old card stays on screen. A thread's comment
+ * count is part of it for the same reason: a reply moves nothing, so without
+ * it the new comment never appears.
+ */
+export function annoIdentity(anno: DiffLineAnnotation<TandemAnno>): string {
+  const meta = anno.metadata;
+  switch (meta.kind) {
+    case "thread":
+      return `thread:${meta.thread.id}:${meta.thread.comments.length}`;
+    case "pending":
+      return `pending:${meta.comment.localId}`;
+    case "finding":
+      return `finding:${meta.finding.id}`;
+    case "composer":
+      return "composer";
+  }
+}
+
+/**
  * Every line number something is anchored to, by path — what the
  * hide-whitespace rewrite must not fold away, because folding a line takes its
  * card with it and a RANGE card would end up pointing at half its own

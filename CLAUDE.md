@@ -12,10 +12,12 @@ SPA, Apollo Wind, TanStack Query, Zustand.
 ## Three invariants (from the spec — do not erode)
 
 1. **The agent never writes to GitHub.** `server/github/submit.ts` is the ONLY module that mutates
-   GitHub, and it exposes exactly two operations: submit-review and quick-approve, both
-   human-triggered. The claude CLI runs with `--safe-mode --tools ''` — no write tools exist.
+   GitHub, and it exposes exactly four operations, all human-triggered: submit-review,
+   quick-approve, and ONE comment posted outside a review — a line comment or a thread reply
+   (user decision 2026-10-03). The last two post only text the reviewer typed into the composer
+   or a reply box; agent-drafted text still reaches GitHub only through a submitted review. The claude CLI runs with `--safe-mode --tools ''` — no write tools exist.
    A `repo`-context profile's analyze and chat passes are the one variation: `--tools
-   Read,Grep,Glob --restricted --strict-mcp-config` inside a throwaway worktree (see "Context
+Read,Grep,Glob --restricted --strict-mcp-config` inside a throwaway worktree (see "Context
    depth"). Still no writer, no shell, no network; `READ_ONLY_TOOLS` is a code constant, never a
    setting.
    **One sanctioned exception, explicitly opt-in**: `settings.autoApprove` (default OFF) lets
@@ -64,7 +66,8 @@ browser → /api/* → Vite proxy (dev) → Bun server (src/server/worker.ts)
                                             blob (one file at a commit, for diff-pane
                                             context expansion) ·
                                             asset (an attachment's bytes — see below) ·
-                                            approve · submit  ← the only two GitHub writes
+                                            approve · submit · comment · reply
+                                            ← the only four GitHub writes
   /api/reviews/:prId  reviews/routes.ts  local pending-review draft (GET/PUT/DELETE)
   /api/views       views/routes.ts       saved queue views (created/edited on the queue's tabs;
                                          Settings › Views round-trips views AND teams together —
@@ -424,6 +427,16 @@ talking, older threads are not what the pane is for.
   sentence beside it, so a disabled submit is never unexplained.
   It sits beside `ReviewCell` on purpose: "where does this review stand" and "move it" are one
   question asked twice, and they were diagonally opposite each other.
+- **Comment now and reply skip the draft entirely** (`shared/gh/reviewComment.ts` TESTED,
+  `useDirectComments`). The composer's "Comment now" (`⌘⇧↵`) posts one line comment pinned to
+  the head sha the diff was drawn from — `headSha` is REQUIRED on the wire, never defaulted to
+  the PR's tip, because `line` means nothing against a commit nobody saw. A thread's "Reply…"
+  posts through GitHub's REST replies endpoint, which takes the thread's FIRST comment's numeric
+  id — `normalizeThread` lifts it to `thread.replyToId`; a response without it offers no reply
+  box. The cards own their posting state (`usePostInPlace`), not a `useMutation` in `DiffPane`,
+  so a post re-renders one card rather than the whole diff. Both refetch the detail on success (which also re-marks the PR seen, so your own comment never
+  lights the unseen dot) and show a failure IN the card, text intact. Neither reads or touches
+  the pending review.
 - **Submit posts the server-side draft**, not a client payload: `POST …/submit {verdict, summary}`
   → suggestion fences composed, `commit_id` = draft sha, per-comment 422s surfaced, drafts with
   `anchorMoved` comments refused (409). Success clears the draft.
@@ -750,6 +763,7 @@ In the diff and agent strips the tabs name ONE region each, like the files colum
 split are two presentations of one diff, and the agent pane's `split` shows two children at once,
 so no single child IS the panel. Both bodies are wrapped in a `role="tabpanel"` div carrying that
 id — in the diff's case a wrapper, never `CodeView` itself, which must stay the overflow parent.
+
 - Files is the tab on every PR (the column is navigation first) and an empty body is a DISABLED
   tab rather than an empty panel. Under `Tabs` there is no empty-value case to defend against —
   Radix never emits `""` for a re-clicked tab the way `ToggleGroup` did.
@@ -1284,6 +1298,9 @@ picks by `process.platform` at init-script build time.
 
 - **CodeView doesn't scroll / scrollTo dead**: container lost `overflow-y-auto` or bounded height.
 - **Annotations don't move/appear**: item `version` didn't change — check `versionOf` inputs.
+  Positions are not enough: one card replacing another ON THE SAME LINE (the composer becoming the
+  thread it just posted) or a thread gaining a reply moves nothing, which is why `annoIdentity`
+  (`annotations.ts`, TESTED) is hashed in too.
 - **GraphQL 502s**: that's GitHub's ~10s budget. Never batch searches; keep the single retry.
 - **Don't raise the queue page size.** MEASURED 2026-08-23: a 521-match `review-requested:@me`
   search already runs 6.5-6.8s at `first: 50`, and 504/502s start at 60. Raising `first` is what

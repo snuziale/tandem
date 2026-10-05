@@ -84,6 +84,10 @@ export const SHORTCUT_GROUPS: ShortcutGroup[] = [
         action:
           "open submit review, then submit (stages the comment while composing)",
       },
+      {
+        keys: [`${MOD}+${SHIFT}+↵`],
+        action: "post the comment to GitHub now, outside your review",
+      },
       { keys: ["↵", `${MOD}+↵`], action: "chat: send" },
       { keys: [`${SHIFT}+↵`], action: "chat: newline" },
       { keys: ["/", "@"], action: "chat: commands, or name a file to read" },

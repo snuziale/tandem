@@ -224,6 +224,10 @@ export type ReviewThread = {
   isResolved: boolean;
   isOutdated: boolean;
   comments: ReviewComment[];
+  /** REST id of the thread's FIRST comment — what GitHub's replies endpoint
+   * addresses (it refuses a reply to a reply). Absent when the response
+   * carried no REST ids; such a thread cannot be replied to from here. */
+  replyToId?: number;
 };
 
 export type PrDetail = {

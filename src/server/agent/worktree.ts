@@ -17,7 +17,7 @@
 import { mkdir, readdir, readFile, rm, stat, utimes } from "node:fs/promises";
 import { homedir } from "node:os";
 import { isAbsolute, join, resolve } from "node:path";
-import type { PrRef, RepoRef } from "../../shared/gh/prKey";
+import { isFullSha, type PrRef, type RepoRef } from "../../shared/gh/prKey";
 import type { CloneCheck } from "../../shared/settings-types";
 import { which } from "../loginPath";
 import { enqueueMutation, storagePath } from "../storage/jsonFile";
@@ -215,7 +215,7 @@ export async function acquireWorktree(
   ref: PrRef,
   headSha: string,
 ): Promise<Worktree> {
-  if (!/^[0-9a-f]{40}$/i.test(headSha))
+  if (!isFullSha(headSha))
     throw new CheckoutError(`not a commit sha: ${headSha}`);
   const dir = dirFor(ref, headSha);
 

@@ -4,7 +4,12 @@
 import { API_PATHS } from "../../shared/api-paths";
 import { prIdOf, type PrRef } from "../../shared/gh/prKey";
 import { isPlainObject } from "../../shared/is-plain-object";
-import type { PendingComment } from "../../shared/review-types";
+import {
+  parseLineCommentRequest,
+  parseReplyRequest,
+  restCommentOf,
+  type PostedComment,
+} from "../../shared/gh/reviewComment";
 import { deleteReview, loadReview } from "../reviews/store";
 import { loadConfig } from "../config/store";
 import { parseJsonBody } from "../requestJson";
@@ -12,7 +17,12 @@ import { handlePrAsset } from "./assets";
 import { GitHubError } from "./client";
 import { fetchFileAtRef, fetchPrFiles } from "./files";
 import { fetchPrDetail } from "./pr";
-import { quickApprove, submitReview } from "./submit";
+import {
+  postLineComment,
+  quickApprove,
+  replyToThread,
+  submitReview,
+} from "./submit";
 
 export async function handlePrs(req: Request): Promise<Response> {
   const url = new URL(req.url);
@@ -68,6 +78,27 @@ export async function handlePrs(req: Request): Promise<Response> {
     }
     if (action === "/submit" && req.method === "POST") {
       return await handleSubmit(req, ref);
+    }
+    // One comment now, outside any review. The body is what the reviewer
+    // typed — the local draft is not read or touched, so a review in progress
+    // carries on exactly as it was.
+    if (action === "/comment" && req.method === "POST") {
+      return await directPost(
+        parseLineCommentRequest(await parseJsonBody(req)),
+        (p) =>
+          postLineComment(
+            cfg.github,
+            ref,
+            p.commitId,
+            restCommentOf(p.comment),
+          ),
+      );
+    }
+    if (action === "/reply" && req.method === "POST") {
+      return await directPost(
+        parseReplyRequest(await parseJsonBody(req)),
+        (p) => replyToThread(cfg.github, ref, p.commentId, p.body),
+      );
     }
     return new Response("Not Found", { status: 404 });
   } catch (e) {
@@ -132,20 +163,14 @@ async function handleSubmit(req: Request, ref: PrRef): Promise<Response> {
   return Response.json({ ok: true, ...result });
 }
 
-function restCommentOf(c: PendingComment) {
-  const body =
-    c.suggestion !== undefined
-      ? `${c.body}${c.body.trim() ? "\n\n" : ""}\`\`\`suggestion\n${c.suggestion}\n\`\`\``
-      : c.body;
-  return {
-    path: c.path,
-    line: c.line,
-    side: c.side,
-    ...(c.startLine !== undefined && c.startLine !== c.line
-      ? { start_line: c.startLine, start_side: c.side }
-      : {}),
-    body,
-  };
+// A parsed direct-post request → 400 with the parser's reason, or the write.
+async function directPost<P extends object>(
+  parsed: P | { error: string },
+  write: (p: P) => Promise<PostedComment>,
+): Promise<Response> {
+  if ("error" in parsed)
+    return Response.json({ error: parsed.error }, { status: 400 });
+  return Response.json({ ok: true, ...(await write(parsed)) });
 }
 
 /** `/api/prs/<owner>/<repo>/<number>[/action]` → ref + action ('' or '/x'). */

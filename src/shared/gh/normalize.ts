@@ -200,6 +200,7 @@ export function normalizePr(node: GqlPrNode | null): PullRequest | null {
 }
 
 export function normalizeThread(t: GqlReviewThread, ref: PrRef): ReviewThread {
+  const replyToId = t.comments.nodes[0]?.databaseId;
   return {
     id: t.id,
     path: t.path,
@@ -208,6 +209,7 @@ export function normalizeThread(t: GqlReviewThread, ref: PrRef): ReviewThread {
     side: t.diffSide,
     isResolved: t.isResolved,
     isOutdated: t.isOutdated,
+    ...(replyToId ? { replyToId } : {}),
     comments: t.comments.nodes.map((c) => ({
       id: c.id,
       author: c.author?.login ?? "ghost",

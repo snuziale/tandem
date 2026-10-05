@@ -55,6 +55,7 @@ query TandemPrDetail($owner: String!, $name: String!, $number: Int!) {
           comments(first: 30) {
             nodes {
               id
+              databaseId
               author { login }
               body
               bodyHTML

@@ -1,13 +1,15 @@
 import { describe, expect, it } from "vitest";
-import type { SelectedLineRange } from "@pierre/diffs";
+import type { DiffLineAnnotation, SelectedLineRange } from "@pierre/diffs";
 import { diffLineIndex } from "../../shared/gh/patch";
 import type { Finding } from "../../shared/agent-types";
 import type { PendingComment, ReviewThread } from "../../shared/review-types";
 import {
+  annoIdentity,
   commentAnchorOf,
   paneAnchorOf,
   spanOf,
   startLineOf,
+  type TandemAnno,
 } from "./annotations";
 
 describe("spanOf / startLineOf", () => {
@@ -234,5 +236,48 @@ describe("paneAnchorOf", () => {
       revealedAnchor: { path: "src/r.ts", line: 213, side: "RIGHT" },
     });
     expect(out).toMatchObject({ line: 213, startLine: undefined });
+  });
+});
+
+describe("annoIdentity", () => {
+  const thread = (n: number): ReviewThread => ({
+    id: "T_1",
+    path: "a.ts",
+    line: 42,
+    side: "RIGHT",
+    isResolved: false,
+    isOutdated: false,
+    comments: Array.from({ length: n }, (_, i) => ({
+      id: `C_${i}`,
+      author: "bob",
+      bodyMarkdown: "x",
+      createdAt: "2026-10-03T00:00:00Z",
+    })),
+  });
+  // The library's annotation type distributes over the metadata union, so a
+  // helper generic in the union has to say which member it built.
+  const at = (metadata: TandemAnno) =>
+    ({
+      side: "additions",
+      lineNumber: 42,
+      metadata,
+    }) as DiffLineAnnotation<TandemAnno>;
+
+  // The composer turning into the thread it just posted, on the same line:
+  // positions hash the same, so identity is all that tells the library.
+  it("differs between a composer and the thread that replaced it", () => {
+    const composer = at({
+      kind: "composer",
+      target: { path: "a.ts", line: 42, side: "RIGHT" },
+    });
+    expect(annoIdentity(composer)).not.toBe(
+      annoIdentity(at({ kind: "thread", thread: thread(1) })),
+    );
+  });
+
+  it("changes when a thread gains a reply", () => {
+    expect(annoIdentity(at({ kind: "thread", thread: thread(1) }))).not.toBe(
+      annoIdentity(at({ kind: "thread", thread: thread(2) })),
+    );
   });
 });

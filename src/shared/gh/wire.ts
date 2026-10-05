@@ -109,6 +109,8 @@ export type GqlReviewThread = {
   comments: {
     nodes: Array<{
       id: string;
+      /** REST id — the replies endpoint addresses a comment by it. */
+      databaseId?: number | null;
       author: { login: string } | null;
       body: string;
       /** As on the PR node — attachments only. */

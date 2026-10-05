@@ -37,3 +37,7 @@ export function parseRepoKey(key: string): RepoRef | null {
 export function runKeyOf(prId: PrId, headSha: string): string {
   return `${prId}@${headSha}`;
 }
+
+/** A full 40-character commit sha — the only form work may be pinned to. */
+export const isFullSha = (v: unknown): v is string =>
+  typeof v === "string" && /^[0-9a-f]{40}$/i.test(v);
