@@ -439,6 +439,7 @@ async function executePipeline(
     const clusters =
       clustersFromPlan(plan, analyzable) ?? clusterFiles(analyzable);
     const candidates: FindingJson[] = [];
+    const failedPaths: string[] = [];
     for (let i = 0; i < clusters.length; i++) {
       if (signal.aborted) throw new Error("cancelled");
       const cluster = clusters[i];
@@ -501,6 +502,7 @@ async function executePipeline(
         console.error(
           `[pipeline] pass 2 cluster ${i} unusable after repair: ${passResult.errors}`,
         );
+        failedPaths.push(...cluster.map((f) => f.path));
         await clusterStep.failed("output unusable after repair");
       }
     }
@@ -520,6 +522,11 @@ async function executePipeline(
       buildReconcilePrompt({
         prompts: agent.prompts,
         pr,
+        coverage: {
+          analyzed: analyzable,
+          failedPaths,
+          dropped: sanitized.discarded,
+        },
         candidates: sanitized.kept,
         threads,
         findingCap: settings.findingCap,

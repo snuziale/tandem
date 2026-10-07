@@ -158,9 +158,38 @@ Reply with ONLY a JSON object in a \`\`\`json fence:
 An empty findings array is a valid answer.`;
 }
 
+/** What pass 2 actually covered — the one thing pass 3 cannot see for itself. */
+export type AnalysisCoverage = {
+  /** Every file pass 2 was given the diff of. */
+  analyzed: FileChange[];
+  /** Files whose cluster produced no usable output. */
+  failedPaths: string[];
+  /** Candidates pass 2 emitted that were dropped before this pass (bad anchor,
+   * duplicate of a human thread). */
+  dropped: number;
+};
+
+/** Pass 3 never sees the diff, so without this an EMPTY candidate list reads to
+ * the model as "nothing was reviewed" — and it said so in the run summary. */
+function coverageBlock(c: AnalysisCoverage): string {
+  const files = c.analyzed
+    .map((f) => `- ${f.path} (${f.status}, +${f.additions} −${f.deletions})`)
+    .join("\n");
+  const failed = c.failedPaths.length
+    ? `\nAnalysis FAILED for: ${c.failedPaths.join(", ")}. Those files were NOT reviewed — say so in the summary and do not score them as sound.`
+    : "";
+  const dropped = c.dropped
+    ? `\n${c.dropped} candidate(s) were dropped before this pass for not anchoring to a diff line or duplicating a human comment.`
+    : "";
+  return `Analysis coverage — a previous pass read the FULL diff of each file below${c.analyzed.length ? "" : " (none were analyzable)"} and produced the candidates that follow:
+${files || "(none)"}${failed}${dropped}
+You are not shown the diff, the code or CI results, and that is by design: do NOT write that the diff, code or checks were missing or not provided. An empty candidate list means analysis read the change and found nothing worth flagging — summarize and score on that basis.`;
+}
+
 export function buildReconcilePrompt(input: {
   prompts: PromptTexts;
   pr: PullRequest;
+  coverage: AnalysisCoverage;
   candidates: FindingJson[];
   threads: ReviewThread[];
   findingCap: number;
@@ -183,6 +212,8 @@ export function buildReconcilePrompt(input: {
 ${input.prompts.rules}
 
 ${prHeaderBlock(input.pr)}
+
+${coverageBlock(input.coverage)}
 
 Existing human review comments:
 ${threadsBlock}
